@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog,
                              QFrame, QSpacerItem, QSizePolicy, QFontComboBox, QSpinBox, QColorDialog, QCheckBox)
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QIcon, QAction, QFont, QColor
+import qtawesome as qta
 
 from pdf_handler import PDFHandler
 from canvas import PDFCanvas, ToolMode
@@ -136,16 +137,20 @@ class MainWindow(QMainWindow):
 
         h_layout.addSpacing(20)
         
-        btn_files = QPushButton("🗁 すべてのファイル")
-        btn_save = QPushButton("💾 保存")
+        btn_files = QPushButton(" すべてのファイル")
+        btn_files.setIcon(qta.icon('fa5s.folder', color='white'))
+        btn_save = QPushButton(" 保存")
+        btn_save.setIcon(qta.icon('fa5s.save', color='white'))
         h_layout.addWidget(btn_files)
         h_layout.addWidget(btn_save)
 
         h_layout.addStretch()
 
-        btn_share = QPushButton("📤")
-        btn_settings = QPushButton("⚙")
-        user_info = QLabel("👤 ユーザー名")
+        btn_share = QPushButton()
+        btn_share.setIcon(qta.icon('fa5s.share-square', color='white'))
+        btn_settings = QPushButton()
+        btn_settings.setIcon(qta.icon('fa5s.cog', color='white'))
+        user_info = QLabel(" 👤 ユーザー名")
         h_layout.addWidget(btn_share)
         h_layout.addWidget(btn_settings)
         h_layout.addWidget(user_info)
@@ -159,19 +164,21 @@ class MainWindow(QMainWindow):
         t_layout.setContentsMargins(10, 0, 10, 0)
 
         tools = [
-            ("Å", "選択", ToolMode.SELECT),
-            ("✋", "パン", ToolMode.NONE),
-            ("⬜", "矩形", ToolMode.POLYGON_AREA), # 仮
-            ("T", "テキスト", ToolMode.TEXT),
-            ("🖋", "ペン", ToolMode.MEASURE_LINE), # 仮
-            ("⬭", "15m円", ToolMode.CIRCLE_FIXED),
-            ("📏", "計測", ToolMode.CALIBRATE),
-            ("💬", "コメント", ToolMode.TEXT)
+            ('fa5s.mouse-pointer', "選択", ToolMode.SELECT),
+            ('fa5s.hand-paper', "パン", ToolMode.NONE),
+            ('fa5s.square', "矩形", ToolMode.POLYGON_AREA),
+            ('fa5s.font', "テキスト", ToolMode.TEXT),
+            ('fa5s.pen', "ペン", ToolMode.MEASURE_LINE),
+            ('fa5s.circle', "15m円", ToolMode.CIRCLE_FIXED),
+            ('fa5s.ruler', "計測", ToolMode.CALIBRATE),
+            ('fa5s.comment', "コメント", ToolMode.TEXT)
         ]
 
         self.tool_btns = []
-        for icon_text, tip, mode in tools:
-            btn = QPushButton(icon_text)
+        for icon_name, tip, mode in tools:
+            btn = QPushButton()
+            btn.setIcon(qta.icon(icon_name, color='white'))
+            btn.setIconSize(QSize(20, 20))
             btn.setObjectName("ToolBtn")
             btn.setProperty("tool_mode", mode)
             btn.setToolTip(tip)
