@@ -21,7 +21,15 @@ def export_pdf_document(model, output_path: str) -> None:
                 color_value.green() / 255.0,
                 color_value.blue() / 255.0,
             )
-            fill_opacity = ann.opacity / 100.0
+            fill_opacity = ann.fill_opacity / 100.0
+            stroke_opacity = ann.stroke_opacity / 100.0
+
+            fill_color_value = QColor(ann.fill_color) if ann.fill_color else color_value
+            pdf_fill_color = (
+                fill_color_value.red() / 255.0,
+                fill_color_value.green() / 255.0,
+                fill_color_value.blue() / 255.0,
+            )
 
             def to_pdf_pt(qp):
                 return fitz.Point(qp.x() * dpi_factor, qp.y() * dpi_factor)
@@ -36,8 +44,8 @@ def export_pdf_document(model, output_path: str) -> None:
                         color=color,
                         fill=color,
                         width=1,
-                        stroke_opacity=fill_opacity,
-                        fill_opacity=fill_opacity,
+                        stroke_opacity=stroke_opacity,
+                        fill_opacity=stroke_opacity,
                     )
                 elif marker_type == "arrow":
                     dx = point.x - neighbor.x
@@ -64,8 +72,8 @@ def export_pdf_document(model, output_path: str) -> None:
                         fill=color,
                         width=0,
                         closePath=True,
-                        stroke_opacity=fill_opacity,
-                        fill_opacity=fill_opacity,
+                        stroke_opacity=stroke_opacity,
+                        fill_opacity=stroke_opacity,
                     )
 
             def draw_center_marker(pdf_page, center, marker_type):
@@ -77,8 +85,8 @@ def export_pdf_document(model, output_path: str) -> None:
                         color=color,
                         fill=color,
                         width=1,
-                        stroke_opacity=fill_opacity,
-                        fill_opacity=fill_opacity,
+                        stroke_opacity=stroke_opacity,
+                        fill_opacity=stroke_opacity,
                     )
                 elif marker_type == "cross":
                     pdf_page.draw_line(
@@ -86,14 +94,14 @@ def export_pdf_document(model, output_path: str) -> None:
                         fitz.Point(center.x + size, center.y),
                         color=color,
                         width=1.5,
-                        stroke_opacity=fill_opacity,
+                        stroke_opacity=stroke_opacity,
                     )
                     pdf_page.draw_line(
                         fitz.Point(center.x, center.y - size),
                         fitz.Point(center.x, center.y + size),
                         color=color,
                         width=1.5,
-                        stroke_opacity=fill_opacity,
+                        stroke_opacity=stroke_opacity,
                     )
                 elif marker_type == "x":
                     pdf_page.draw_line(
@@ -101,14 +109,14 @@ def export_pdf_document(model, output_path: str) -> None:
                         fitz.Point(center.x + size, center.y + size),
                         color=color,
                         width=1.5,
-                        stroke_opacity=fill_opacity,
+                        stroke_opacity=stroke_opacity,
                     )
                     pdf_page.draw_line(
                         fitz.Point(center.x + size, center.y - size),
                         fitz.Point(center.x - size, center.y + size),
                         color=color,
                         width=1.5,
-                        stroke_opacity=fill_opacity,
+                        stroke_opacity=stroke_opacity,
                     )
 
             if ann.type == "line":
@@ -119,7 +127,7 @@ def export_pdf_document(model, output_path: str) -> None:
                     p2,
                     color=color,
                     width=ann.line_width,
-                    stroke_opacity=fill_opacity,
+                    stroke_opacity=stroke_opacity,
                 )
                 if ann.text:
                     mid = (p1 + p2) / 2
@@ -129,7 +137,7 @@ def export_pdf_document(model, output_path: str) -> None:
                         color=color,
                         fontsize=ann.font_size,
                         fontname="helv",
-                        fill_opacity=fill_opacity,
+                        fill_opacity=stroke_opacity,
                     )
 
             elif ann.type == "polyline":
@@ -140,7 +148,7 @@ def export_pdf_document(model, output_path: str) -> None:
                         pts[i + 1],
                         color=color,
                         width=ann.line_width,
-                        stroke_opacity=fill_opacity,
+                        stroke_opacity=stroke_opacity,
                     )
                 if len(pts) >= 2:
                     if ann.start_marker:
@@ -155,16 +163,19 @@ def export_pdf_document(model, output_path: str) -> None:
                         color=color,
                         fontsize=ann.font_size,
                         fontname="helv",
-                        fill_opacity=fill_opacity,
+                        fill_opacity=stroke_opacity,
                     )
 
             elif ann.type == "polygon":
                 pts = [to_pdf_pt(point) for point in ann.points]
+                _pdf_fill = pdf_fill_color if fill_opacity > 0 else None
                 page.draw_polyline(
                     pts + [pts[0]],
                     color=color,
+                    fill=_pdf_fill,
                     width=ann.line_width,
-                    stroke_opacity=fill_opacity,
+                    stroke_opacity=stroke_opacity,
+                    fill_opacity=fill_opacity if _pdf_fill else None,
                 )
                 if ann.text:
                     avg_x = sum(point.x for point in pts) / len(pts)
@@ -175,7 +186,7 @@ def export_pdf_document(model, output_path: str) -> None:
                         color=color,
                         fontsize=ann.font_size,
                         fontname="helv",
-                        fill_opacity=fill_opacity,
+                        fill_opacity=stroke_opacity,
                     )
 
             elif ann.type == "circle":
@@ -187,12 +198,15 @@ def export_pdf_document(model, output_path: str) -> None:
                 else:
                     radius = 0
                 if radius > 0:
+                    _pdf_fill = pdf_fill_color if fill_opacity > 0 else None
                     page.draw_circle(
                         center,
                         radius,
                         color=color,
+                        fill=_pdf_fill,
                         width=ann.line_width,
-                        stroke_opacity=fill_opacity,
+                        stroke_opacity=stroke_opacity,
+                        fill_opacity=fill_opacity if _pdf_fill else None,
                     )
                 if ann.center_marker:
                     draw_center_marker(page, center, ann.center_marker)
@@ -203,7 +217,7 @@ def export_pdf_document(model, output_path: str) -> None:
                         color=color,
                         fontsize=ann.font_size,
                         fontname="helv",
-                        fill_opacity=fill_opacity,
+                        fill_opacity=stroke_opacity,
                     )
 
             elif ann.type == "text":
@@ -214,7 +228,7 @@ def export_pdf_document(model, output_path: str) -> None:
                     color=color,
                     fontsize=ann.font_size,
                     fontname="helv",
-                    fill_opacity=fill_opacity,
+                    fill_opacity=stroke_opacity,
                 )
 
         export_doc.save(output_path)

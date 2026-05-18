@@ -556,8 +556,9 @@ class MainWindow(QMainWindow):
                 # Refresh selection in property panel
                 self.prop_panel.set_item_data(ann.id, ann.type, ann.text, ann.color,
                                               ann.font_family, ann.font_size, ann.line_width,
-                                              ann.opacity, ann.fill_color,
-                                              ann.center_marker, ann.start_marker, ann.end_marker)
+                                              stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity,
+                                              fill_color=ann.fill_color,
+                                              center_marker=ann.center_marker, start_marker=ann.start_marker, end_marker=ann.end_marker)
                 break
 
     def on_request_tool_change(self, mode):
@@ -606,8 +607,9 @@ class MainWindow(QMainWindow):
             if ann.id == item_id:
                 self.prop_panel.set_item_data(ann.id, ann.type, ann.text, ann.color,
                                               ann.font_family, ann.font_size, ann.line_width,
-                                              ann.opacity, ann.fill_color,
-                                              ann.center_marker, ann.start_marker, ann.end_marker)
+                                              stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity,
+                                              fill_color=ann.fill_color,
+                                              center_marker=ann.center_marker, start_marker=ann.start_marker, end_marker=ann.end_marker)
                 break
 
     def on_selection_cleared(self):
@@ -622,7 +624,8 @@ class MainWindow(QMainWindow):
                 if "font_family" in attrs: ann.font_family = attrs["font_family"]
                 if "font_size" in attrs: ann.font_size = attrs["font_size"]
                 if "line_width" in attrs: ann.line_width = attrs["line_width"]
-                if "opacity" in attrs: ann.opacity = attrs["opacity"]
+                if "stroke_opacity" in attrs: ann.stroke_opacity = attrs["stroke_opacity"]
+                if "fill_opacity" in attrs: ann.fill_opacity = attrs["fill_opacity"]
                 if "center_marker" in attrs: ann.center_marker = attrs["center_marker"]
                 if "start_marker" in attrs: ann.start_marker = attrs["start_marker"]
                 if "end_marker" in attrs: ann.end_marker = attrs["end_marker"]
@@ -714,11 +717,11 @@ class MainWindow(QMainWindow):
             for ann in self.model.annotations:
                 if ann.page_num == self.current_page:
                     if ann.type == "line":
-                        self.canvas.add_line_annotation(ann.points[0], ann.points[1], text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, opacity=ann.opacity)
+                        self.canvas.add_line_annotation(ann.points[0], ann.points[1], text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity)
                     elif ann.type == "polyline":
-                        self.canvas.add_polyline_annotation(ann.points, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, opacity=ann.opacity, start_marker=ann.start_marker, end_marker=ann.end_marker)
+                        self.canvas.add_polyline_annotation(ann.points, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity, start_marker=ann.start_marker, end_marker=ann.end_marker)
                     elif ann.type == "polygon":
-                        self.canvas.add_polygon_annotation(ann.points, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, opacity=ann.opacity, fill_color=ann.fill_color)
+                        self.canvas.add_polygon_annotation(ann.points, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity, fill_color=ann.fill_color)
                     elif ann.type == "circle":
                         if ann.radius_px > 0:
                             radius_px = ann.radius_px
@@ -726,9 +729,9 @@ class MainWindow(QMainWindow):
                             radius_px = ann.real_value / self.model.scale_factor
                         else:
                             radius_px = 0
-                        self.canvas.add_circle_annotation(ann.points[0], radius_px, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, opacity=ann.opacity, fill_color=ann.fill_color, center_marker=ann.center_marker)
+                        self.canvas.add_circle_annotation(ann.points[0], radius_px, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity, fill_color=ann.fill_color, center_marker=ann.center_marker)
                     elif ann.type == "text":
-                        self.canvas.add_text_annotation(ann.points[0], ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, opacity=ann.opacity)
+                        self.canvas.add_text_annotation(ann.points[0], ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, stroke_opacity=ann.stroke_opacity)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_O and event.modifiers() & Qt.ControlModifier:

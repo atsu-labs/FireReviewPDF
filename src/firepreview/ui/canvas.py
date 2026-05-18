@@ -400,12 +400,13 @@ class PDFCanvas(QGraphicsView):
                         item.setData(1, item.pos())
         super().mouseReleaseEvent(event)
 
-    def add_line_annotation(self, p1, p2, text="", color="red", item_id=None, font_family="Arial", font_size=12, line_width=2, opacity=100):
+    def add_line_annotation(self, p1, p2, text="", color="red", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100):
         line = QGraphicsLineItem(p1.x(), p1.y(), p2.x(), p2.y())
-        pen = QPen(QColor(color), line_width)
+        stroke_c = QColor(color)
+        stroke_c.setAlpha(round(stroke_opacity / 100.0 * 255))
+        pen = QPen(stroke_c, line_width)
         pen.setCosmetic(True)
         line.setPen(pen)
-        line.setOpacity(opacity / 100.0)
         if item_id: 
             line.setData(0, item_id)
             line.setData(1, QPointF(0,0)) # Initial relative pos
@@ -415,7 +416,7 @@ class PDFCanvas(QGraphicsView):
         if txt_item:
             txt_item.setParentItem(line)
 
-    def add_polyline_annotation(self, points, text="", color="#7c4dff", item_id=None, font_family="Arial", font_size=12, line_width=2, opacity=100, start_marker="", end_marker=""):
+    def add_polyline_annotation(self, points, text="", color="#7c4dff", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, start_marker="", end_marker=""):
         if not points:
             return
         path = QPainterPath()
@@ -423,11 +424,12 @@ class PDFCanvas(QGraphicsView):
         for pt in points[1:]:
             path.lineTo(pt)
         item = QGraphicsPathItem(path)
-        pen = QPen(QColor(color), line_width)
+        stroke_c = QColor(color)
+        stroke_c.setAlpha(round(stroke_opacity / 100.0 * 255))
+        pen = QPen(stroke_c, line_width)
         pen.setCosmetic(True)
         item.setPen(pen)
         item.setBrush(Qt.NoBrush)
-        item.setOpacity(opacity / 100.0)
         if item_id:
             item.setData(0, item_id)
             item.setData(1, QPointF(0, 0))
@@ -446,19 +448,19 @@ class PDFCanvas(QGraphicsView):
             if txt_item:
                 txt_item.setParentItem(item)
 
-    def add_polygon_annotation(self, points, text="", color="blue", item_id=None, font_family="Arial", font_size=12, line_width=2, opacity=100, fill_color=""):
+    def add_polygon_annotation(self, points, text="", color="blue", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, fill_opacity=30, fill_color=""):
         poly = QGraphicsPolygonItem(QPolygonF(points))
-        pen = QPen(QColor(color), line_width)
+        stroke_c = QColor(color)
+        stroke_c.setAlpha(round(stroke_opacity / 100.0 * 255))
+        pen = QPen(stroke_c, line_width)
         pen.setCosmetic(True)
         poly.setPen(pen)
-        if fill_color:
-            fc = QColor(fill_color)
-            fc.setAlpha(50)
-            poly.setBrush(fc)
+        if fill_opacity == 0:
+            poly.setBrush(Qt.NoBrush)
         else:
-            c = QColor(color)
-            poly.setBrush(QColor(c.red(), c.green(), c.blue(), 30))
-        poly.setOpacity(opacity / 100.0)
+            fill_base = QColor(fill_color) if fill_color else QColor(color)
+            fill_base.setAlpha(round(fill_opacity / 100.0 * 255))
+            poly.setBrush(fill_base)
         if item_id: 
             poly.setData(0, item_id)
             poly.setData(1, QPointF(0,0))
@@ -470,18 +472,19 @@ class PDFCanvas(QGraphicsView):
         if txt_item:
             txt_item.setParentItem(poly)
 
-    def add_circle_annotation(self, center, radius_px, text="", color="green", item_id=None, font_family="Arial", font_size=12, line_width=2, opacity=100, fill_color="", center_marker=""):
+    def add_circle_annotation(self, center, radius_px, text="", color="green", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, fill_opacity=30, fill_color="", center_marker=""):
         circle = QGraphicsEllipseItem(center.x() - radius_px, center.y() - radius_px, radius_px * 2, radius_px * 2)
-        pen = QPen(QColor(color), line_width)
+        stroke_c = QColor(color)
+        stroke_c.setAlpha(round(stroke_opacity / 100.0 * 255))
+        pen = QPen(stroke_c, line_width)
         pen.setCosmetic(True)
         circle.setPen(pen)
-        if fill_color:
-            fc = QColor(fill_color)
-            fc.setAlpha(50)
-            circle.setBrush(fc)
-        else:
+        if fill_opacity == 0:
             circle.setBrush(Qt.NoBrush)
-        circle.setOpacity(opacity / 100.0)
+        else:
+            fill_base = QColor(fill_color) if fill_color else QColor(color)
+            fill_base.setAlpha(round(fill_opacity / 100.0 * 255))
+            circle.setBrush(fill_base)
         if item_id: 
             circle.setData(0, item_id)
             circle.setData(1, QPointF(0,0))
@@ -570,10 +573,10 @@ class PDFCanvas(QGraphicsView):
             item.setBrush(QColor(color))
             item.setData(2, "marker")
 
-    def add_text_annotation(self, pos, text, color="black", item_id=None, font_family="Arial", font_size=12, opacity=100):
+    def add_text_annotation(self, pos, text, color="black", item_id=None, font_family="Arial", font_size=12, stroke_opacity=100):
         txt_item = self._add_text_item(text, pos.x(), pos.y(), color, font_family, font_size)
         if txt_item:
-            txt_item.setOpacity(opacity / 100.0)
+            txt_item.setOpacity(stroke_opacity / 100.0)
             if item_id:
                 txt_item.setData(0, item_id)
                 txt_item.setData(1, QPointF(0,0))
@@ -603,27 +606,52 @@ class PDFCanvas(QGraphicsView):
     def update_item_properties(self, item_id, attrs):
         for item in self.scene.items():
             if item.data(0) == item_id:
-                if "color" in attrs or "line_width" in attrs or "opacity" in attrs:
+                if "color" in attrs or "line_width" in attrs or "stroke_opacity" in attrs:
                     if isinstance(item, (QGraphicsLineItem, QGraphicsEllipseItem, QGraphicsPolygonItem, QGraphicsPathItem)):
                         pen = item.pen()
-                        if "color" in attrs:
-                            c = QColor(attrs["color"])
-                            pen.setColor(c)
-                            if isinstance(item, QGraphicsPolygonItem):
-                                item.setBrush(QColor(c.red(), c.green(), c.blue(), 30))
+                        cur_pen_c = pen.color()
+                        base_rgb = QColor(attrs["color"]) if "color" in attrs else QColor(cur_pen_c.red(), cur_pen_c.green(), cur_pen_c.blue())
+                        new_alpha = round(attrs["stroke_opacity"] / 100.0 * 255) if "stroke_opacity" in attrs else cur_pen_c.alpha()
+                        new_pen_c = QColor(base_rgb.red(), base_rgb.green(), base_rgb.blue(), new_alpha)
+                        pen.setColor(new_pen_c)
                         if "line_width" in attrs:
                             pen.setWidth(attrs["line_width"])
                         item.setPen(pen)
-                    if "opacity" in attrs:
-                        item.setOpacity(attrs["opacity"] / 100.0)
-                if "fill_color" in attrs:
-                    fc = QColor(attrs["fill_color"]) if attrs["fill_color"] else None
+
+                        # When stroke color changes, update brush on polygon if fill derives from stroke
+                        if "color" in attrs and isinstance(item, QGraphicsPolygonItem):
+                            cur_brush = item.brush()
+                            if cur_brush.style() != Qt.NoBrush:
+                                cur_fill_a = cur_brush.color().alpha()
+                                item.setBrush(QColor(base_rgb.red(), base_rgb.green(), base_rgb.blue(), cur_fill_a))
+
+                if "fill_color" in attrs or "fill_opacity" in attrs:
                     if isinstance(item, (QGraphicsPolygonItem, QGraphicsEllipseItem)):
-                        if fc:
-                            fc.setAlpha(50)
-                            item.setBrush(fc)
+                        cur_brush = item.brush()
+                        # Determine fill alpha
+                        if "fill_opacity" in attrs:
+                            fill_alpha = round(attrs["fill_opacity"] / 100.0 * 255)
+                        elif cur_brush.style() != Qt.NoBrush:
+                            fill_alpha = cur_brush.color().alpha()
                         else:
+                            fill_alpha = 0
+                        # Determine fill RGB
+                        if "fill_color" in attrs:
+                            fill_base = QColor(attrs["fill_color"]) if attrs["fill_color"] else None
+                        elif cur_brush.style() != Qt.NoBrush:
+                            bc = cur_brush.color()
+                            fill_base = QColor(bc.red(), bc.green(), bc.blue())
+                        else:
+                            fill_base = None
+                        if fill_alpha == 0:
                             item.setBrush(Qt.NoBrush)
+                        elif fill_base:
+                            fill_base.setAlpha(fill_alpha)
+                            item.setBrush(fill_base)
+                        else:
+                            # No explicit fill color — derive from stroke color
+                            pen_c = item.pen().color()
+                            item.setBrush(QColor(pen_c.red(), pen_c.green(), pen_c.blue(), fill_alpha))
 
                 # Handle marker updates
                 has_marker_change = any(k in attrs for k in ("center_marker", "start_marker", "end_marker"))
@@ -664,8 +692,8 @@ class PDFCanvas(QGraphicsView):
                         txt.setPlainText(attrs["text"])
                     if "color" in attrs:
                         txt.setDefaultTextColor(QColor(attrs["color"]))
-                    if "opacity" in attrs:
-                        txt.setOpacity(attrs["opacity"] / 100.0)
+                    if "stroke_opacity" in attrs:
+                        txt.setOpacity(attrs["stroke_opacity"] / 100.0)
 
                 # If text is being set but no text child exists yet, create one
                 if "text" in attrs and attrs["text"].strip() and not text_items and not isinstance(item, QGraphicsTextItem):
