@@ -34,6 +34,7 @@ class MainWindow(QMainWindow):
         # Shape tool defaults
         self.current_shape_color = "#7c4dff"
         self.current_fill_color = ""
+        self.current_fill_opacity = 0  # 0 = no fill by default (matches "なし" in tool options)
         self.current_line_width = 2
         self.current_start_marker = ""
         self.current_end_marker = ""
@@ -256,6 +257,14 @@ class MainWindow(QMainWindow):
         self.tool_fill_clear_btn = QPushButton("なし")
         self.tool_fill_clear_btn.clicked.connect(self._on_tool_fill_color_cleared)
         fill_layout.addWidget(self.tool_fill_clear_btn)
+        fill_layout.addWidget(QLabel("不透明度:"))
+        self.tool_fill_opacity_spin = QSpinBox()
+        self.tool_fill_opacity_spin.setRange(0, 100)
+        self.tool_fill_opacity_spin.setValue(0)
+        self.tool_fill_opacity_spin.setSuffix("%")
+        self.tool_fill_opacity_spin.setFixedWidth(65)
+        self.tool_fill_opacity_spin.valueChanged.connect(self._on_tool_fill_opacity_changed)
+        fill_layout.addWidget(self.tool_fill_opacity_spin)
         shape_layout.addWidget(self.tool_fill_container)
 
         # Radius input for calibrated circle tool
@@ -379,13 +388,24 @@ class MainWindow(QMainWindow):
         color = QColorDialog.getColor(initial)
         if color.isValid():
             self.current_fill_color = color.name()
+            # fill_opacityが0のままだと色を設定しても見えないため初期値を設定
+            if self.tool_fill_opacity_spin.value() == 0:
+                self.tool_fill_opacity_spin.setValue(30)
+                self.current_fill_opacity = 30
+            else:
+                self.current_fill_opacity = self.tool_fill_opacity_spin.value()
             self.tool_fill_color_preview.setStyleSheet(f"background-color: {self.current_fill_color}; border-radius: 4px;")
             self._update_canvas_shape_defaults()
 
     def _on_tool_fill_color_cleared(self):
         self.current_fill_color = ""
+        self.current_fill_opacity = 0
+        self.tool_fill_opacity_spin.setValue(0)
         self.tool_fill_color_preview.setStyleSheet("background-color: transparent; border: 1px solid #888; border-radius: 4px;")
         self._update_canvas_shape_defaults()
+
+    def _on_tool_fill_opacity_changed(self, value):
+        self.current_fill_opacity = value
 
     def _update_canvas_shape_defaults(self):
         self.canvas.set_shape_defaults(self.current_shape_color, self.current_line_width, self.current_fill_color)
@@ -483,6 +503,7 @@ class MainWindow(QMainWindow):
         ann.color = self.current_shape_color
         ann.line_width = self.current_line_width
         ann.fill_color = self.current_fill_color
+        ann.fill_opacity = self.current_fill_opacity
         self.canvas.add_polygon_annotation(points, text="", color=ann.color, item_id=ann.id,
                                            font_family=ann.font_family, font_size=ann.font_size,
                                            line_width=ann.line_width, stroke_opacity=ann.stroke_opacity,
@@ -510,6 +531,7 @@ class MainWindow(QMainWindow):
         ann.color = self.current_shape_color
         ann.line_width = self.current_line_width
         ann.fill_color = self.current_fill_color
+        ann.fill_opacity = self.current_fill_opacity
         ann.radius_px = radius_px
         ann.center_marker = self.current_center_marker
         self.canvas.add_circle_annotation(center, radius_px, text="", color=ann.color, item_id=ann.id,
