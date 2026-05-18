@@ -716,7 +716,10 @@ class MainWindow(QMainWindow):
             def to_pdf_pt(qp):
                 return fitz.Point(qp.x() * dpi_factor, qp.y() * dpi_factor)
 
-            marker_size = 10 * dpi_factor  # 10 canvas-px -> PDF points
+            # Arrow/circle markers must be bigger than the line width so they
+            # are not swallowed by the stroke.  Scale with line_width but keep
+            # a sensible minimum of 10 canvas-px expressed in PDF points.
+            marker_size = max(ann.line_width * 3, 10 * dpi_factor)
 
             def _pdf_endpoint_marker(pg, pt, neighbor, marker_type):
                 """Draw start/end marker at pt, pointing away from neighbor."""
