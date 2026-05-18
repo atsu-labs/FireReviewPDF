@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (QMainWindow, QFileDialog,
                              QInputDialog, QMessageBox, QPushButton, 
                              QFrame, QSpacerItem, QSizePolicy, QFontComboBox, QSpinBox, QDoubleSpinBox, QColorDialog, QCheckBox, QComboBox)
 from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QAction, QFont
+from PySide6.QtGui import QAction, QColor, QFont
 import qtawesome as qta
 
 from .services.pdf_exporter import export_pdf_document

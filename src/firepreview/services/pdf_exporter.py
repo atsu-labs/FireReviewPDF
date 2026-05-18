@@ -6,9 +6,10 @@ from PySide6.QtGui import QColor
 
 def export_pdf_document(model, output_path: str) -> None:
     dpi_factor = 72.0 / 150.0
-    export_doc = fitz.open(model.pdf_path)
+    export_doc = None
 
     try:
+        export_doc = fitz.open(model.pdf_path)
         for ann in model.annotations:
             if ann.page_num >= len(export_doc):
                 continue
@@ -218,4 +219,5 @@ def export_pdf_document(model, output_path: str) -> None:
 
         export_doc.save(output_path)
     finally:
-        export_doc.close()
+        if export_doc is not None:
+            export_doc.close()
