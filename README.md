@@ -32,11 +32,11 @@
 
 ### 必要環境
 - Python 3.10以上
-- 依存ライブラリ: `PySide6`, `PyMuPDF` (fitz)
+- 依存ライブラリ: `PySide6`, `PyMuPDF` (fitz), `qtawesome`
 
 ### インストール
 ```powershell
-pip install PySide6 pymupdf
+pip install PySide6 pymupdf qtawesome
 ```
 
 ### 実行
