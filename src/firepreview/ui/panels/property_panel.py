@@ -56,7 +56,7 @@ class PropertyPanel(QWidget):
         app_layout.setContentsMargins(0, 0, 0, 0)
         app_layout.addWidget(self._create_section_label("外観"))
         
-        app_layout.addWidget(QLabel("不透明度"))
+        app_layout.addWidget(QLabel("線の不透明度"))
         opacity_layout = QHBoxLayout()
         self.opacity_slider = QSlider(Qt.Horizontal)
         self.opacity_slider.setRange(0, 100)
@@ -108,6 +108,18 @@ class PropertyPanel(QWidget):
         self.fill_clear_btn.clicked.connect(self._on_fill_color_cleared)
         fill_color_layout.addWidget(self.fill_clear_btn)
         fill_layout.addLayout(fill_color_layout)
+
+        fill_layout.addWidget(QLabel("塗りの不透明度"))
+        fill_opacity_layout = QHBoxLayout()
+        self.fill_opacity_slider = QSlider(Qt.Horizontal)
+        self.fill_opacity_slider.setRange(0, 100)
+        self.fill_opacity_slider.setValue(30)
+        self.fill_opacity_slider.valueChanged.connect(self._on_fill_opacity_changed)
+        fill_opacity_layout.addWidget(self.fill_opacity_slider)
+        self.fill_opacity_label = QLabel("30%")
+        fill_opacity_layout.addWidget(self.fill_opacity_label)
+        fill_layout.addLayout(fill_opacity_layout)
+
         self.main_layout.addWidget(self.fill_container)
 
         # --- Marker Section ---
@@ -211,7 +223,7 @@ class PropertyPanel(QWidget):
         lbl.setStyleSheet("color: #888899; font-size: 11px; font-weight: bold; margin-top: 5px;")
         return lbl
 
-    def set_item_data(self, item_id, item_type, text, color_hex, font_family="Arial", font_size=12, line_width=2, opacity=100, fill_color="", center_marker="", start_marker="", end_marker=""):
+    def set_item_data(self, item_id, item_type, text, color_hex, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, fill_opacity=30, fill_color="", center_marker="", start_marker="", end_marker=""):
         self._block_signals = True
         self.current_item_id = item_id
         self.current_item_type = item_type
@@ -247,17 +259,24 @@ class PropertyPanel(QWidget):
         self.font_size_spin.setValue(font_size)
         self.line_width_spin.setValue(line_width)
         
-        self.opacity_slider.setValue(opacity)
-        self.opacity_label.setText(f"{opacity}%")
+        self.opacity_slider.setValue(stroke_opacity)
+        self.opacity_label.setText(f"{stroke_opacity}%")
         
         # Fill color
         self.current_fill_color = fill_color
         if fill_color:
             self.fill_color_preview.setStyleSheet(f"background-color: {fill_color}; border-radius: 4px;")
             self.fill_color_hex_label.setText(fill_color.upper())
+        elif fill_opacity > 0:
+            # fill_color="" + fill_opacity>0 → 線色から派生した塗り
+            self.fill_color_preview.setStyleSheet(f"background-color: {color_hex}; border-radius: 4px; border: 2px dashed #888899;")
+            self.fill_color_hex_label.setText("線と同色")
         else:
             self.fill_color_preview.setStyleSheet("background-color: transparent; border: 1px solid #3d3d5c; border-radius: 4px;")
             self.fill_color_hex_label.setText("なし")
+
+        self.fill_opacity_slider.setValue(fill_opacity)
+        self.fill_opacity_label.setText(f"{fill_opacity}%")
 
         # Markers
         sm_idx = self._start_marker_values.index(start_marker) if start_marker in self._start_marker_values else 0
@@ -302,7 +321,12 @@ class PropertyPanel(QWidget):
     def _on_opacity_changed(self, opacity):
         self.opacity_label.setText(f"{opacity}%")
         if not self._block_signals and self.current_item_id:
-            self.attribute_changed.emit(self.current_item_id, {"opacity": opacity})
+            self.attribute_changed.emit(self.current_item_id, {"stroke_opacity": opacity})
+
+    def _on_fill_opacity_changed(self, opacity):
+        self.fill_opacity_label.setText(f"{opacity}%")
+        if not self._block_signals and self.current_item_id:
+            self.attribute_changed.emit(self.current_item_id, {"fill_opacity": opacity})
 
     def _on_color_clicked(self):
         if not self.current_item_id: return
@@ -323,14 +347,22 @@ class PropertyPanel(QWidget):
             self.fill_color_preview.setStyleSheet(f"background-color: {hex_color}; border-radius: 4px;")
             self.fill_color_hex_label.setText(hex_color.upper())
             self.current_fill_color = hex_color
-            self.attribute_changed.emit(self.current_item_id, {"fill_color": hex_color})
+            attrs = {"fill_color": hex_color}
+            if self.fill_opacity_slider.value() == 0:
+                self.fill_opacity_slider.setValue(30)
+                attrs["fill_opacity"] = 30
+            self.attribute_changed.emit(self.current_item_id, attrs)
 
     def _on_fill_color_cleared(self):
         if not self.current_item_id: return
         self.current_fill_color = ""
         self.fill_color_preview.setStyleSheet("background-color: transparent; border: 1px solid #3d3d5c; border-radius: 4px;")
         self.fill_color_hex_label.setText("なし")
-        self.attribute_changed.emit(self.current_item_id, {"fill_color": ""})
+        self._block_signals = True
+        self.fill_opacity_slider.setValue(0)
+        self.fill_opacity_label.setText("0%")
+        self._block_signals = False
+        self.attribute_changed.emit(self.current_item_id, {"fill_color": "", "fill_opacity": 0})
 
     def _on_start_marker_changed(self, index):
         if not self._block_signals and self.current_item_id:

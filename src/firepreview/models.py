@@ -61,7 +61,8 @@ class Annotation:
         self.font_family = "Arial"
         self.font_size = 12
         self.line_width = 2
-        self.opacity = 100
+        self.stroke_opacity = 100
+        self.fill_opacity = 30
         self.real_value = 0.0
         self.radius_px = 0.0  # For circle: radius in pixels (stored when uncalibrated)
         self.center_marker = ""  # For circles: "", "circle", "cross", "x"
@@ -87,7 +88,8 @@ class Annotation:
             "font_family": self.font_family,
             "font_size": self.font_size,
             "line_width": self.line_width,
-            "opacity": self.opacity,
+            "stroke_opacity": self.stroke_opacity,
+            "fill_opacity": self.fill_opacity,
             "real_value": self.real_value,
             "radius_px": self.radius_px,
             "center_marker": self.center_marker,
@@ -108,7 +110,9 @@ class Annotation:
         ann.font_family = data.get("font_family", "Arial")
         ann.font_size = data.get("font_size", 12)
         ann.line_width = data.get("line_width", 2)
-        ann.opacity = data.get("opacity", 100)
+        _legacy_opacity = data.get("opacity", 100)  # backward compat
+        ann.stroke_opacity = data.get("stroke_opacity", _legacy_opacity)
+        ann.fill_opacity = data.get("fill_opacity", 30)
         ann.real_value = data.get("real_value", 0.0)
         ann.radius_px = data.get("radius_px", 0.0)
         ann.center_marker = data.get("center_marker", "")

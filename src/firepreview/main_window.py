@@ -33,7 +33,8 @@ class MainWindow(QMainWindow):
 
         # Shape tool defaults
         self.current_shape_color = "#7c4dff"
-        self.current_fill_color = ""
+        self.current_fill_color = "#7c4dff"  # デフォルトは線と同色
+        self.current_fill_opacity = 30  # デフォルトは線と同じ色・30%
         self.current_line_width = 2
         self.current_start_marker = ""
         self.current_end_marker = ""
@@ -248,7 +249,7 @@ class MainWindow(QMainWindow):
         fill_layout.addWidget(QLabel("塗りの色:"))
         self.tool_fill_color_preview = QFrame()
         self.tool_fill_color_preview.setFixedSize(20, 20)
-        self.tool_fill_color_preview.setStyleSheet("background-color: transparent; border: 1px solid #888; border-radius: 4px;")
+        self.tool_fill_color_preview.setStyleSheet(f"background-color: {self.current_fill_color}; border: 1px solid #888; border-radius: 4px;")
         fill_layout.addWidget(self.tool_fill_color_preview)
         self.tool_fill_color_btn = QPushButton("変更")
         self.tool_fill_color_btn.clicked.connect(self._on_tool_fill_color_clicked)
@@ -256,6 +257,14 @@ class MainWindow(QMainWindow):
         self.tool_fill_clear_btn = QPushButton("なし")
         self.tool_fill_clear_btn.clicked.connect(self._on_tool_fill_color_cleared)
         fill_layout.addWidget(self.tool_fill_clear_btn)
+        fill_layout.addWidget(QLabel("不透明度:"))
+        self.tool_fill_opacity_spin = QSpinBox()
+        self.tool_fill_opacity_spin.setRange(0, 100)
+        self.tool_fill_opacity_spin.setValue(30)
+        self.tool_fill_opacity_spin.setSuffix("%")
+        self.tool_fill_opacity_spin.setFixedWidth(65)
+        self.tool_fill_opacity_spin.valueChanged.connect(self._on_tool_fill_opacity_changed)
+        fill_layout.addWidget(self.tool_fill_opacity_spin)
         shape_layout.addWidget(self.tool_fill_container)
 
         # Radius input for calibrated circle tool
@@ -372,20 +381,40 @@ class MainWindow(QMainWindow):
         if color.isValid():
             self.current_shape_color = color.name()
             self.tool_shape_color_preview.setStyleSheet(f"background-color: {self.current_shape_color}; border-radius: 4px;")
+            self._update_fill_preview()  # 塗りが「線と同色」のときプレビューも追従
             self._update_canvas_shape_defaults()
 
     def _on_tool_fill_color_clicked(self):
-        initial = QColor(self.current_fill_color) if self.current_fill_color else QColor("#7c4dff")
+        initial = QColor(self.current_fill_color) if self.current_fill_color else QColor(self.current_shape_color)
         color = QColorDialog.getColor(initial)
         if color.isValid():
             self.current_fill_color = color.name()
-            self.tool_fill_color_preview.setStyleSheet(f"background-color: {self.current_fill_color}; border-radius: 4px;")
+            if self.tool_fill_opacity_spin.value() == 0:
+                self.tool_fill_opacity_spin.setValue(30)
+                self.current_fill_opacity = 30
+            else:
+                self.current_fill_opacity = self.tool_fill_opacity_spin.value()
+            self._update_fill_preview()
             self._update_canvas_shape_defaults()
 
     def _on_tool_fill_color_cleared(self):
         self.current_fill_color = ""
-        self.tool_fill_color_preview.setStyleSheet("background-color: transparent; border: 1px solid #888; border-radius: 4px;")
+        self.current_fill_opacity = 0
+        self.tool_fill_opacity_spin.setValue(0)
+        self._update_fill_preview()
         self._update_canvas_shape_defaults()
+
+    def _on_tool_fill_opacity_changed(self, value):
+        self.current_fill_opacity = value
+        self._update_fill_preview()
+
+    def _update_fill_preview(self):
+        if self.current_fill_color:
+            self.tool_fill_color_preview.setStyleSheet(f"background-color: {self.current_fill_color}; border: 1px solid #888; border-radius: 4px;")
+        elif self.current_fill_opacity > 0:
+            self.tool_fill_color_preview.setStyleSheet(f"background-color: {self.current_shape_color}; border: 2px dashed #888; border-radius: 4px;")
+        else:
+            self.tool_fill_color_preview.setStyleSheet("background-color: transparent; border: 1px solid #888; border-radius: 4px;")
 
     def _update_canvas_shape_defaults(self):
         self.canvas.set_shape_defaults(self.current_shape_color, self.current_line_width, self.current_fill_color)
@@ -479,14 +508,15 @@ class MainWindow(QMainWindow):
         self.canvas.add_line_annotation(p1, p2, text=text, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size)
 
     def on_polygon_complete(self, points):
-        # No automatic calculation; user clicks 計算 button in properties to compute
         ann = self._add_to_model("polygon", points, real_value=0.0, text="")
         ann.color = self.current_shape_color
         ann.line_width = self.current_line_width
         ann.fill_color = self.current_fill_color
+        ann.fill_opacity = self.current_fill_opacity
         self.canvas.add_polygon_annotation(points, text="", color=ann.color, item_id=ann.id,
                                            font_family=ann.font_family, font_size=ann.font_size,
-                                           line_width=ann.line_width, fill_color=ann.fill_color)
+                                           line_width=ann.line_width, stroke_opacity=ann.stroke_opacity,
+                                           fill_opacity=ann.fill_opacity, fill_color=ann.fill_color)
 
     def on_polyline_complete(self, points):
         ann = self._add_to_model("polyline", points, real_value=0.0, text="")
@@ -510,11 +540,13 @@ class MainWindow(QMainWindow):
         ann.color = self.current_shape_color
         ann.line_width = self.current_line_width
         ann.fill_color = self.current_fill_color
+        ann.fill_opacity = self.current_fill_opacity
         ann.radius_px = radius_px
         ann.center_marker = self.current_center_marker
         self.canvas.add_circle_annotation(center, radius_px, text="", color=ann.color, item_id=ann.id,
                                           font_family=ann.font_family, font_size=ann.font_size,
-                                          line_width=ann.line_width, fill_color=ann.fill_color,
+                                          line_width=ann.line_width, stroke_opacity=ann.stroke_opacity,
+                                          fill_opacity=ann.fill_opacity, fill_color=ann.fill_color,
                                           center_marker=ann.center_marker)
 
     def on_point_selected(self, pos):
@@ -556,8 +588,9 @@ class MainWindow(QMainWindow):
                 # Refresh selection in property panel
                 self.prop_panel.set_item_data(ann.id, ann.type, ann.text, ann.color,
                                               ann.font_family, ann.font_size, ann.line_width,
-                                              ann.opacity, ann.fill_color,
-                                              ann.center_marker, ann.start_marker, ann.end_marker)
+                                              stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity,
+                                              fill_color=ann.fill_color,
+                                              center_marker=ann.center_marker, start_marker=ann.start_marker, end_marker=ann.end_marker)
                 break
 
     def on_request_tool_change(self, mode):
@@ -606,8 +639,9 @@ class MainWindow(QMainWindow):
             if ann.id == item_id:
                 self.prop_panel.set_item_data(ann.id, ann.type, ann.text, ann.color,
                                               ann.font_family, ann.font_size, ann.line_width,
-                                              ann.opacity, ann.fill_color,
-                                              ann.center_marker, ann.start_marker, ann.end_marker)
+                                              stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity,
+                                              fill_color=ann.fill_color,
+                                              center_marker=ann.center_marker, start_marker=ann.start_marker, end_marker=ann.end_marker)
                 break
 
     def on_selection_cleared(self):
@@ -622,7 +656,8 @@ class MainWindow(QMainWindow):
                 if "font_family" in attrs: ann.font_family = attrs["font_family"]
                 if "font_size" in attrs: ann.font_size = attrs["font_size"]
                 if "line_width" in attrs: ann.line_width = attrs["line_width"]
-                if "opacity" in attrs: ann.opacity = attrs["opacity"]
+                if "stroke_opacity" in attrs: ann.stroke_opacity = attrs["stroke_opacity"]
+                if "fill_opacity" in attrs: ann.fill_opacity = attrs["fill_opacity"]
                 if "center_marker" in attrs: ann.center_marker = attrs["center_marker"]
                 if "start_marker" in attrs: ann.start_marker = attrs["start_marker"]
                 if "end_marker" in attrs: ann.end_marker = attrs["end_marker"]
@@ -714,11 +749,11 @@ class MainWindow(QMainWindow):
             for ann in self.model.annotations:
                 if ann.page_num == self.current_page:
                     if ann.type == "line":
-                        self.canvas.add_line_annotation(ann.points[0], ann.points[1], text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, opacity=ann.opacity)
+                        self.canvas.add_line_annotation(ann.points[0], ann.points[1], text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity)
                     elif ann.type == "polyline":
-                        self.canvas.add_polyline_annotation(ann.points, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, opacity=ann.opacity, start_marker=ann.start_marker, end_marker=ann.end_marker)
+                        self.canvas.add_polyline_annotation(ann.points, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity, start_marker=ann.start_marker, end_marker=ann.end_marker)
                     elif ann.type == "polygon":
-                        self.canvas.add_polygon_annotation(ann.points, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, opacity=ann.opacity, fill_color=ann.fill_color)
+                        self.canvas.add_polygon_annotation(ann.points, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity, fill_color=ann.fill_color)
                     elif ann.type == "circle":
                         if ann.radius_px > 0:
                             radius_px = ann.radius_px
@@ -726,9 +761,9 @@ class MainWindow(QMainWindow):
                             radius_px = ann.real_value / self.model.scale_factor
                         else:
                             radius_px = 0
-                        self.canvas.add_circle_annotation(ann.points[0], radius_px, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, opacity=ann.opacity, fill_color=ann.fill_color, center_marker=ann.center_marker)
+                        self.canvas.add_circle_annotation(ann.points[0], radius_px, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity, fill_color=ann.fill_color, center_marker=ann.center_marker)
                     elif ann.type == "text":
-                        self.canvas.add_text_annotation(ann.points[0], ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, opacity=ann.opacity)
+                        self.canvas.add_text_annotation(ann.points[0], ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, stroke_opacity=ann.stroke_opacity)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_O and event.modifiers() & Qt.ControlModifier:
