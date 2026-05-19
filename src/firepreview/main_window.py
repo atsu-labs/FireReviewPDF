@@ -34,7 +34,7 @@ class MainWindow(QMainWindow):
         # Shape tool defaults
         self.current_shape_color = "#7c4dff"
         self.current_fill_color = ""
-        self.current_fill_opacity = 0  # 0 = no fill by default (matches "なし" in tool options)
+        self.current_fill_opacity = 30  # 30 = 線と同色・半透明がデフォルト
         self.current_line_width = 2
         self.current_start_marker = ""
         self.current_end_marker = ""
@@ -249,7 +249,7 @@ class MainWindow(QMainWindow):
         fill_layout.addWidget(QLabel("塗りの色:"))
         self.tool_fill_color_preview = QFrame()
         self.tool_fill_color_preview.setFixedSize(20, 20)
-        self.tool_fill_color_preview.setStyleSheet("background-color: transparent; border: 1px solid #888; border-radius: 4px;")
+        self.tool_fill_color_preview.setStyleSheet(f"background-color: {self.current_shape_color}; border: 2px dashed #888; border-radius: 4px;")
         fill_layout.addWidget(self.tool_fill_color_preview)
         self.tool_fill_color_btn = QPushButton("変更")
         self.tool_fill_color_btn.clicked.connect(self._on_tool_fill_color_clicked)
@@ -260,7 +260,7 @@ class MainWindow(QMainWindow):
         fill_layout.addWidget(QLabel("不透明度:"))
         self.tool_fill_opacity_spin = QSpinBox()
         self.tool_fill_opacity_spin.setRange(0, 100)
-        self.tool_fill_opacity_spin.setValue(0)
+        self.tool_fill_opacity_spin.setValue(30)
         self.tool_fill_opacity_spin.setSuffix("%")
         self.tool_fill_opacity_spin.setFixedWidth(65)
         self.tool_fill_opacity_spin.valueChanged.connect(self._on_tool_fill_opacity_changed)
@@ -381,31 +381,40 @@ class MainWindow(QMainWindow):
         if color.isValid():
             self.current_shape_color = color.name()
             self.tool_shape_color_preview.setStyleSheet(f"background-color: {self.current_shape_color}; border-radius: 4px;")
+            self._update_fill_preview()  # 塗りが「線と同色」のときプレビューも追従
             self._update_canvas_shape_defaults()
 
     def _on_tool_fill_color_clicked(self):
-        initial = QColor(self.current_fill_color) if self.current_fill_color else QColor("#7c4dff")
+        initial = QColor(self.current_fill_color) if self.current_fill_color else QColor(self.current_shape_color)
         color = QColorDialog.getColor(initial)
         if color.isValid():
             self.current_fill_color = color.name()
-            # fill_opacityが0のままだと色を設定しても見えないため初期値を設定
             if self.tool_fill_opacity_spin.value() == 0:
                 self.tool_fill_opacity_spin.setValue(30)
                 self.current_fill_opacity = 30
             else:
                 self.current_fill_opacity = self.tool_fill_opacity_spin.value()
-            self.tool_fill_color_preview.setStyleSheet(f"background-color: {self.current_fill_color}; border-radius: 4px;")
+            self._update_fill_preview()
             self._update_canvas_shape_defaults()
 
     def _on_tool_fill_color_cleared(self):
         self.current_fill_color = ""
         self.current_fill_opacity = 0
         self.tool_fill_opacity_spin.setValue(0)
-        self.tool_fill_color_preview.setStyleSheet("background-color: transparent; border: 1px solid #888; border-radius: 4px;")
+        self._update_fill_preview()
         self._update_canvas_shape_defaults()
 
     def _on_tool_fill_opacity_changed(self, value):
         self.current_fill_opacity = value
+        self._update_fill_preview()
+
+    def _update_fill_preview(self):
+        if self.current_fill_color:
+            self.tool_fill_color_preview.setStyleSheet(f"background-color: {self.current_fill_color}; border: 1px solid #888; border-radius: 4px;")
+        elif self.current_fill_opacity > 0:
+            self.tool_fill_color_preview.setStyleSheet(f"background-color: {self.current_shape_color}; border: 2px dashed #888; border-radius: 4px;")
+        else:
+            self.tool_fill_color_preview.setStyleSheet("background-color: transparent; border: 1px solid #888; border-radius: 4px;")
 
     def _update_canvas_shape_defaults(self):
         self.canvas.set_shape_defaults(self.current_shape_color, self.current_line_width, self.current_fill_color)
