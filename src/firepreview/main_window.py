@@ -3,7 +3,8 @@ import math
 from PySide6.QtWidgets import (QMainWindow, QFileDialog, 
                              QLabel, QHBoxLayout, QWidget, QVBoxLayout, 
                              QInputDialog, QMessageBox, QPushButton, 
-                             QFrame, QSpacerItem, QSizePolicy, QFontComboBox, QSpinBox, QDoubleSpinBox, QColorDialog, QCheckBox, QComboBox)
+                             QFrame, QSpacerItem, QSizePolicy, QFontComboBox, QSpinBox, QDoubleSpinBox, QColorDialog, QCheckBox, QComboBox,
+                             QDialog, QRadioButton, QButtonGroup, QDialogButtonBox, QMenu)
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QAction, QColor, QFont
 import qtawesome as qta
@@ -163,11 +164,12 @@ class MainWindow(QMainWindow):
 
         btn_share = QPushButton()
         btn_share.setIcon(qta.icon('fa5s.share-square', color='white'))
-        btn_settings = QPushButton()
-        btn_settings.setIcon(qta.icon('fa5s.cog', color='white'))
+        self.btn_settings = QPushButton()
+        self.btn_settings.setIcon(qta.icon('fa5s.cog', color='white'))
+        self.btn_settings.clicked.connect(self._on_settings_clicked)
         user_info = QLabel(" 👤 ユーザー名")
         h_layout.addWidget(btn_share)
-        h_layout.addWidget(btn_settings)
+        h_layout.addWidget(self.btn_settings)
         h_layout.addWidget(user_info)
 
         self.main_layout.addWidget(header)
@@ -273,9 +275,16 @@ class MainWindow(QMainWindow):
         radius_layout.setContentsMargins(0, 0, 0, 0)
         radius_layout.addWidget(QLabel("半径:"))
         self.tool_radius_spin = QDoubleSpinBox()
-        self.tool_radius_spin.setRange(0.1, 1000000)
-        self.tool_radius_spin.setValue(15000)
-        self.tool_radius_spin.setSuffix(" mm")
+        if self.model.unit == 'm':
+            self.tool_radius_spin.setRange(0.001, 1000)
+            self.tool_radius_spin.setDecimals(3)
+            self.tool_radius_spin.setValue(15.0)
+            self.tool_radius_spin.setSuffix(" m")
+        else:
+            self.tool_radius_spin.setRange(0.1, 1000000)
+            self.tool_radius_spin.setDecimals(1)
+            self.tool_radius_spin.setValue(15000.0)
+            self.tool_radius_spin.setSuffix(" mm")
         radius_layout.addWidget(self.tool_radius_spin)
         shape_layout.addWidget(self.tool_radius_container)
 
@@ -431,6 +440,95 @@ class MainWindow(QMainWindow):
             self.current_text_color = color.name()
             self.tool_color_preview.setStyleSheet(f"background-color: {self.current_text_color}; border-radius: 4px;")
 
+    # --- 単位フォーマットヘルパー ---
+    def _format_distance(self, value_mm):
+        if self.model.unit == 'm':
+            return f"{value_mm / 1000:.3f} m"
+        return f"{value_mm:.1f} mm"
+
+    def _format_area(self, value_mm2):
+        if self.model.unit == 'm':
+            return f"{value_mm2 / 1_000_000:.2f} m²"
+        return f"{value_mm2:.1f} mm²"
+
+    def _format_radius(self, value_mm):
+        if self.model.unit == 'm':
+            return f"R={value_mm / 1000:.3f} m"
+        return f"R={value_mm:.1f} mm"
+
+    # --- 単位設定UI ---
+    def _on_settings_clicked(self):
+        menu = QMenu(self)
+        unit_action = menu.addAction("単位設定")
+        unit_action.triggered.connect(self._open_unit_dialog)
+        menu.exec(self.btn_settings.mapToGlobal(self.btn_settings.rect().bottomLeft()))
+
+    def _open_unit_dialog(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("単位設定")
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(10)
+        layout.addWidget(QLabel("表示単位を選択してください:"))
+
+        btn_group = QButtonGroup(dialog)
+        rb_m = QRadioButton("m（メートル）")
+        rb_mm = QRadioButton("mm（ミリメートル）")
+        btn_group.addButton(rb_m)
+        btn_group.addButton(rb_mm)
+        if self.model.unit == 'm':
+            rb_m.setChecked(True)
+        else:
+            rb_mm.setChecked(True)
+        layout.addWidget(rb_m)
+        layout.addWidget(rb_mm)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() == QDialog.Accepted:
+            new_unit = 'm' if rb_m.isChecked() else 'mm'
+            if new_unit != self.model.unit:
+                self._apply_unit_change(new_unit)
+
+    def _apply_unit_change(self, new_unit):
+        old_unit = self.model.unit
+        self.model.unit = new_unit
+
+        # 半径スピナーの値を単位変換して更新
+        current_val = self.tool_radius_spin.value()
+        if old_unit == 'mm' and new_unit == 'm':
+            new_radius_val = current_val / 1000.0
+        elif old_unit == 'm' and new_unit == 'mm':
+            new_radius_val = current_val * 1000.0
+        else:
+            new_radius_val = current_val
+
+        if new_unit == 'm':
+            self.tool_radius_spin.setRange(0.001, 1000)
+            self.tool_radius_spin.setDecimals(3)
+            self.tool_radius_spin.setSuffix(" m")
+            self.tool_radius_spin.setValue(new_radius_val)
+        else:
+            self.tool_radius_spin.setRange(0.1, 1000000)
+            self.tool_radius_spin.setDecimals(1)
+            self.tool_radius_spin.setSuffix(" mm")
+            self.tool_radius_spin.setValue(new_radius_val)
+
+        # 計算済みアノテーションのテキストを再フォーマット
+        for ann in self.model.annotations:
+            if ann.real_value > 0:
+                if ann.type in ("line", "polyline"):
+                    ann.text = self._format_distance(ann.real_value)
+                    self.canvas.update_item_properties(ann.id, {"text": ann.text})
+                elif ann.type == "polygon":
+                    ann.text = self._format_area(ann.real_value)
+                    self.canvas.update_item_properties(ann.id, {"text": ann.text})
+                elif ann.type == "circle" and ann.text != "R=15m":
+                    ann.text = self._format_radius(ann.real_value)
+                    self.canvas.update_item_properties(ann.id, {"text": ann.text})
+
     def _setup_status_bar(self):
         status = QFrame()
         status.setFixedHeight(25)
@@ -496,14 +594,22 @@ class MainWindow(QMainWindow):
 
     # --- (Delegated Methods from original main.py) ---
     def on_calibration_selected(self, p1, p2):
-        dist_mm, ok = QInputDialog.getDouble(self, "キャリブレーション", "実寸法を入力してください (mm):", 1000, 0, 1000000, 1)
+        unit = self.model.unit
+        if unit == 'm':
+            label = "実寸法を入力してください (m):"
+            default_val, max_val, decimals = 1.0, 1000.0, 3
+        else:
+            label = "実寸法を入力してください (mm):"
+            default_val, max_val, decimals = 1000.0, 1000000.0, 1
+        dist_val, ok = QInputDialog.getDouble(self, "キャリブレーション", label, default_val, 0, max_val, decimals)
         if ok:
+            dist_mm = dist_val * 1000 if unit == 'm' else dist_val
             if self.model.set_calibration(p1, p2, dist_mm):
                 QMessageBox.information(self, "完了", "キャリブレーションが完了しました。")
 
     def on_measurement_complete(self, p1, p2):
         dist_mm = self.model.calculate_real_distance(p1, p2)
-        text = f"{dist_mm:.1f} mm"
+        text = self._format_distance(dist_mm)
         ann = self._add_to_model("line", [p1, p2], dist_mm, text=text)
         self.canvas.add_line_annotation(p1, p2, text=text, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size)
 
@@ -534,7 +640,10 @@ class MainWindow(QMainWindow):
         import math
         # If radius is ~0 (click without drag) and calibrated, use radius from tool options
         if radius_px < 3 and self.model.is_calibrated:
-            radius_mm = self.tool_radius_spin.value()
+            if self.model.unit == 'm':
+                radius_mm = self.tool_radius_spin.value() * 1000
+            else:
+                radius_mm = self.tool_radius_spin.value()
             radius_px = radius_mm / self.model.scale_factor
         ann = self._add_to_model("circle", [center], real_value=0.0, text="")
         ann.color = self.current_shape_color
@@ -573,17 +682,16 @@ class MainWindow(QMainWindow):
                         for i in range(len(ann.points) - 1)
                     )
                     ann.real_value = total
-                    ann.text = f"{total:.1f} mm"
+                    ann.text = self._format_distance(total)
                 elif ann.type == "polygon" and len(ann.points) >= 3:
                     area_mm2 = self.model.calculate_real_area(ann.points)
-                    area_m2 = area_mm2 / 1_000_000.0
                     ann.real_value = area_mm2
-                    ann.text = f"{area_m2:.2f} m²"
+                    ann.text = self._format_area(area_mm2)
                 elif ann.type == "circle":
                     radius_px = ann.radius_px if ann.radius_px > 0 else (ann.real_value / self.model.scale_factor if ann.real_value > 0 else 0)
                     radius_mm = radius_px * self.model.scale_factor
                     ann.real_value = radius_mm
-                    ann.text = f"R={radius_mm:.1f} mm"
+                    ann.text = self._format_radius(radius_mm)
                 self.canvas.update_item_properties(item_id, {"text": ann.text})
                 # Refresh selection in property panel
                 self.prop_panel.set_item_data(ann.id, ann.type, ann.text, ann.color,

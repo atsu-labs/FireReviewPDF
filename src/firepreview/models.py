@@ -7,6 +7,7 @@ class DrawingModel:
         self.is_calibrated = False
         self.annotations = [] # List of annotation objects
         self.pdf_path = ""
+        self.unit = 'm'  # 表示単位: 'm' または 'mm'
 
     def set_calibration(self, p1, p2, real_distance_mm):
         pixel_dist = math.sqrt((p2.x() - p1.x())**2 + (p2.y() - p1.y())**2)
@@ -37,6 +38,7 @@ class DrawingModel:
             "scale_factor": self.scale_factor,
             "is_calibrated": self.is_calibrated,
             "pdf_path": self.pdf_path,
+            "unit": self.unit,
             "annotations": [a.to_dict() for a in self.annotations]
         }
 
@@ -46,6 +48,7 @@ class DrawingModel:
         model.scale_factor = data.get("scale_factor", 1.0)
         model.is_calibrated = data.get("is_calibrated", False)
         model.pdf_path = data.get("pdf_path", "")
+        model.unit = data.get("unit", "m")
         for a_data in data.get("annotations", []):
             model.annotations.append(Annotation.from_dict(a_data))
         return model
