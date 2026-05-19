@@ -134,7 +134,7 @@ QSpinBox::down-button:pressed, QDoubleSpinBox::down-button:pressed {{
 }}
 
 QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{
-    image: url({up_arrow});
+    image: url("{up_arrow}");
     width: 8px;
     height: 8px;
 }}
