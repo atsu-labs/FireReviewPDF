@@ -255,7 +255,11 @@ class PDFCanvas(QGraphicsView):
                     self._finish_tool()
 
             elif self.tool_mode == ToolMode.DRAW_LINE:
-                self.temp_points.append(pos)
+                # Shiftキー押下中：前点に対して水平・垂直・45度スナップ
+                snap_pos = pos
+                if (event.modifiers() & Qt.ShiftModifier) and self.temp_points:
+                    snap_pos = self._apply_angle_snap(self.temp_points[-1], pos)
+                self.temp_points.append(snap_pos)
                 if not self.temp_poly:
                     self.temp_poly = QGraphicsPathItem()
                     pen = QPen(QColor(self.current_shape_color), self.current_shape_line_width)
@@ -265,6 +269,9 @@ class PDFCanvas(QGraphicsView):
                 self._update_temp_polyline_path()
 
             elif self.tool_mode == ToolMode.POLYGON_AREA:
+                # Shiftキー押下中：前点に対して水平・垂直・45度スナップ
+                if (event.modifiers() & Qt.ShiftModifier) and self.temp_points:
+                    pos = self._apply_angle_snap(self.temp_points[-1], pos)
                 self.temp_points.append(pos)
                 if not self.temp_poly:
                     self.temp_poly = QGraphicsPolygonItem()
@@ -307,6 +314,19 @@ class PDFCanvas(QGraphicsView):
             elif self.tool_mode == ToolMode.DRAW_LINE and len(self.temp_points) >= 2:
                 self.polyline_complete.emit(self.temp_points[:])
                 self._finish_tool(self.tool_mode if self.continuous_shape else ToolMode.SELECT)
+
+    def _apply_angle_snap(self, start: QPointF, pos: QPointF) -> QPointF:
+        """Shiftキー押下時に水平・垂直・45度スナップを適用する"""
+        dx = pos.x() - start.x()
+        dy = pos.y() - start.y()
+        distance = math.sqrt(dx * dx + dy * dy)
+        if distance < 0.001:
+            return pos
+        angle_deg = math.degrees(math.atan2(dy, dx))
+        snapped_deg = round(angle_deg / 45.0) * 45.0
+        snapped_rad = math.radians(snapped_deg)
+        return QPointF(start.x() + distance * math.cos(snapped_rad),
+                       start.y() + distance * math.sin(snapped_rad))
 
     def _update_temp_polyline_path(self, preview_end=None):
         if not self.temp_poly or not self.temp_points:
@@ -376,12 +396,20 @@ class PDFCanvas(QGraphicsView):
             return
 
         pos = self.mapToScene(event.pos())
+        shift_held = bool(event.modifiers() & Qt.ShiftModifier)
         if self.temp_line and len(self.temp_points) == 1:
-            self.temp_line.setLine(self.temp_points[0].x(), self.temp_points[0].y(), pos.x(), pos.y())
+            # Shiftキー押下中：スナップしたプレビュー表示
+            preview_pos = self._apply_angle_snap(self.temp_points[0], pos) if shift_held else pos
+            self.temp_line.setLine(self.temp_points[0].x(), self.temp_points[0].y(),
+                                   preview_pos.x(), preview_pos.y())
         elif self.temp_poly and self.tool_mode == ToolMode.DRAW_LINE and len(self.temp_points) >= 1:
-            self._update_temp_polyline_path(preview_end=pos)
+            # Shiftキー押下中：直前の点に対してスナップしたプレビュー表示
+            preview_pos = self._apply_angle_snap(self.temp_points[-1], pos) if shift_held else pos
+            self._update_temp_polyline_path(preview_end=preview_pos)
         elif self.temp_poly and self.tool_mode == ToolMode.POLYGON_AREA and len(self.temp_points) >= 1:
-            preview_points = self.temp_points + [pos]
+            # Shiftキー押下中：直前の点に対してスナップしたプレビュー表示
+            preview_pos = self._apply_angle_snap(self.temp_points[-1], pos) if shift_held else pos
+            preview_points = self.temp_points + [preview_pos]
             self.temp_poly.setPolygon(QPolygonF(preview_points))
         elif self.tool_mode == ToolMode.DRAW_CIRCLE_DRAG and self.drag_start:
             radius = math.sqrt((pos.x() - self.drag_start.x()) ** 2 + (pos.y() - self.drag_start.y()) ** 2)
