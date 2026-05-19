@@ -140,7 +140,7 @@ QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{
 }}
 
 QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
-    image: url({down_arrow});
+    image: url("{down_arrow}");
     width: 8px;
     height: 8px;
 }}
