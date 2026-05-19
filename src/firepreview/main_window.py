@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (QMainWindow, QFileDialog,
                              QLabel, QHBoxLayout, QWidget, QVBoxLayout, 
                              QInputDialog, QMessageBox, QPushButton, 
                              QFrame, QSpacerItem, QSizePolicy, QFontComboBox, QSpinBox, QDoubleSpinBox, QColorDialog, QCheckBox, QComboBox,
-                             QDialog, QRadioButton, QButtonGroup, QDialogButtonBox, QMenu)
+                             QDialog, QDialogButtonBox, QMenu)
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QAction, QColor, QFont
 import qtawesome as qta
@@ -466,29 +466,72 @@ class MainWindow(QMainWindow):
     def _open_unit_dialog(self):
         dialog = QDialog(self)
         dialog.setWindowTitle("単位設定")
+        dialog.setFixedSize(320, 220)
+        dialog.setStyleSheet("QDialog { background-color: #1e1e2e; } QLabel { color: #ffffff; border: none; }")
         layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(10)
-        layout.addWidget(QLabel("表示単位を選択してください:"))
 
-        btn_group = QButtonGroup(dialog)
-        rb_m = QRadioButton("m（メートル）")
-        rb_mm = QRadioButton("mm（ミリメートル）")
-        btn_group.addButton(rb_m)
-        btn_group.addButton(rb_mm)
-        if self.model.unit == 'm':
-            rb_m.setChecked(True)
-        else:
-            rb_mm.setChecked(True)
-        layout.addWidget(rb_m)
-        layout.addWidget(rb_mm)
+        title = QLabel("表示単位を選択してください")
+        title.setStyleSheet("font-size: 12px; color: #aaaacc; border: none;")
+        layout.addWidget(title)
+
+        selected = [self.model.unit]
+
+        def _card_style(active):
+            border = "#7c4dff" if active else "#333355"
+            bg = "#2e2e45" if active else "#1e1e2e"
+            return (f"QFrame {{ background-color: {bg}; border: 2px solid {border};"
+                    f" border-radius: 8px; }}")
+
+        def _make_card(unit_key, label, desc):
+            frame = QFrame()
+            frame.setStyleSheet(_card_style(self.model.unit == unit_key))
+            frame.setCursor(Qt.PointingHandCursor)
+            row = QHBoxLayout(frame)
+            row.setContentsMargins(14, 10, 14, 10)
+            col = QVBoxLayout()
+            lbl_main = QLabel(label)
+            lbl_main.setStyleSheet("font-size: 18px; font-weight: bold; color: #ffffff; border: none;")
+            lbl_desc = QLabel(desc)
+            lbl_desc.setStyleSheet("font-size: 11px; color: #888899; border: none;")
+            col.addWidget(lbl_main)
+            col.addWidget(lbl_desc)
+            row.addLayout(col)
+            row.addStretch()
+            check = QLabel("✓" if self.model.unit == unit_key else "")
+            check.setStyleSheet("font-size: 18px; font-weight: bold; color: #7c4dff; border: none;")
+            row.addWidget(check)
+            return frame, check
+
+        m_card, m_check = _make_card('m', 'm', 'メートル')
+        mm_card, mm_check = _make_card('mm', 'mm', 'ミリメートル')
+
+        def _select(unit_key):
+            selected[0] = unit_key
+            m_card.setStyleSheet(_card_style(unit_key == 'm'))
+            m_check.setText("✓" if unit_key == 'm' else "")
+            mm_card.setStyleSheet(_card_style(unit_key == 'mm'))
+            mm_check.setText("✓" if unit_key == 'mm' else "")
+
+        m_card.mousePressEvent = lambda e: _select('m')
+        mm_card.mousePressEvent = lambda e: _select('mm')
+
+        layout.addWidget(m_card)
+        layout.addWidget(mm_card)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.setStyleSheet(
+            "QPushButton { background-color: #2a2a3d; color: #ffffff; border: 1px solid #555566;"
+            " border-radius: 4px; padding: 5px 16px; }"
+            "QPushButton:hover { background-color: #7c4dff; border-color: #7c4dff; }"
+        )
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
 
         if dialog.exec() == QDialog.Accepted:
-            new_unit = 'm' if rb_m.isChecked() else 'mm'
+            new_unit = selected[0]
             if new_unit != self.model.unit:
                 self._apply_unit_change(new_unit)
 
