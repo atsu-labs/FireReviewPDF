@@ -33,8 +33,8 @@ class MainWindow(QMainWindow):
 
         # Shape tool defaults
         self.current_shape_color = "#7c4dff"
-        self.current_fill_color = ""
-        self.current_fill_opacity = 30  # 30 = 線と同色・半透明がデフォルト
+        self.current_fill_color = "#7c4dff"  # デフォルトは線と同色
+        self.current_fill_opacity = 30  # デフォルトは線と同じ色・30%
         self.current_line_width = 2
         self.current_start_marker = ""
         self.current_end_marker = ""
@@ -249,7 +249,7 @@ class MainWindow(QMainWindow):
         fill_layout.addWidget(QLabel("塗りの色:"))
         self.tool_fill_color_preview = QFrame()
         self.tool_fill_color_preview.setFixedSize(20, 20)
-        self.tool_fill_color_preview.setStyleSheet(f"background-color: {self.current_shape_color}; border: 2px dashed #888; border-radius: 4px;")
+        self.tool_fill_color_preview.setStyleSheet(f"background-color: {self.current_fill_color}; border: 1px solid #888; border-radius: 4px;")
         fill_layout.addWidget(self.tool_fill_color_preview)
         self.tool_fill_color_btn = QPushButton("変更")
         self.tool_fill_color_btn.clicked.connect(self._on_tool_fill_color_clicked)
