@@ -19,6 +19,9 @@ from .ui.panels.navigator_panel import NavigatorPanel
 from .ui.styles import GLOBAL_STYLE
 
 class MainWindow(QMainWindow):
+    PDF_RENDER_DPI = 150
+    SCALE_RATIO_ROUNDING_TOLERANCE = 0.05
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("FirePreview")
@@ -27,7 +30,6 @@ class MainWindow(QMainWindow):
         self.pdf_handler = PDFHandler()
         self.model = DrawingModel()
         self.current_page = 0
-        self.pdf_render_dpi = 150
         
         self.current_text_font = "Arial"
         self.current_text_size = 12
@@ -472,12 +474,12 @@ class MainWindow(QMainWindow):
         return self._is_page_calibrated(self.current_page)
 
     def _format_scale_ratio(self, scale_factor):
-        mm_per_pixel_on_pdf = 25.4 / self.pdf_render_dpi
+        mm_per_pixel_on_pdf = 25.4 / self.PDF_RENDER_DPI
         if scale_factor <= 0 or mm_per_pixel_on_pdf <= 0:
             return ""
         ratio = scale_factor / mm_per_pixel_on_pdf
         rounded = round(ratio)
-        if abs(ratio - rounded) < 0.05:
+        if abs(ratio - rounded) < self.SCALE_RATIO_ROUNDING_TOLERANCE:
             return f"1/{rounded}"
         return f"1/{ratio:.1f}"
 
