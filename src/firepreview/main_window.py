@@ -517,13 +517,13 @@ class MainWindow(QMainWindow):
         if canvas_scale <= 0:
             self.zoom_label.setText(f"{prefix}---")
             return
-        logical_dpi = self._get_logical_dpi()
-        if logical_dpi <= 0:
+        physical_dpi = self._get_physical_dpi()
+        if physical_dpi <= 0:
             self.zoom_label.setText(f"{prefix}---")
             return
-        # canvas_scale に (PDF_RENDER_DPI / logical_dpi) を掛けて、
-        # 画面論理DPI基準で「PDF原寸=100%」となる表示倍率を算出する。
-        zoom_percent = (canvas_scale * self.PDF_RENDER_DPI / logical_dpi) * 100.0
+        # canvas_scale に (PDF_RENDER_DPI / physical_dpi) を掛けて、
+        # 画面物理DPI基準で「PDF原寸=100%」となる表示倍率を算出する。
+        zoom_percent = (canvas_scale * self.PDF_RENDER_DPI / physical_dpi) * 100.0
         rounded = round(zoom_percent)
         if abs(zoom_percent - rounded) <= self.ZOOM_LABEL_ROUNDING_TOLERANCE_PP:
             text = f"{rounded}%"
@@ -531,11 +531,11 @@ class MainWindow(QMainWindow):
             text = f"{zoom_percent:.1f}%"
         self.zoom_label.setText(f"{prefix}{text}")
 
-    def _get_logical_dpi(self):
-        """現在表示中スクリーンの論理DPIを返す。
+    def _get_physical_dpi(self):
+        """現在表示中スクリーンの物理DPIを返す。
 
         Returns:
-            float: 論理DPI値。スクリーン取得失敗、DPI取得例外、
+            float: 物理DPI値。スクリーン取得失敗、DPI取得例外、
                 0以下の異常値時は PDF_BASE_DPI を返す。
         """
         screen = None
@@ -548,10 +548,10 @@ class MainWindow(QMainWindow):
                 screen = app.primaryScreen()
         base_dpi = float(self.PDF_BASE_DPI)
         try:
-            logical_dpi = screen.logicalDotsPerInch() if screen else base_dpi
+            physical_dpi = screen.physicalDotsPerInch() if screen else base_dpi
         except (AttributeError, RuntimeError, TypeError):
-            logical_dpi = base_dpi
-        return logical_dpi if logical_dpi > 0 else base_dpi
+            physical_dpi = base_dpi
+        return physical_dpi if physical_dpi > 0 else base_dpi
 
     # --- 単位設定UI ---
     def _on_settings_clicked(self):
