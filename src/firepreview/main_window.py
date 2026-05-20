@@ -535,7 +535,8 @@ class MainWindow(QMainWindow):
         """現在表示中スクリーンの論理DPIを返す。
 
         Returns:
-            float: 論理DPI値。取得失敗時は72.0を返す。
+            float: 論理DPI値。スクリーン取得失敗、DPI取得例外、
+                0以下の異常値時は72.0を返す。
         """
         screen = None
         window = self.windowHandle()
@@ -547,7 +548,7 @@ class MainWindow(QMainWindow):
                 screen = app.primaryScreen()
         base_dpi = float(self.PDF_BASE_DPI)
         try:
-            logical_dpi = screen.logicalDotsPerInch() if screen is not None else base_dpi
+            logical_dpi = screen.logicalDotsPerInch() if screen else base_dpi
         except (AttributeError, RuntimeError, TypeError):
             logical_dpi = base_dpi
         return logical_dpi if logical_dpi > 0 else base_dpi
