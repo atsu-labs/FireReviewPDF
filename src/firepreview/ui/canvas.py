@@ -176,6 +176,9 @@ class PDFCanvas(QGraphicsView):
         """現在の拡大率をベース倍率比(%)で通知する。"""
         current_zoom = self.transform().m11()
         base_zoom = self._base_zoom
+        if base_zoom <= 0:
+            self.zoom_changed.emit(0.0)
+            return
         zoom_percent = (current_zoom / base_zoom) * 100.0
         self.zoom_changed.emit(zoom_percent)
 
