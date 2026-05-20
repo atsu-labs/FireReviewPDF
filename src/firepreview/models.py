@@ -68,7 +68,7 @@ class DrawingModel:
         raw_page_calibrations = data.get("page_calibrations", {})
         model.page_calibrations = {int(k): float(v) for k, v in raw_page_calibrations.items()}
         if not model.page_calibrations and model.is_calibrated:
-            # 旧データ互換: 最初のページ（page_num=0）にデフォルト設定を適用
+            # 旧データ互換: 最初のページ（内部ページ番号0始まりの page_num=0）へ適用
             model.page_calibrations[0] = model.scale_factor
         model.pdf_path = data.get("pdf_path", "")
         model.unit = data.get("unit", "m")

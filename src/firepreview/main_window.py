@@ -32,7 +32,7 @@ class MainWindow(QMainWindow):
 
         self.pdf_handler = PDFHandler()
         self.model = DrawingModel()
-        self.current_page = 0
+        self.current_page = 0  # 内部ページ番号は0始まり
         
         self.current_text_font = "Arial"
         self.current_text_size = 12
@@ -478,7 +478,7 @@ class MainWindow(QMainWindow):
 
     def _format_scale_ratio(self, scale_factor):
         """ページの mm/px から「1/N」形式の縮尺文字列を返す（無効値は空文字）。"""
-        # 25.4 は 1inch を mm に変換する係数
+        # 25.4 mm/inch は 1インチをミリメートルへ変換する係数
         mm_per_pixel_on_pdf = 25.4 / self.PDF_RENDER_DPI
         if scale_factor <= 0 or mm_per_pixel_on_pdf <= 0:
             return ""
