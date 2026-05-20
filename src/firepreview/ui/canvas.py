@@ -34,6 +34,8 @@ class ToolMode:
     DRAW_CIRCLE_DRAG = 8  # Circle by dragging center→radius (no calibration required)
 
 class PDFCanvas(QGraphicsView):
+    DEFAULT_BASE_ZOOM = 1.0
+
     calibration_points_selected = Signal(QPointF, QPointF)
     measurement_complete = Signal(QPointF, QPointF)
     polygon_complete = Signal(list) # list of QPointF
@@ -88,7 +90,7 @@ class PDFCanvas(QGraphicsView):
         self.current_text_color = "#ff0000"
         self.continuous_text_input = False
         self.editing_text_item = None
-        self._base_zoom = 1.0
+        self._base_zoom = self.DEFAULT_BASE_ZOOM
 
         # 中ボタンパン用の状態管理
         self._mid_pan_active = False
@@ -171,7 +173,7 @@ class PDFCanvas(QGraphicsView):
 
     def _emit_zoom_changed(self):
         current_zoom = self.transform().m11()
-        base_zoom = self._base_zoom if self._base_zoom > 0 else 1.0
+        base_zoom = self._base_zoom if self._base_zoom > 0 else self.DEFAULT_BASE_ZOOM
         zoom_percent = (current_zoom / base_zoom) * 100.0
         self.zoom_changed.emit(zoom_percent)
 
@@ -799,5 +801,5 @@ class PDFCanvas(QGraphicsView):
         self.resetTransform()
         if self.background_item:
             self.fitInView(self.background_item, Qt.KeepAspectRatio)
-        self._base_zoom = self.transform().m11() if self.transform().m11() > 0 else 1.0
+        self._base_zoom = self.transform().m11() if self.transform().m11() > 0 else self.DEFAULT_BASE_ZOOM
         self._emit_zoom_changed()
