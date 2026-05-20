@@ -1,6 +1,6 @@
 import os
 import math
-from PySide6.QtWidgets import (QMainWindow, QFileDialog, 
+from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, 
                              QLabel, QHBoxLayout, QWidget, QVBoxLayout, 
                              QInputDialog, QMessageBox, QPushButton, 
                              QFrame, QSpacerItem, QSizePolicy, QFontComboBox, QSpinBox, QDoubleSpinBox, QColorDialog, QCheckBox, QComboBox,
@@ -517,15 +517,29 @@ class MainWindow(QMainWindow):
         if canvas_scale <= 0:
             self.zoom_label.setText(f"{prefix}---")
             return
-        # キャンバスは PDF_RENDER_DPI でラスタライズ済みのため、
-        # PDF基準DPI(72)へ換算して「PDF原寸=100%」の倍率を求める。
-        zoom_percent = (canvas_scale * self.PDF_BASE_DPI / self.PDF_RENDER_DPI) * 100.0
+        logical_dpi = self._get_logical_dpi()
+        # PDFは150DPIでラスタライズしているため、画面の論理DPIで割り戻して
+        # 「PDF原寸=100%」となる表示倍率を算出する。
+        zoom_percent = (canvas_scale * self.PDF_RENDER_DPI / logical_dpi) * 100.0
         rounded = round(zoom_percent)
         if abs(zoom_percent - rounded) <= self.ZOOM_LABEL_ROUNDING_TOLERANCE_PP:
             text = f"{rounded}%"
         else:
             text = f"{zoom_percent:.1f}%"
         self.zoom_label.setText(f"{prefix}{text}")
+
+    def _get_logical_dpi(self):
+        """現在表示中スクリーンの論理DPIを返す。取得失敗時は72DPIを返す。"""
+        screen = None
+        window = self.windowHandle()
+        if window is not None:
+            screen = window.screen()
+        if screen is None:
+            app = QApplication.instance()
+            if app is not None:
+                screen = app.primaryScreen()
+        logical_dpi = screen.logicalDotsPerInch() if screen is not None else 0.0
+        return logical_dpi if logical_dpi > 0 else float(self.PDF_BASE_DPI)
 
     # --- 単位設定UI ---
     def _on_settings_clicked(self):
