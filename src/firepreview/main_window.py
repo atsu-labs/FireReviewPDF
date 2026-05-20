@@ -26,7 +26,7 @@ class MainWindow(QMainWindow):
     # 縮尺比率を整数表示に丸める際の許容差（例: 100.03 -> 1/100）
     SCALE_RATIO_ROUNDING_TOLERANCE = 0.05
     # 表示倍率を整数表示に丸める際の許容差（単位: パーセントポイント）。
-    # 例: 99.5〜100.5 は 100% と表示する。
+    # 例: 100±0.5% の範囲は 100% と表示する。
     ZOOM_LABEL_ROUNDING_TOLERANCE_PP = 0.5
     FIXED_CIRCLE_RADIUS_MM = 15000
 
