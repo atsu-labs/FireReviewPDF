@@ -518,7 +518,7 @@ class MainWindow(QMainWindow):
             self.zoom_label.setText(f"{prefix}---")
             return
         logical_dpi = self._get_logical_dpi()
-        # PDFは150DPIでラスタライズしているため、画面の論理DPIで割り戻して
+        # PDFは PDF_RENDER_DPI でラスタライズしているため、画面の論理DPIで割り戻して
         # 「PDF原寸=100%」となる表示倍率を算出する。
         zoom_percent = (canvas_scale * self.PDF_RENDER_DPI / logical_dpi) * 100.0
         rounded = round(zoom_percent)
@@ -538,8 +538,9 @@ class MainWindow(QMainWindow):
             app = QApplication.instance()
             if app is not None:
                 screen = app.primaryScreen()
-        logical_dpi = screen.logicalDotsPerInch() if screen is not None else float(self.PDF_BASE_DPI)
-        return logical_dpi if logical_dpi > 0 else float(self.PDF_BASE_DPI)
+        base_dpi = float(self.PDF_BASE_DPI)
+        logical_dpi = screen.logicalDotsPerInch() if screen is not None else base_dpi
+        return logical_dpi if logical_dpi > 0 else base_dpi
 
     # --- 単位設定UI ---
     def _on_settings_clicked(self):
