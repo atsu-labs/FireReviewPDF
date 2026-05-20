@@ -510,15 +510,16 @@ class MainWindow(QMainWindow):
 
     def _update_zoom_label(self, zoom_percent):
         """キャンバス拡大率(%)を受け取り、右上の表示倍率ラベルを更新する。"""
+        prefix = "表示倍率: "
         if zoom_percent <= 0:
-            self.zoom_label.setText("表示倍率: ---")
+            self.zoom_label.setText(f"{prefix}---")
             return
         rounded = round(zoom_percent)
         if abs(zoom_percent - rounded) <= self.ZOOM_LABEL_ROUNDING_TOLERANCE:
             text = f"{rounded}%"
         else:
             text = f"{zoom_percent:.1f}%"
-        self.zoom_label.setText(f"表示倍率: {text}")
+        self.zoom_label.setText(f"{prefix}{text}")
 
     # --- 単位設定UI ---
     def _on_settings_clicked(self):
