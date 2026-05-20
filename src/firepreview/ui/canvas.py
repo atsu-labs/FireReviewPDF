@@ -801,3 +801,12 @@ class PDFCanvas(QGraphicsView):
         if self.background_item:
             self.fitInView(self.background_item, Qt.KeepAspectRatio)
         self._emit_zoom_changed()
+
+    def set_zoom_scale(self, target_scale):
+        """指定の絶対拡大率（等倍＝1.0）を設定する。表示中心を維持したまま拡大縮小します。"""
+        current_zoom = self.transform().m11()
+        if current_zoom <= 0 or target_scale <= 0:
+            return
+        factor = target_scale / current_zoom
+        self.scale(factor, factor)
+        self._emit_zoom_changed()
