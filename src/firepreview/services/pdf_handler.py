@@ -62,7 +62,7 @@ class PDFHandler:
         short_side, long_side = sorted((width_mm, height_mm))
         for name, (std_short, std_long) in self._ISO_A_SIZES_MM.items():
             if (abs(short_side - std_short) <= self._SIZE_MATCH_TOLERANCE_MM
-                    and abs(long_side - std_long) <= self._SIZE_MATCH_TOLERANCE_MM):
+                and abs(long_side - std_long) <= self._SIZE_MATCH_TOLERANCE_MM):
                 return f"PDFサイズ: {name}"
         return f"PDFサイズ: {width_mm:.0f}×{height_mm:.0f} mm"
 
