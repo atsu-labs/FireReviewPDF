@@ -476,12 +476,10 @@ class MainWindow(QMainWindow):
         if scale_factor <= 0 or mm_per_pixel_on_pdf <= 0:
             return ""
         ratio = scale_factor / mm_per_pixel_on_pdf
-        if ratio <= 0:
-            return ""
         rounded = round(ratio)
         if abs(ratio - rounded) < 0.05:
-            return f"1／{rounded}"
-        return f"1／{ratio:.1f}"
+            return f"1/{rounded}"
+        return f"1/{ratio:.1f}"
 
     def _update_scale_status_label(self):
         if self._is_current_page_calibrated():
