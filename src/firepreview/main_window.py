@@ -521,8 +521,8 @@ class MainWindow(QMainWindow):
         if logical_dpi <= 0:
             self.zoom_label.setText(f"{prefix}---")
             return
-        # PDFは PDF_RENDER_DPI でラスタライズしているため、画面の論理DPIで割り戻して
-        # 「PDF原寸=100%」となる表示倍率を算出する。
+        # canvas_scale に (PDF_RENDER_DPI / logical_dpi) を掛けて、
+        # 画面論理DPI基準で「PDF原寸=100%」となる表示倍率を算出する。
         zoom_percent = (canvas_scale * self.PDF_RENDER_DPI / logical_dpi) * 100.0
         rounded = round(zoom_percent)
         if abs(zoom_percent - rounded) <= self.ZOOM_LABEL_ROUNDING_TOLERANCE_PP:
