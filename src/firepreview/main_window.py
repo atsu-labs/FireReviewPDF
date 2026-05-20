@@ -1,12 +1,12 @@
 import os
 import math
-from PySide6.QtWidgets import (QMainWindow, QFileDialog, 
+from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, 
                              QLabel, QHBoxLayout, QWidget, QVBoxLayout, 
                              QInputDialog, QMessageBox, QPushButton, 
                              QFrame, QSpacerItem, QSizePolicy, QFontComboBox, QSpinBox, QDoubleSpinBox, QColorDialog, QCheckBox, QComboBox,
                              QDialog, QDialogButtonBox, QMenu)
 from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QAction, QColor, QFont
+from PySide6.QtGui import QAction, QColor, QFont, QShortcut, QKeySequence
 import qtawesome as qta
 
 from .services.pdf_exporter import export_pdf_document
@@ -21,8 +21,13 @@ from .ui.styles import GLOBAL_STYLE
 class MainWindow(QMainWindow):
     # PDF描画解像度（pdf_handler.get_page_pixmap と合わせる）
     PDF_RENDER_DPI = 150
+    # PDF座標系の基準DPI（1pt=1/72inch）
+    PDF_BASE_DPI = 72
     # 縮尺比率を整数表示に丸める際の許容差（例: 100.03 -> 1/100）
     SCALE_RATIO_ROUNDING_TOLERANCE = 0.05
+    # 表示倍率を整数表示に丸める際の許容差（単位: パーセントポイント）。
+    # 例: 99.5%〜100.5% の範囲は 100% と表示する。
+    ZOOM_LABEL_ROUNDING_TOLERANCE_PP = 0.5
     FIXED_CIRCLE_RADIUS_MM = 15000
 
     def __init__(self):
@@ -53,6 +58,7 @@ class MainWindow(QMainWindow):
         self.setup_ui()
         self._setup_menus()
         self.apply_styles()
+        self._setup_shortcuts()
 
     def _setup_menus(self):
         menubar = self.menuBar()
@@ -131,6 +137,7 @@ class MainWindow(QMainWindow):
         self.canvas.text_editing_finished.connect(self.on_text_editing_finished)
         self.canvas.request_tool_change.connect(self.on_request_tool_change)
         self.canvas.existing_text_edited.connect(self.on_existing_text_edited)
+        self.canvas.zoom_changed.connect(self._update_zoom_label)
         content_area.addWidget(self.canvas)
 
         # Property Panel (Right)
@@ -214,8 +221,21 @@ class MainWindow(QMainWindow):
 
         t_layout.addStretch()
         
-        self.zoom_label = QLabel("表示倍率: 100%")
-        t_layout.addWidget(self.zoom_label)
+        t_layout.addWidget(QLabel("表示倍率:"))
+        self.zoom_combo = QComboBox()
+        self.zoom_combo.setEditable(True)
+        self.zoom_combo.setFixedWidth(85)
+        self.zoom_combo.setStyleSheet(
+            "QComboBox { background-color: #2a2a3d; color: #ffffff; border: 1px solid #555566; border-radius: 4px; padding: 2px 5px; }"
+            "QComboBox::drop-down { border: none; }"
+            "QComboBox QAbstractItemView { background-color: #1e1e2e; color: #ffffff; selection-background-color: #7c4dff; }"
+        )
+        presets = ["25%", "50%", "75%", "100%", "125%", "150%", "200%", "300%", "400%"]
+        self.zoom_combo.addItems(presets)
+        self.zoom_combo.setCurrentText("100%")
+        self.zoom_combo.currentIndexChanged.connect(self._on_zoom_combo_changed)
+        self.zoom_combo.lineEdit().returnPressed.connect(self._on_zoom_combo_changed)
+        t_layout.addWidget(self.zoom_combo)
         self.scale_status_label = QLabel("スケール: 未キャリブレーション")
         t_layout.addWidget(self.scale_status_label)
         self.pdf_size_label = QLabel(PDFHandler.SIZE_LABEL_UNKNOWN)
@@ -504,6 +524,107 @@ class MainWindow(QMainWindow):
             self.pdf_size_label.setText(PDFHandler.SIZE_LABEL_UNKNOWN)
             return
         self.pdf_size_label.setText(self.pdf_handler.get_page_size_label(self.current_page))
+
+    def _update_zoom_label(self, canvas_scale):
+        """キャンバス拡大率を受け取り、PDF原寸基準の表示倍率コンボボックスを更新する。"""
+        if canvas_scale <= 0:
+            self.zoom_combo.blockSignals(True)
+            self.zoom_combo.setCurrentText("---")
+            self.zoom_combo.blockSignals(False)
+            return
+        physical_dpi = self._get_physical_dpi()
+        if physical_dpi <= 0:
+            self.zoom_combo.blockSignals(True)
+            self.zoom_combo.setCurrentText("---")
+            self.zoom_combo.blockSignals(False)
+            return
+        # canvas_scale に (PDF_RENDER_DPI / physical_dpi) を掛けて、
+        # 画面物理DPI基準で「PDF原寸=100%」となる表示倍率を算出する。
+        zoom_percent = (canvas_scale * self.PDF_RENDER_DPI / physical_dpi) * 100.0
+        rounded = round(zoom_percent)
+        if abs(zoom_percent - rounded) <= self.ZOOM_LABEL_ROUNDING_TOLERANCE_PP:
+            text = f"{rounded}%"
+        else:
+            text = f"{zoom_percent:.1f}%"
+        
+        self.zoom_combo.blockSignals(True)
+        self.zoom_combo.setCurrentText(text)
+        self.zoom_combo.blockSignals(False)
+
+    def _on_zoom_combo_changed(self):
+        """ズームコンボボックスの入力・選択値が変更されたときにキャンバスにズーム率を適用する。"""
+        text = self.zoom_combo.currentText().strip()
+        clean_text = text.replace("%", "").strip()
+        try:
+            zoom_percent = float(clean_text)
+        except ValueError:
+            # 入力が不正な場合、現在の実際のスケールに合わせて表示を復元する
+            if hasattr(self, "canvas") and self.canvas is not None:
+                self._update_zoom_label(self.canvas.transform().m11())
+            return
+
+        if zoom_percent <= 0:
+            # 0以下の無効値の場合も同様に復元する
+            if hasattr(self, "canvas") and self.canvas is not None:
+                self._update_zoom_label(self.canvas.transform().m11())
+            return
+
+        physical_dpi = self._get_physical_dpi()
+        if physical_dpi <= 0:
+            return
+
+        target_canvas_scale = (zoom_percent / 100.0) * physical_dpi / self.PDF_RENDER_DPI
+        self.canvas.set_zoom_scale(target_canvas_scale)
+
+    def _setup_shortcuts(self):
+        """ショートカットキーを設定する。"""
+        # Ctrl+0 で100%ズームリセット
+        self.shortcut_zoom_reset = QShortcut(QKeySequence("Ctrl+0"), self)
+        self.shortcut_zoom_reset.activated.connect(self._reset_zoom_to_100)
+
+    def _reset_zoom_to_100(self):
+        """表示倍率を物理DPI基準の100%（実寸大）にリセットする。"""
+        physical_dpi = self._get_physical_dpi()
+        if physical_dpi <= 0:
+            return
+        target_canvas_scale = physical_dpi / self.PDF_RENDER_DPI
+        self.canvas.set_zoom_scale(target_canvas_scale)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # ウィンドウが表示された段階で、ウィンドウハンドルの画面切り替えシグナルを購読
+        window = self.windowHandle()
+        if window is not None and not hasattr(self, "_screen_changed_connected"):
+            window.screenChanged.connect(self._on_screen_changed)
+            self._screen_changed_connected = True
+
+    def _on_screen_changed(self, screen):
+        """ウィンドウが別のモニタへ移動したときに、新しいモニタの物理DPIで表示倍率を自動更新する。"""
+        if hasattr(self, "canvas") and self.canvas is not None:
+            current_scale = self.canvas.transform().m11()
+            self._update_zoom_label(current_scale)
+
+    def _get_physical_dpi(self):
+        """現在表示中スクリーンの物理DPIを返す。
+
+        Returns:
+            float: 物理DPI値。スクリーン取得失敗、DPI取得例外、
+                0以下の異常値時は 一般的なOSモニターの標準DPI 96.0 を返す。
+        """
+        screen = None
+        window = self.windowHandle()
+        if window is not None:
+            screen = window.screen()
+        if screen is None:
+            app = QApplication.instance()
+            if app is not None:
+                screen = app.primaryScreen()
+        fallback_dpi = 96.0
+        try:
+            physical_dpi = screen.physicalDotsPerInch() if screen else fallback_dpi
+        except (AttributeError, RuntimeError, TypeError):
+            physical_dpi = fallback_dpi
+        return physical_dpi if physical_dpi > 0 else fallback_dpi
 
     # --- 単位設定UI ---
     def _on_settings_clicked(self):

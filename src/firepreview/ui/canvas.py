@@ -47,6 +47,7 @@ class PDFCanvas(QGraphicsView):
     item_moved = Signal(str, QPointF) # id, delta
     request_delete = Signal(str) # id
     request_tool_change = Signal(int) # next_mode
+    zoom_changed = Signal(float)  # 現在のキャンバス拡大率（1.0 = 等倍）
     
     text_editing_finished = Signal(QPointF, str, str, str, int, str) # pos, text, item_id, font_family, font_size, color
     existing_text_edited = Signal(str, str) # item_id, new_text
@@ -159,12 +160,21 @@ class PDFCanvas(QGraphicsView):
             zoom_out_factor = 1 / zoom_in_factor
             zoom_factor = zoom_in_factor if event.angleDelta().y() > 0 else zoom_out_factor
             self.scale(zoom_factor, zoom_factor)
+            self._emit_zoom_changed()
         elif event.modifiers() & Qt.ShiftModifier:
             # Shift+スクロールで左右スクロール
             delta = event.angleDelta().y()
             self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta)
         else:
             super().wheelEvent(event)
+
+    def _emit_zoom_changed(self):
+        """現在のキャンバス拡大率を通知する。"""
+        current_zoom = self.transform().m11()
+        if current_zoom <= 0:
+            self.zoom_changed.emit(0.0)
+            return
+        self.zoom_changed.emit(current_zoom)
 
     def drawForeground(self, painter, rect):
         # Draw selection boxes for selected items
@@ -790,3 +800,13 @@ class PDFCanvas(QGraphicsView):
         self.resetTransform()
         if self.background_item:
             self.fitInView(self.background_item, Qt.KeepAspectRatio)
+        self._emit_zoom_changed()
+
+    def set_zoom_scale(self, target_scale):
+        """指定の絶対拡大率（等倍＝1.0）を設定する。表示中心を維持したまま拡大縮小します。"""
+        current_zoom = self.transform().m11()
+        if current_zoom <= 0 or target_scale <= 0:
+            return
+        factor = target_scale / current_zoom
+        self.scale(factor, factor)
+        self._emit_zoom_changed()
