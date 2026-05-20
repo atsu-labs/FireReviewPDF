@@ -5,23 +5,39 @@ class DrawingModel:
     def __init__(self):
         self.scale_factor = 1.0  # mm per pixel
         self.is_calibrated = False
+        self.page_calibrations = {}  # {page_num: scale_factor}
         self.annotations = [] # List of annotation objects
         self.pdf_path = ""
         self.unit = 'm'  # 表示単位: 'm' または 'mm'
 
-    def set_calibration(self, p1, p2, real_distance_mm):
+    def set_calibration(self, p1, p2, real_distance_mm, page_num=None):
         pixel_dist = math.sqrt((p2.x() - p1.x())**2 + (p2.y() - p1.y())**2)
         if pixel_dist > 0:
             self.scale_factor = real_distance_mm / pixel_dist
             self.is_calibrated = True
+            if page_num is not None:
+                self.page_calibrations[int(page_num)] = self.scale_factor
             return True
         return False
 
-    def calculate_real_distance(self, p1, p2):
-        pixel_dist = math.sqrt((p2.x() - p1.x())**2 + (p2.y() - p1.y())**2)
-        return pixel_dist * self.scale_factor
+    def get_scale_factor(self, page_num=None):
+        if page_num is not None:
+            page_key = int(page_num)
+            if page_key in self.page_calibrations:
+                return self.page_calibrations[page_key]
+        return self.scale_factor
 
-    def calculate_real_area(self, points):
+    def is_page_calibrated(self, page_num=None):
+        if page_num is not None:
+            return int(page_num) in self.page_calibrations
+        return self.is_calibrated
+
+    def calculate_real_distance(self, p1, p2, scale_factor=None):
+        pixel_dist = math.sqrt((p2.x() - p1.x())**2 + (p2.y() - p1.y())**2)
+        sf = self.scale_factor if scale_factor is None else scale_factor
+        return pixel_dist * sf
+
+    def calculate_real_area(self, points, scale_factor=None):
         if len(points) < 3:
             return 0.0
         area = 0.0
@@ -31,12 +47,14 @@ class DrawingModel:
             area += points[i].x() * points[j].y()
             area -= points[j].x() * points[i].y()
         pixel_area = abs(area) / 2.0
-        return pixel_area * (self.scale_factor ** 2)
+        sf = self.scale_factor if scale_factor is None else scale_factor
+        return pixel_area * (sf ** 2)
 
     def to_dict(self):
         return {
             "scale_factor": self.scale_factor,
             "is_calibrated": self.is_calibrated,
+            "page_calibrations": self.page_calibrations,
             "pdf_path": self.pdf_path,
             "unit": self.unit,
             "annotations": [a.to_dict() for a in self.annotations]
@@ -47,6 +65,11 @@ class DrawingModel:
         model = cls()
         model.scale_factor = data.get("scale_factor", 1.0)
         model.is_calibrated = data.get("is_calibrated", False)
+        raw_page_calibrations = data.get("page_calibrations", {})
+        model.page_calibrations = {int(k): float(v) for k, v in raw_page_calibrations.items()}
+        if not model.page_calibrations and model.is_calibrated:
+            # 旧データ互換: グローバル設定は1ページ目の設定として扱う
+            model.page_calibrations[0] = model.scale_factor
         model.pdf_path = data.get("pdf_path", "")
         model.unit = data.get("unit", "m")
         for a_data in data.get("annotations", []):

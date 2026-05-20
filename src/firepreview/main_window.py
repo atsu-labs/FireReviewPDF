@@ -27,6 +27,7 @@ class MainWindow(QMainWindow):
         self.pdf_handler = PDFHandler()
         self.model = DrawingModel()
         self.current_page = 0
+        self.pdf_render_dpi = 150
         
         self.current_text_font = "Arial"
         self.current_text_size = 12
@@ -210,6 +211,8 @@ class MainWindow(QMainWindow):
         
         self.zoom_label = QLabel("表示倍率: 100%")
         t_layout.addWidget(self.zoom_label)
+        self.scale_status_label = QLabel("スケール: 未キャリブレーション")
+        t_layout.addWidget(self.scale_status_label)
 
         self.main_layout.addWidget(toolbar)
 
@@ -456,6 +459,37 @@ class MainWindow(QMainWindow):
             return f"R={value_mm / 1000:.3f} m"
         return f"R={value_mm:.1f} mm"
 
+    def _get_scale_factor_for_page(self, page_num):
+        return self.model.get_scale_factor(page_num)
+
+    def _get_current_scale_factor(self):
+        return self._get_scale_factor_for_page(self.current_page)
+
+    def _is_page_calibrated(self, page_num):
+        return self.model.is_page_calibrated(page_num)
+
+    def _is_current_page_calibrated(self):
+        return self._is_page_calibrated(self.current_page)
+
+    def _format_scale_ratio(self, scale_factor):
+        mm_per_pixel_on_pdf = 25.4 / self.pdf_render_dpi
+        if scale_factor <= 0 or mm_per_pixel_on_pdf <= 0:
+            return ""
+        ratio = scale_factor / mm_per_pixel_on_pdf
+        if ratio <= 0:
+            return ""
+        rounded = round(ratio)
+        if abs(ratio - rounded) < 0.05:
+            return f"1／{rounded}"
+        return f"1／{ratio:.1f}"
+
+    def _update_scale_status_label(self):
+        if self._is_current_page_calibrated():
+            ratio_text = self._format_scale_ratio(self._get_current_scale_factor())
+            self.scale_status_label.setText(f"スケール: {ratio_text}" if ratio_text else "スケール: 未キャリブレーション")
+        else:
+            self.scale_status_label.setText("スケール: 未キャリブレーション")
+
     # --- 単位設定UI ---
     def _on_settings_clicked(self):
         menu = QMenu(self)
@@ -598,7 +632,7 @@ class MainWindow(QMainWindow):
         
         # Only measurement tools (not drawing tools) require calibration
         if mode in [ToolMode.MEASURE_LINE, ToolMode.CIRCLE_FIXED]:
-            if not self.model.is_calibrated:
+            if not self._is_current_page_calibrated():
                 QMessageBox.warning(self, "警告", "先にキャリブレーションを行ってください。")
                 active_btn.setChecked(False)
                 return
@@ -607,7 +641,7 @@ class MainWindow(QMainWindow):
         
         is_shape_tool = mode in [ToolMode.DRAW_LINE, ToolMode.POLYGON_AREA, ToolMode.DRAW_CIRCLE_DRAG]
         has_fill = mode in [ToolMode.POLYGON_AREA, ToolMode.DRAW_CIRCLE_DRAG]
-        has_radius = mode == ToolMode.DRAW_CIRCLE_DRAG and self.model.is_calibrated
+        has_radius = mode == ToolMode.DRAW_CIRCLE_DRAG and self._is_current_page_calibrated()
         has_line_markers = mode == ToolMode.DRAW_LINE
         has_circle_marker = mode == ToolMode.DRAW_CIRCLE_DRAG
 
@@ -647,11 +681,15 @@ class MainWindow(QMainWindow):
         dist_val, ok = QInputDialog.getDouble(self, "キャリブレーション", label, default_val, 0, max_val, decimals)
         if ok:
             dist_mm = dist_val * 1000 if unit == 'm' else dist_val
-            if self.model.set_calibration(p1, p2, dist_mm):
+            if self.model.set_calibration(p1, p2, dist_mm, self.current_page):
                 QMessageBox.information(self, "完了", "キャリブレーションが完了しました。")
+                self._update_scale_status_label()
 
     def on_measurement_complete(self, p1, p2):
-        dist_mm = self.model.calculate_real_distance(p1, p2)
+        if not self._is_current_page_calibrated():
+            QMessageBox.warning(self, "警告", "このページは未キャリブレーションです。")
+            return
+        dist_mm = self.model.calculate_real_distance(p1, p2, self._get_current_scale_factor())
         text = self._format_distance(dist_mm)
         ann = self._add_to_model("line", [p1, p2], dist_mm, text=text)
         self.canvas.add_line_annotation(p1, p2, text=text, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size)
@@ -682,12 +720,13 @@ class MainWindow(QMainWindow):
     def on_circle_drag_complete(self, center, radius_px):
         import math
         # If radius is ~0 (click without drag) and calibrated, use radius from tool options
-        if radius_px < 3 and self.model.is_calibrated:
+        current_scale_factor = self._get_current_scale_factor()
+        if radius_px < 3 and self._is_current_page_calibrated() and current_scale_factor > 0:
             if self.model.unit == 'm':
                 radius_mm = self.tool_radius_spin.value() * 1000
             else:
                 radius_mm = self.tool_radius_spin.value()
-            radius_px = radius_mm / self.model.scale_factor
+            radius_px = radius_mm / current_scale_factor
         ann = self._add_to_model("circle", [center], real_value=0.0, text="")
         ann.color = self.current_shape_color
         ann.line_width = self.current_line_width
@@ -703,8 +742,14 @@ class MainWindow(QMainWindow):
 
     def on_point_selected(self, pos):
         if self.canvas.tool_mode == ToolMode.CIRCLE_FIXED:
+            if not self._is_current_page_calibrated():
+                QMessageBox.warning(self, "警告", "このページは未キャリブレーションです。")
+                return
+            current_scale_factor = self._get_current_scale_factor()
+            if current_scale_factor <= 0:
+                return
             radius_mm = 15000 
-            radius_px = radius_mm / self.model.scale_factor
+            radius_px = radius_mm / current_scale_factor
             text = "R=15m"
             ann = self._add_to_model("circle", [pos], radius_mm, text=text)
             ann.radius_px = radius_px
@@ -712,8 +757,11 @@ class MainWindow(QMainWindow):
 
     def on_calculate_requested(self, item_id):
         import math
-        if not self.model.is_calibrated:
+        if not self._is_current_page_calibrated():
             QMessageBox.warning(self, "警告", "キャリブレーションが完了していません。先にキャリブレーションを行ってください。")
+            return
+        current_scale_factor = self._get_current_scale_factor()
+        if current_scale_factor <= 0:
             return
         for ann in self.model.annotations:
             if ann.id == item_id:
@@ -721,18 +769,18 @@ class MainWindow(QMainWindow):
                     total = sum(
                         math.sqrt((ann.points[i+1].x() - ann.points[i].x())**2 +
                                   (ann.points[i+1].y() - ann.points[i].y())**2)
-                        * self.model.scale_factor
+                        * current_scale_factor
                         for i in range(len(ann.points) - 1)
                     )
                     ann.real_value = total
                     ann.text = self._format_distance(total)
                 elif ann.type == "polygon" and len(ann.points) >= 3:
-                    area_mm2 = self.model.calculate_real_area(ann.points)
+                    area_mm2 = self.model.calculate_real_area(ann.points, current_scale_factor)
                     ann.real_value = area_mm2
                     ann.text = self._format_area(area_mm2)
                 elif ann.type == "circle":
-                    radius_px = ann.radius_px if ann.radius_px > 0 else (ann.real_value / self.model.scale_factor if ann.real_value > 0 else 0)
-                    radius_mm = radius_px * self.model.scale_factor
+                    radius_px = ann.radius_px if ann.radius_px > 0 else (ann.real_value / current_scale_factor if ann.real_value > 0 else 0)
+                    radius_mm = radius_px * current_scale_factor
                     ann.real_value = radius_mm
                     ann.text = self._format_radius(radius_mm)
                 self.canvas.update_item_properties(item_id, {"text": ann.text})
@@ -906,15 +954,17 @@ class MainWindow(QMainWindow):
                     elif ann.type == "polygon":
                         self.canvas.add_polygon_annotation(ann.points, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity, fill_color=ann.fill_color)
                     elif ann.type == "circle":
+                        current_scale_factor = self._get_current_scale_factor()
                         if ann.radius_px > 0:
                             radius_px = ann.radius_px
-                        elif ann.real_value > 0 and self.model.scale_factor > 0:
-                            radius_px = ann.real_value / self.model.scale_factor
+                        elif ann.real_value > 0 and current_scale_factor > 0:
+                            radius_px = ann.real_value / current_scale_factor
                         else:
                             radius_px = 0
                         self.canvas.add_circle_annotation(ann.points[0], radius_px, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity, fill_color=ann.fill_color, center_marker=ann.center_marker)
                     elif ann.type == "text":
                         self.canvas.add_text_annotation(ann.points[0], ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, stroke_opacity=ann.stroke_opacity)
+            self._update_scale_status_label()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_O and event.modifiers() & Qt.ControlModifier:

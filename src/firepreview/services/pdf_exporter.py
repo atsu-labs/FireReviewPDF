@@ -191,10 +191,11 @@ def export_pdf_document(model, output_path: str) -> None:
 
             elif ann.type == "circle":
                 center = to_pdf_pt(ann.points[0])
+                page_scale_factor = model.get_scale_factor(ann.page_num)
                 if ann.radius_px > 0:
                     radius = ann.radius_px * dpi_factor
-                elif ann.real_value > 0 and model.scale_factor > 0:
-                    radius = (ann.real_value / model.scale_factor) * dpi_factor
+                elif ann.real_value > 0 and page_scale_factor > 0:
+                    radius = (ann.real_value / page_scale_factor) * dpi_factor
                 else:
                     radius = 0
                 if radius > 0:
