@@ -218,6 +218,8 @@ class MainWindow(QMainWindow):
         t_layout.addWidget(self.zoom_label)
         self.scale_status_label = QLabel("スケール: 未キャリブレーション")
         t_layout.addWidget(self.scale_status_label)
+        self.pdf_size_label = QLabel("PDFサイズ: -")
+        t_layout.addWidget(self.pdf_size_label)
 
         self.main_layout.addWidget(toolbar)
 
@@ -495,6 +497,9 @@ class MainWindow(QMainWindow):
             self.scale_status_label.setText(f"スケール: {ratio_text}" if ratio_text else "スケール: 未キャリブレーション")
         else:
             self.scale_status_label.setText("スケール: 未キャリブレーション")
+
+    def _update_pdf_size_label(self):
+        self.pdf_size_label.setText(self.pdf_handler.get_page_size_label(self.current_page))
 
     # --- 単位設定UI ---
     def _on_settings_clicked(self):
@@ -972,6 +977,7 @@ class MainWindow(QMainWindow):
                     elif ann.type == "text":
                         self.canvas.add_text_annotation(ann.points[0], ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, stroke_opacity=ann.stroke_opacity)
             self._update_scale_status_label()
+            self._update_pdf_size_label()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_O and event.modifiers() & Qt.ControlModifier:
