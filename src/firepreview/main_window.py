@@ -538,7 +538,7 @@ class MainWindow(QMainWindow):
             app = QApplication.instance()
             if app is not None:
                 screen = app.primaryScreen()
-        logical_dpi = screen.logicalDotsPerInch() if screen is not None else 0.0
+        logical_dpi = screen.logicalDotsPerInch() if screen is not None else float(self.PDF_BASE_DPI)
         return logical_dpi if logical_dpi > 0 else float(self.PDF_BASE_DPI)
 
     # --- 単位設定UI ---
