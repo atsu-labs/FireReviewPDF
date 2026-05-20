@@ -509,6 +509,7 @@ class MainWindow(QMainWindow):
         self.pdf_size_label.setText(self.pdf_handler.get_page_size_label(self.current_page))
 
     def _update_zoom_label(self, zoom_percent):
+        """キャンバス拡大率(%)を受け取り、右上の表示倍率ラベルを更新する。"""
         if zoom_percent <= 0:
             self.zoom_label.setText("表示倍率: 100%")
             return

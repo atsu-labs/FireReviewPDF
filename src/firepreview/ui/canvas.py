@@ -34,6 +34,7 @@ class ToolMode:
     DRAW_CIRCLE_DRAG = 8  # Circle by dragging center→radius (no calibration required)
 
 class PDFCanvas(QGraphicsView):
+    # 既定のベースズーム倍率（1.0 = 100%）
     DEFAULT_BASE_ZOOM = 1.0
 
     calibration_points_selected = Signal(QPointF, QPointF)
@@ -172,6 +173,7 @@ class PDFCanvas(QGraphicsView):
             super().wheelEvent(event)
 
     def _emit_zoom_changed(self):
+        """現在の拡大率をベース倍率比(%)で通知する。"""
         current_zoom = self.transform().m11()
         base_zoom = self._base_zoom if self._base_zoom > 0 else self.DEFAULT_BASE_ZOOM
         zoom_percent = (current_zoom / base_zoom) * 100.0
