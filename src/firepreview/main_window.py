@@ -536,7 +536,7 @@ class MainWindow(QMainWindow):
 
         Returns:
             float: 論理DPI値。スクリーン取得失敗、DPI取得例外、
-                0以下の異常値時は72.0を返す。
+                0以下の異常値時は PDF_BASE_DPI を返す。
         """
         screen = None
         window = self.windowHandle()
