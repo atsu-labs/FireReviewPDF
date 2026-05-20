@@ -19,7 +19,9 @@ from .ui.panels.navigator_panel import NavigatorPanel
 from .ui.styles import GLOBAL_STYLE
 
 class MainWindow(QMainWindow):
+    # PDF描画解像度（pdf_handler.get_page_pixmap と合わせる）
     PDF_RENDER_DPI = 150
+    # 縮尺比率を整数表示に丸める際の許容差（例: 100.03 -> 1/100）
     SCALE_RATIO_ROUNDING_TOLERANCE = 0.05
 
     def __init__(self):
@@ -474,6 +476,8 @@ class MainWindow(QMainWindow):
         return self._is_page_calibrated(self.current_page)
 
     def _format_scale_ratio(self, scale_factor):
+        """ページの mm/px からユーザー表示用の縮尺比率（1/N）文字列を作る。"""
+        # 25.4 は 1inch を mm に変換する係数
         mm_per_pixel_on_pdf = 25.4 / self.PDF_RENDER_DPI
         if scale_factor <= 0 or mm_per_pixel_on_pdf <= 0:
             return ""
