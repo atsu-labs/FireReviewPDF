@@ -25,9 +25,9 @@ class MainWindow(QMainWindow):
     PDF_BASE_DPI = 72
     # 縮尺比率を整数表示に丸める際の許容差（例: 100.03 -> 1/100）
     SCALE_RATIO_ROUNDING_TOLERANCE = 0.05
-    # 表示倍率を整数表示に丸める際の許容差（±0.5%以内なら整数表示）。
-    # PDF原寸基準へ換算した際の端数揺れ（fitInViewや浮動小数誤差）を吸収する。
-    ZOOM_LABEL_ROUNDING_TOLERANCE = 0.5
+    # 表示倍率を整数表示に丸める際の許容差（単位: パーセントポイント）。
+    # 例: 99.6〜100.4 は 100% と表示する。
+    ZOOM_LABEL_ROUNDING_TOLERANCE_PT = 0.5
     FIXED_CIRCLE_RADIUS_MM = 15000
 
     def __init__(self):
@@ -521,7 +521,7 @@ class MainWindow(QMainWindow):
         # PDF基準DPI(72)へ換算して「PDF原寸=100%」の倍率を求める。
         zoom_percent = (canvas_scale * self.PDF_BASE_DPI / self.PDF_RENDER_DPI) * 100.0
         rounded = round(zoom_percent)
-        if abs(zoom_percent - rounded) <= self.ZOOM_LABEL_ROUNDING_TOLERANCE:
+        if abs(zoom_percent - rounded) <= self.ZOOM_LABEL_ROUNDING_TOLERANCE_PT:
             text = f"{rounded}%"
         else:
             text = f"{zoom_percent:.1f}%"
