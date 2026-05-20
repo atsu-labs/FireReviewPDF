@@ -2,6 +2,7 @@ import fitz  # PyMuPDF
 from PySide6.QtGui import QImage, QPixmap
 
 class PDFHandler:
+    _POINTS_TO_MM = 25.4 / 72.0
     _ISO_A_SIZES_MM = {
         "A0": (841, 1189),
         "A1": (594, 841),
@@ -47,8 +48,8 @@ class PDFHandler:
             return None
         page = self.doc[page_num]
         rect = page.rect
-        width_mm = rect.width * 25.4 / 72.0
-        height_mm = rect.height * 25.4 / 72.0
+        width_mm = rect.width * self._POINTS_TO_MM
+        height_mm = rect.height * self._POINTS_TO_MM
         return width_mm, height_mm
 
     def get_page_size_label(self, page_num):
