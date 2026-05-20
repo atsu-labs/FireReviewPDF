@@ -24,7 +24,7 @@ class MainWindow(QMainWindow):
     # 縮尺比率を整数表示に丸める際の許容差（例: 100.03 -> 1/100）
     SCALE_RATIO_ROUNDING_TOLERANCE = 0.05
     # 表示倍率を整数表示に丸める際の許容差（±0.5%以内なら整数表示）
-    ZOOM_LABEL_ROUNDING_TOLERANCE = 0.5
+    ZOOM_LABEL_ROUNDING_TOLERANCE = 0.05
     FIXED_CIRCLE_RADIUS_MM = 15000
 
     def __init__(self):
