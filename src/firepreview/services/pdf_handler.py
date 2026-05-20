@@ -61,7 +61,7 @@ class PDFHandler:
             if (abs(short_side - std_short) <= self._SIZE_MATCH_TOLERANCE_MM
                     and abs(long_side - std_long) <= self._SIZE_MATCH_TOLERANCE_MM):
                 return f"PDFサイズ: {name}"
-        return f"PDFサイズ: {round(width_mm):.0f}×{round(height_mm):.0f} mm"
+        return f"PDFサイズ: {width_mm:.0f}×{height_mm:.0f} mm"
 
     def close(self):
         if self.doc:
