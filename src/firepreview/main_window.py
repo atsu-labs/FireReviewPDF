@@ -499,7 +499,7 @@ class MainWindow(QMainWindow):
             self.scale_status_label.setText("スケール: 未キャリブレーション")
 
     def _update_pdf_size_label(self):
-        """現在ページのPDFサイズ表示を更新する。"""
+        """現在ページのPDFサイズ表示を更新する。Returns: None"""
         if not self.pdf_handler:
             self.pdf_size_label.setText("PDFサイズ: -")
             return
