@@ -13,6 +13,7 @@ from .services.pdf_exporter import export_pdf_document
 from .services.pdf_handler import PDFHandler
 from .services.project_store import load_project as load_project_file, save_project as save_project_file
 from .ui.canvas import PDFCanvas, ToolMode
+from .ui.preferences_dialog import PreferencesDialog
 from .models import DrawingModel, Annotation
 from .ui.panels.property_panel import PropertyPanel
 from .ui.panels.navigator_panel import NavigatorPanel
@@ -202,7 +203,6 @@ class MainWindow(QMainWindow):
             ('fa5s.font', "テキスト", ToolMode.TEXT),
             ('fa5s.ruler', "計測ライン", ToolMode.MEASURE_LINE),
             ('fa5s.bullseye', "15m円（計測）", ToolMode.CIRCLE_FIXED),
-            ('fa5s.drafting-compass', "キャリブレーション", ToolMode.CALIBRATE),
         ]
 
         self.tool_btns = []
@@ -626,84 +626,37 @@ class MainWindow(QMainWindow):
             physical_dpi = fallback_dpi
         return physical_dpi if physical_dpi > 0 else fallback_dpi
 
-    # --- 単位設定UI ---
+    # --- 環境設定UI ---
     def _on_settings_clicked(self):
-        menu = QMenu(self)
-        unit_action = menu.addAction("単位設定")
-        unit_action.triggered.connect(self._open_unit_dialog)
-        menu.exec(self.btn_settings.mapToGlobal(self.btn_settings.rect().bottomLeft()))
+        self._open_preferences_dialog()
 
-    def _open_unit_dialog(self):
-        dialog = QDialog(self)
-        dialog.setWindowTitle("単位設定")
-        dialog.setFixedSize(320, 220)
-        dialog.setStyleSheet("QDialog { background-color: #1e1e2e; } QLabel { color: #ffffff; border: none; }")
-        layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(10)
-
-        title = QLabel("表示単位を選択してください")
-        title.setStyleSheet("font-size: 12px; color: #aaaacc; border: none;")
-        layout.addWidget(title)
-
-        selected = [self.model.unit]
-
-        def _card_style(active):
-            border = "#7c4dff" if active else "#333355"
-            bg = "#2e2e45" if active else "#1e1e2e"
-            return (f"QFrame {{ background-color: {bg}; border: 2px solid {border};"
-                    f" border-radius: 8px; }}")
-
-        def _make_card(unit_key, label, desc):
-            frame = QFrame()
-            frame.setStyleSheet(_card_style(self.model.unit == unit_key))
-            frame.setCursor(Qt.PointingHandCursor)
-            row = QHBoxLayout(frame)
-            row.setContentsMargins(14, 10, 14, 10)
-            col = QVBoxLayout()
-            lbl_main = QLabel(label)
-            lbl_main.setStyleSheet("font-size: 18px; font-weight: bold; color: #ffffff; border: none;")
-            lbl_desc = QLabel(desc)
-            lbl_desc.setStyleSheet("font-size: 11px; color: #888899; border: none;")
-            col.addWidget(lbl_main)
-            col.addWidget(lbl_desc)
-            row.addLayout(col)
-            row.addStretch()
-            check = QLabel("✓" if self.model.unit == unit_key else "")
-            check.setStyleSheet("font-size: 18px; font-weight: bold; color: #7c4dff; border: none;")
-            row.addWidget(check)
-            return frame, check
-
-        m_card, m_check = _make_card('m', 'm', 'メートル')
-        mm_card, mm_check = _make_card('mm', 'mm', 'ミリメートル')
-
-        def _select(unit_key):
-            selected[0] = unit_key
-            m_card.setStyleSheet(_card_style(unit_key == 'm'))
-            m_check.setText("✓" if unit_key == 'm' else "")
-            mm_card.setStyleSheet(_card_style(unit_key == 'mm'))
-            mm_check.setText("✓" if unit_key == 'mm' else "")
-
-        m_card.mousePressEvent = lambda e: _select('m')
-        mm_card.mousePressEvent = lambda e: _select('mm')
-
-        layout.addWidget(m_card)
-        layout.addWidget(mm_card)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.setStyleSheet(
-            "QPushButton { background-color: #2a2a3d; color: #ffffff; border: 1px solid #555566;"
-            " border-radius: 4px; padding: 5px 16px; }"
-            "QPushButton:hover { background-color: #7c4dff; border-color: #7c4dff; }"
+    def _open_preferences_dialog(self):
+        total_pages = self.pdf_handler.get_page_count() if self.pdf_handler else 1
+        self.pref_dialog = PreferencesDialog(
+            self,
+            self.model,
+            self.current_page,
+            total_pages,
+            dpi=self.PDF_RENDER_DPI
         )
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
+        self.pref_dialog.trigger_canvas_calibration.connect(self._on_pref_canvas_calibration_triggered)
+        self.pref_dialog.settings_updated.connect(self._on_pref_settings_updated)
+        
+        self._pref_dialog_active = True
+        self.pref_dialog.exec()
+        self._pref_dialog_active = False
 
-        if dialog.exec() == QDialog.Accepted:
-            new_unit = selected[0]
-            if new_unit != self.model.unit:
-                self._apply_unit_change(new_unit)
+    def _on_pref_canvas_calibration_triggered(self, all_pages):
+        self._calib_all_pages_from_prefs = all_pages
+        if hasattr(self, "pref_dialog") and self.pref_dialog:
+            self.pref_dialog.hide()
+        
+        # 既存のキャリブレーションツールを起動（ボタンがないため直接 set_tool を呼ぶ）
+        self.set_tool(ToolMode.CALIBRATE, None)
+
+    def _on_pref_settings_updated(self):
+        self._update_scale_status_label()
+        self.update_page_view()
 
     def _apply_unit_change(self, new_unit):
         old_unit = self.model.unit
@@ -817,9 +770,22 @@ class MainWindow(QMainWindow):
         dist_val, ok = QInputDialog.getDouble(self, "キャリブレーション", label, default_val, 0, max_val, decimals)
         if ok:
             dist_mm = dist_val * 1000 if unit == 'm' else dist_val
-            if self.model.set_calibration(p1, p2, dist_mm, self.current_page):
+            
+            # 設定ダイアログから全ページ適用が要求されていたか確認
+            all_pages = getattr(self, "_calib_all_pages_from_prefs", False)
+            total_pages = self.pdf_handler.get_page_count() if self.pdf_handler else 1
+            
+            if self.model.set_calibration(p1, p2, dist_mm, self.current_page, all_pages=all_pages, total_pages=total_pages):
                 QMessageBox.information(self, "完了", "キャリブレーションが完了しました。")
                 self._update_scale_status_label()
+                self.update_page_view()
+
+        # 設定ダイアログから起動されていた場合、ダイアログを再表示してステータスを更新する
+        if getattr(self, "_pref_dialog_active", False):
+            if hasattr(self, "pref_dialog") and self.pref_dialog:
+                self.pref_dialog._update_status_display()
+                self.pref_dialog.show()
+            self._calib_all_pages_from_prefs = False
 
     def on_measurement_complete(self, p1, p2):
         # 防御的チェック: ページ切り替え後に未キャリブレーションページへ遷移した場合に備える
