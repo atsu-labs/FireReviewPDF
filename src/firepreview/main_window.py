@@ -23,7 +23,7 @@ class MainWindow(QMainWindow):
     PDF_RENDER_DPI = 150
     # 縮尺比率を整数表示に丸める際の許容差（例: 100.03 -> 1/100）
     SCALE_RATIO_ROUNDING_TOLERANCE = 0.05
-    # 表示倍率を整数表示に丸める際の許容差（例: 99.97% -> 100%）
+    # 表示倍率を整数表示に丸める際の許容差（±0.05%以内なら整数表示）
     ZOOM_LABEL_ROUNDING_TOLERANCE = 0.05
     FIXED_CIRCLE_RADIUS_MM = 15000
 
@@ -511,7 +511,7 @@ class MainWindow(QMainWindow):
     def _update_zoom_label(self, zoom_percent):
         """キャンバス拡大率(%)を受け取り、右上の表示倍率ラベルを更新する。"""
         if zoom_percent <= 0:
-            self.zoom_label.setText("表示倍率: 100%")
+            self.zoom_label.setText("表示倍率: ---")
             return
         rounded = round(zoom_percent)
         if abs(zoom_percent - rounded) < self.ZOOM_LABEL_ROUNDING_TOLERANCE:
