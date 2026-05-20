@@ -47,7 +47,7 @@ class PDFCanvas(QGraphicsView):
     item_moved = Signal(str, QPointF) # id, delta
     request_delete = Signal(str) # id
     request_tool_change = Signal(int) # next_mode
-    zoom_changed = Signal(float)  # 現在のキャンバス拡大率（transform().m11()）
+    zoom_changed = Signal(float)  # 現在のキャンバス拡大率（1.0 = 等倍）
     
     text_editing_finished = Signal(QPointF, str, str, str, int, str) # pos, text, item_id, font_family, font_size, color
     existing_text_edited = Signal(str, str) # item_id, new_text
