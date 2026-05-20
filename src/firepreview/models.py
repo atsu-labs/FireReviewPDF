@@ -25,11 +25,16 @@ class DrawingModel:
             page_key = int(page_num)
             if page_key in self.page_calibrations:
                 return self.page_calibrations[page_key]
+            if not self.page_calibrations and self.is_calibrated:
+                # 旧データ互換: 全ページ共通スケールとして扱う
+                return self.scale_factor
         return self.scale_factor
 
     def is_page_calibrated(self, page_num=None):
         if page_num is not None:
-            return int(page_num) in self.page_calibrations
+            if self.page_calibrations:
+                return int(page_num) in self.page_calibrations
+            return self.is_calibrated
         return self.is_calibrated
 
     def calculate_real_distance(self, p1, p2, scale_factor=None):
@@ -67,9 +72,6 @@ class DrawingModel:
         model.is_calibrated = data.get("is_calibrated", False)
         raw_page_calibrations = data.get("page_calibrations", {})
         model.page_calibrations = {int(k): float(v) for k, v in raw_page_calibrations.items()}
-        if not model.page_calibrations and model.is_calibrated:
-            # 旧データ互換: 最初のページ（内部ページ番号0始まりの page_num=0）へ適用
-            model.page_calibrations[0] = model.scale_factor
         model.pdf_path = data.get("pdf_path", "")
         model.unit = data.get("unit", "m")
         for a_data in data.get("annotations", []):
