@@ -136,29 +136,23 @@ class PDFCanvas(QGraphicsView):
                 # Visual effect for selectable items could go here
 
     def _clear_temp_items(self):
-        try:
-            if self.temp_line:
-                self.scene.removeItem(self.temp_line)
-        except RuntimeError:
-            pass
-        self.temp_line = None
+        def _safe_remove(item):
+            if item:
+                try:
+                    self.scene.removeItem(item)
+                except RuntimeError:
+                    pass
+            return None
 
-        try:
-            if self.temp_poly:
-                self.scene.removeItem(self.temp_poly)
-        except RuntimeError:
-            pass
-        self.temp_poly = None
-
-        try:
-            if self.temp_circle:
-                self.scene.removeItem(self.temp_circle)
-        except RuntimeError:
-            pass
-        self.temp_circle = None
+        self.temp_line = _safe_remove(self.temp_line)
+        self.temp_poly = _safe_remove(self.temp_poly)
+        self.temp_circle = _safe_remove(self.temp_circle)
         self.drag_start = None
 
     def set_page_image(self, pixmap):
+        self.temp_line = None
+        self.temp_poly = None
+        self.temp_circle = None
         self.scene.clear()
         self.background_item = QGraphicsPixmapItem(pixmap)
         self.background_item.setZValue(-1)

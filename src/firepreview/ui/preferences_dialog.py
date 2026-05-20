@@ -1,8 +1,7 @@
-import os
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget, QLabel,
-    QFrame, QRadioButton, QButtonGroup, QComboBox, QPushButton,
+    QFrame, QRadioButton, QComboBox, QPushButton,
     QMessageBox, QDialogButtonBox, QGroupBox
 )
 
@@ -19,7 +18,6 @@ class PreferencesDialog(QDialog):
         self.dpi = dpi
         
         self.selected_unit = self.model.unit
-        self.selected_scope = "current"  # "current" or "all"
 
         self.setWindowTitle("環境設定")
         self.setFixedSize(450, 480)
@@ -176,22 +174,16 @@ class PreferencesDialog(QDialog):
         mm_layout.addWidget(self.mm_check)
 
         # Mouse click events to toggle unit selection
-        def select_m(event):
-            self.selected_unit = 'm'
-            self.m_card.setStyleSheet(_card_style(True))
-            self.m_check.setText("✓")
-            self.mm_card.setStyleSheet(_card_style(False))
-            self.mm_check.setText("")
+        def _select_unit(unit_key):
+            self.selected_unit = unit_key
+            is_m = (unit_key == 'm')
+            self.m_card.setStyleSheet(_card_style(is_m))
+            self.m_check.setText("✓" if is_m else "")
+            self.mm_card.setStyleSheet(_card_style(not is_m))
+            self.mm_check.setText("✓" if not is_m else "")
 
-        def select_mm(event):
-            self.selected_unit = 'mm'
-            self.m_card.setStyleSheet(_card_style(False))
-            self.m_check.setText("")
-            self.mm_card.setStyleSheet(_card_style(True))
-            self.mm_check.setText("✓")
-
-        self.m_card.mousePressEvent = select_m
-        self.mm_card.mousePressEvent = select_mm
+        self.m_card.mousePressEvent = lambda event: _select_unit('m')
+        self.mm_card.mousePressEvent = lambda event: _select_unit('mm')
 
         layout.addWidget(self.m_card)
         layout.addWidget(self.mm_card)
@@ -311,9 +303,9 @@ class PreferencesDialog(QDialog):
         layout.addWidget(self.method_group)
         layout.addStretch()
 
-        self._update_status_display()
+        self.update_status_display()
 
-    def _update_status_display(self):
+    def update_status_display(self):
         # Update current calibration status text
         is_calibrated = self.model.is_page_calibrated(self.current_page)
         if is_calibrated:
@@ -330,7 +322,10 @@ class PreferencesDialog(QDialog):
             return ""
         ratio = scale_factor / mm_per_pixel_on_pdf
         rounded = round(ratio)
-        if abs(ratio - rounded) < 0.05:
+        
+        # Use tolerance constant from MainWindow if available
+        tolerance = getattr(self.main_window, "SCALE_RATIO_ROUNDING_TOLERANCE", 0.05)
+        if abs(ratio - rounded) < tolerance:
             return f"1/{rounded}"
         return f"1/{ratio:.1f}"
 
@@ -358,7 +353,7 @@ class PreferencesDialog(QDialog):
 
         if success:
             QMessageBox.information(self, "完了", "縮尺比率によるキャリブレーションを適用しました。")
-            self._update_status_display()
+            self.update_status_display()
             self.settings_updated.emit()
         else:
             QMessageBox.critical(self, "エラー", "キャリブレーションの適用に失敗しました。")
@@ -370,6 +365,6 @@ class PreferencesDialog(QDialog):
     def _on_accept(self):
         # Apply Unit Change if changed
         if self.selected_unit != self.model.unit:
-            self.main_window._apply_unit_change(self.selected_unit)
+            self.main_window.apply_unit_change(self.selected_unit)
             self.settings_updated.emit()
         self.accept()

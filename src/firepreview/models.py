@@ -10,17 +10,20 @@ class DrawingModel:
         self.pdf_path = ""
         self.unit = 'm'  # 表示単位: 'm' または 'mm'
 
+    def _apply_scale_to_pages(self, page_num, all_pages, total_pages):
+        if all_pages:
+            self.page_calibrations = {}
+            for p in range(total_pages):
+                self.page_calibrations[p] = self.scale_factor
+        elif page_num is not None:
+            self.page_calibrations[int(page_num)] = self.scale_factor
+
     def set_calibration(self, p1, p2, real_distance_mm, page_num=None, all_pages=False, total_pages=1):
         pixel_dist = math.sqrt((p2.x() - p1.x())**2 + (p2.y() - p1.y())**2)
         if pixel_dist > 0:
             self.scale_factor = real_distance_mm / pixel_dist
             self.is_calibrated = True
-            if all_pages:
-                self.page_calibrations = {}
-                for p in range(total_pages):
-                    self.page_calibrations[p] = self.scale_factor
-            elif page_num is not None:
-                self.page_calibrations[int(page_num)] = self.scale_factor
+            self._apply_scale_to_pages(page_num, all_pages, total_pages)
             return True
         return False
 
@@ -29,12 +32,7 @@ class DrawingModel:
             mm_per_pixel_on_pdf = 25.4 / dpi
             self.scale_factor = mm_per_pixel_on_pdf * ratio_denominator
             self.is_calibrated = True
-            if all_pages:
-                self.page_calibrations = {}
-                for p in range(total_pages):
-                    self.page_calibrations[p] = self.scale_factor
-            elif page_num is not None:
-                self.page_calibrations[int(page_num)] = self.scale_factor
+            self._apply_scale_to_pages(page_num, all_pages, total_pages)
             return True
         return False
 

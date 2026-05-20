@@ -39,6 +39,8 @@ class MainWindow(QMainWindow):
         self.pdf_handler = PDFHandler()
         self.model = DrawingModel()
         self.current_page = 0  # 内部ページ番号は0始まり
+        self._pref_dialog_active = False
+        self._calib_all_pages_from_prefs = False
         
         self.current_text_font = "Arial"
         self.current_text_size = 12
@@ -658,7 +660,7 @@ class MainWindow(QMainWindow):
         self._update_scale_status_label()
         self.update_page_view()
 
-    def _apply_unit_change(self, new_unit):
+    def apply_unit_change(self, new_unit):
         old_unit = self.model.unit
         self.model.unit = new_unit
 
@@ -714,8 +716,9 @@ class MainWindow(QMainWindow):
 
     def set_tool(self, mode, active_btn):
         for btn in self.tool_btns:
-            btn.setChecked(btn == active_btn)
-            btn.setProperty("active", btn == active_btn)
+            is_active = (active_btn is not None and btn == active_btn)
+            btn.setChecked(is_active)
+            btn.setProperty("active", is_active)
             btn.style().unpolish(btn)
             btn.style().polish(btn)
         
@@ -723,7 +726,8 @@ class MainWindow(QMainWindow):
         if mode in [ToolMode.MEASURE_LINE, ToolMode.CIRCLE_FIXED]:
             if not self._is_current_page_calibrated():
                 QMessageBox.warning(self, "警告", "先にキャリブレーションを行ってください。")
-                active_btn.setChecked(False)
+                if active_btn:
+                    active_btn.setChecked(False)
                 return
 
         self.canvas.set_tool_mode(mode)
@@ -783,7 +787,7 @@ class MainWindow(QMainWindow):
         # 設定ダイアログから起動されていた場合、ダイアログを再表示してステータスを更新する
         if getattr(self, "_pref_dialog_active", False):
             if hasattr(self, "pref_dialog") and self.pref_dialog:
-                self.pref_dialog._update_status_display()
+                self.pref_dialog.update_status_display()
                 self.pref_dialog.show()
             self._calib_all_pages_from_prefs = False
 
