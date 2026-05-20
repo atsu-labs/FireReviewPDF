@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="120" viewBox="0 0 1400 120">
+  <rect width="1400" height="120" fill="#0f0f1a"/>
+  <rect x="0" y="20" width="1400" height="60" fill="#1a1a28"/>
+  <text x="940" y="58" fill="#d8d8e8" font-size="22" font-family="sans-serif">表示倍率: 100%</text>
+  <text x="1110" y="58" fill="#d8d8e8" font-size="22" font-family="sans-serif">スケール: 1/100</text>
+  <text x="1260" y="58" fill="#d8d8e8" font-size="22" font-family="sans-serif">PDFサイズ: A4</text>
+</svg>
