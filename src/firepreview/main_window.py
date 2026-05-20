@@ -558,9 +558,15 @@ class MainWindow(QMainWindow):
         try:
             zoom_percent = float(clean_text)
         except ValueError:
+            # 入力が不正な場合、現在の実際のスケールに合わせて表示を復元する
+            if hasattr(self, "canvas") and self.canvas is not None:
+                self._update_zoom_label(self.canvas.transform().m11())
             return
 
         if zoom_percent <= 0:
+            # 0以下の無効値の場合も同様に復元する
+            if hasattr(self, "canvas") and self.canvas is not None:
+                self._update_zoom_label(self.canvas.transform().m11())
             return
 
         physical_dpi = self._get_physical_dpi()
@@ -603,7 +609,7 @@ class MainWindow(QMainWindow):
 
         Returns:
             float: 物理DPI値。スクリーン取得失敗、DPI取得例外、
-                0以下の異常値時は PDF_BASE_DPI を返す。
+                0以下の異常値時は 一般的なOSモニターの標準DPI 96.0 を返す。
         """
         screen = None
         window = self.windowHandle()
@@ -613,12 +619,12 @@ class MainWindow(QMainWindow):
             app = QApplication.instance()
             if app is not None:
                 screen = app.primaryScreen()
-        base_dpi = float(self.PDF_BASE_DPI)
+        fallback_dpi = 96.0
         try:
-            physical_dpi = screen.physicalDotsPerInch() if screen else base_dpi
+            physical_dpi = screen.physicalDotsPerInch() if screen else fallback_dpi
         except (AttributeError, RuntimeError, TypeError):
-            physical_dpi = base_dpi
-        return physical_dpi if physical_dpi > 0 else base_dpi
+            physical_dpi = fallback_dpi
+        return physical_dpi if physical_dpi > 0 else fallback_dpi
 
     # --- 単位設定UI ---
     def _on_settings_clicked(self):
