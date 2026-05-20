@@ -34,9 +34,6 @@ class ToolMode:
     DRAW_CIRCLE_DRAG = 8  # Circle by dragging center→radius (no calibration required)
 
 class PDFCanvas(QGraphicsView):
-    # 既定のベースズーム倍率（1.0 = 100%）
-    DEFAULT_BASE_ZOOM = 1.0
-
     calibration_points_selected = Signal(QPointF, QPointF)
     measurement_complete = Signal(QPointF, QPointF)
     polygon_complete = Signal(list) # list of QPointF
@@ -50,7 +47,7 @@ class PDFCanvas(QGraphicsView):
     item_moved = Signal(str, QPointF) # id, delta
     request_delete = Signal(str) # id
     request_tool_change = Signal(int) # next_mode
-    zoom_changed = Signal(float)  # 表示倍率(%)
+    zoom_changed = Signal(float)  # 現在のキャンバス拡大率（transform().m11()）
     
     text_editing_finished = Signal(QPointF, str, str, str, int, str) # pos, text, item_id, font_family, font_size, color
     existing_text_edited = Signal(str, str) # item_id, new_text
@@ -91,7 +88,6 @@ class PDFCanvas(QGraphicsView):
         self.current_text_color = "#ff0000"
         self.continuous_text_input = False
         self.editing_text_item = None
-        self._base_zoom = self.DEFAULT_BASE_ZOOM
 
         # 中ボタンパン用の状態管理
         self._mid_pan_active = False
@@ -173,14 +169,12 @@ class PDFCanvas(QGraphicsView):
             super().wheelEvent(event)
 
     def _emit_zoom_changed(self):
-        """現在の拡大率をベース倍率比(%)で通知する。"""
+        """現在のキャンバス拡大率を通知する。"""
         current_zoom = self.transform().m11()
-        base_zoom = self._base_zoom
-        if base_zoom <= 0:
+        if current_zoom <= 0:
             self.zoom_changed.emit(0.0)
             return
-        zoom_percent = (current_zoom / base_zoom) * 100.0
-        self.zoom_changed.emit(zoom_percent)
+        self.zoom_changed.emit(current_zoom)
 
     def drawForeground(self, painter, rect):
         # Draw selection boxes for selected items
@@ -806,5 +800,4 @@ class PDFCanvas(QGraphicsView):
         self.resetTransform()
         if self.background_item:
             self.fitInView(self.background_item, Qt.KeepAspectRatio)
-        self._base_zoom = self.transform().m11() if self.transform().m11() > 0 else self.DEFAULT_BASE_ZOOM
         self._emit_zoom_changed()

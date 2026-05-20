@@ -21,10 +21,12 @@ from .ui.styles import GLOBAL_STYLE
 class MainWindow(QMainWindow):
     # PDF描画解像度（pdf_handler.get_page_pixmap と合わせる）
     PDF_RENDER_DPI = 150
+    # PDF座標系の基準DPI（1pt=1/72inch）
+    PDF_BASE_DPI = 72
     # 縮尺比率を整数表示に丸める際の許容差（例: 100.03 -> 1/100）
     SCALE_RATIO_ROUNDING_TOLERANCE = 0.05
     # 表示倍率を整数表示に丸める際の許容差（±0.5%以内なら整数表示）
-    ZOOM_LABEL_ROUNDING_TOLERANCE = 0.05
+    ZOOM_LABEL_ROUNDING_TOLERANCE = 0.5
     FIXED_CIRCLE_RADIUS_MM = 15000
 
     def __init__(self):
@@ -508,12 +510,13 @@ class MainWindow(QMainWindow):
             return
         self.pdf_size_label.setText(self.pdf_handler.get_page_size_label(self.current_page))
 
-    def _update_zoom_label(self, zoom_percent):
-        """キャンバス拡大率(%)を受け取り、右上の表示倍率ラベルを更新する。"""
+    def _update_zoom_label(self, canvas_scale):
+        """キャンバス拡大率を受け取り、PDF原寸基準の表示倍率ラベルを更新する。"""
         prefix = "表示倍率: "
-        if zoom_percent <= 0:
+        if canvas_scale <= 0:
             self.zoom_label.setText(f"{prefix}---")
             return
+        zoom_percent = (canvas_scale * self.PDF_BASE_DPI / self.PDF_RENDER_DPI) * 100.0
         rounded = round(zoom_percent)
         if abs(zoom_percent - rounded) <= self.ZOOM_LABEL_ROUNDING_TOLERANCE:
             text = f"{rounded}%"
