@@ -218,7 +218,7 @@ class MainWindow(QMainWindow):
         t_layout.addWidget(self.zoom_label)
         self.scale_status_label = QLabel("スケール: 未キャリブレーション")
         t_layout.addWidget(self.scale_status_label)
-        self.pdf_size_label = QLabel("PDFサイズ: -")
+        self.pdf_size_label = QLabel(PDFHandler.SIZE_LABEL_UNKNOWN)
         t_layout.addWidget(self.pdf_size_label)
 
         self.main_layout.addWidget(toolbar)
@@ -501,7 +501,7 @@ class MainWindow(QMainWindow):
     def _update_pdf_size_label(self):
         """現在ページのPDFサイズ表示を更新する。"""
         if not self.pdf_handler:
-            self.pdf_size_label.setText("PDFサイズ: -")
+            self.pdf_size_label.setText(PDFHandler.SIZE_LABEL_UNKNOWN)
             return
         self.pdf_size_label.setText(self.pdf_handler.get_page_size_label(self.current_page))
 

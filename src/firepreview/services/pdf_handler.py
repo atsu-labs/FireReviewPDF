@@ -2,6 +2,7 @@ import fitz  # PyMuPDF
 from PySide6.QtGui import QImage, QPixmap
 
 class PDFHandler:
+    SIZE_LABEL_UNKNOWN = "PDFサイズ: -"
     _POINTS_TO_MM = 25.4 / 72.0
     _ISO_A_SIZES_MM = {
         "A0": (841, 1189),
@@ -65,7 +66,7 @@ class PDFHandler:
         """
         size_mm = self.get_page_size_mm(page_num)
         if not size_mm:
-            return "PDFサイズ: -"
+            return self.SIZE_LABEL_UNKNOWN
         width_mm, height_mm = size_mm
         short_side, long_side = sorted((width_mm, height_mm))
         for name, (std_short, std_long) in self._ISO_A_SIZES_MM.items():
