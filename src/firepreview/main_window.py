@@ -532,7 +532,11 @@ class MainWindow(QMainWindow):
         self.zoom_label.setText(f"{prefix}{text}")
 
     def _get_logical_dpi(self):
-        """現在表示中スクリーンの論理DPIを返す。取得失敗時は72DPIを返す。"""
+        """現在表示中スクリーンの論理DPIを返す。
+
+        Returns:
+            float: 論理DPI値。取得失敗時は72.0を返す。
+        """
         screen = None
         window = self.windowHandle()
         if window is not None:
@@ -544,7 +548,7 @@ class MainWindow(QMainWindow):
         base_dpi = float(self.PDF_BASE_DPI)
         try:
             logical_dpi = screen.logicalDotsPerInch() if screen is not None else base_dpi
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             logical_dpi = base_dpi
         return logical_dpi if logical_dpi > 0 else base_dpi
 
