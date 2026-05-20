@@ -44,6 +44,7 @@ class PDFHandler:
         return QPixmap.fromImage(img)
 
     def get_page_size_mm(self, page_num):
+        """指定ページのサイズをミリメートルで返す。"""
         if not self.doc or page_num < 0 or page_num >= len(self.doc):
             return None
         page = self.doc[page_num]
@@ -53,6 +54,7 @@ class PDFHandler:
         return width_mm, height_mm
 
     def get_page_size_label(self, page_num):
+        """指定ページのサイズ表示文字列を返す（A判規格名またはmm表記）。"""
         size_mm = self.get_page_size_mm(page_num)
         if not size_mm:
             return "PDFサイズ: -"
