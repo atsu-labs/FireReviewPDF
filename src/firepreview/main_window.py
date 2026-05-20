@@ -131,6 +131,7 @@ class MainWindow(QMainWindow):
         self.canvas.text_editing_finished.connect(self.on_text_editing_finished)
         self.canvas.request_tool_change.connect(self.on_request_tool_change)
         self.canvas.existing_text_edited.connect(self.on_existing_text_edited)
+        self.canvas.zoom_changed.connect(self._update_zoom_label)
         content_area.addWidget(self.canvas)
 
         # Property Panel (Right)
@@ -504,6 +505,17 @@ class MainWindow(QMainWindow):
             self.pdf_size_label.setText(PDFHandler.SIZE_LABEL_UNKNOWN)
             return
         self.pdf_size_label.setText(self.pdf_handler.get_page_size_label(self.current_page))
+
+    def _update_zoom_label(self, zoom_percent):
+        if zoom_percent <= 0:
+            self.zoom_label.setText("表示倍率: 100%")
+            return
+        rounded = round(zoom_percent)
+        if abs(zoom_percent - rounded) < 0.05:
+            text = f"{rounded}%"
+        else:
+            text = f"{zoom_percent:.1f}%"
+        self.zoom_label.setText(f"表示倍率: {text}")
 
     # --- 単位設定UI ---
     def _on_settings_clicked(self):

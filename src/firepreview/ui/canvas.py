@@ -47,6 +47,7 @@ class PDFCanvas(QGraphicsView):
     item_moved = Signal(str, QPointF) # id, delta
     request_delete = Signal(str) # id
     request_tool_change = Signal(int) # next_mode
+    zoom_changed = Signal(float)  # 表示倍率(%)
     
     text_editing_finished = Signal(QPointF, str, str, str, int, str) # pos, text, item_id, font_family, font_size, color
     existing_text_edited = Signal(str, str) # item_id, new_text
@@ -87,6 +88,7 @@ class PDFCanvas(QGraphicsView):
         self.current_text_color = "#ff0000"
         self.continuous_text_input = False
         self.editing_text_item = None
+        self._base_zoom = 1.0
 
         # 中ボタンパン用の状態管理
         self._mid_pan_active = False
@@ -159,12 +161,19 @@ class PDFCanvas(QGraphicsView):
             zoom_out_factor = 1 / zoom_in_factor
             zoom_factor = zoom_in_factor if event.angleDelta().y() > 0 else zoom_out_factor
             self.scale(zoom_factor, zoom_factor)
+            self._emit_zoom_changed()
         elif event.modifiers() & Qt.ShiftModifier:
             # Shift+スクロールで左右スクロール
             delta = event.angleDelta().y()
             self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta)
         else:
             super().wheelEvent(event)
+
+    def _emit_zoom_changed(self):
+        current_zoom = self.transform().m11()
+        base_zoom = self._base_zoom if self._base_zoom > 0 else 1.0
+        zoom_percent = (current_zoom / base_zoom) * 100.0
+        self.zoom_changed.emit(zoom_percent)
 
     def drawForeground(self, painter, rect):
         # Draw selection boxes for selected items
@@ -790,3 +799,5 @@ class PDFCanvas(QGraphicsView):
         self.resetTransform()
         if self.background_item:
             self.fitInView(self.background_item, Qt.KeepAspectRatio)
+        self._base_zoom = self.transform().m11() if self.transform().m11() > 0 else 1.0
+        self._emit_zoom_changed()
