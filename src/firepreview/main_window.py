@@ -23,6 +23,7 @@ class MainWindow(QMainWindow):
     PDF_RENDER_DPI = 150
     # 縮尺比率を整数表示に丸める際の許容差（例: 100.03 -> 1/100）
     SCALE_RATIO_ROUNDING_TOLERANCE = 0.05
+    FIXED_CIRCLE_RADIUS_MM = 15000
 
     def __init__(self):
         super().__init__()
@@ -476,7 +477,7 @@ class MainWindow(QMainWindow):
         return self._is_page_calibrated(self.current_page)
 
     def _format_scale_ratio(self, scale_factor):
-        """ページの mm/px からユーザー表示用の縮尺比率（1/N）文字列を作る。"""
+        """ページの mm/px から「1/N」形式の縮尺文字列を返す（無効値は空文字）。"""
         # 25.4 は 1inch を mm に変換する係数
         mm_per_pixel_on_pdf = 25.4 / self.PDF_RENDER_DPI
         if scale_factor <= 0 or mm_per_pixel_on_pdf <= 0:
@@ -752,7 +753,7 @@ class MainWindow(QMainWindow):
             current_scale_factor = self._get_current_scale_factor()
             if current_scale_factor <= 0:
                 return
-            radius_mm = 15000 
+            radius_mm = self.FIXED_CIRCLE_RADIUS_MM
             radius_px = radius_mm / current_scale_factor
             text = "R=15m"
             ann = self._add_to_model("circle", [pos], radius_mm, text=text)
