@@ -22,6 +22,59 @@ class CustomTextItem(QGraphicsTextItem):
         self.setTextInteractionFlags(Qt.NoTextInteraction)
         self.editing_finished.emit(self.toPlainText())
 
+def point_to_segment_distance(pt, s1, s2):
+    dx = s2.x() - s1.x()
+    dy = s2.y() - s1.y()
+    l2 = dx*dx + dy*dy
+    if l2 == 0:
+        return math.sqrt((pt.x() - s1.x())**2 + (pt.y() - s1.y())**2), s1
+    t = ((pt.x() - s1.x()) * dx + (pt.y() - s1.y()) * dy) / l2
+    t = max(0.0, min(1.0, t))
+    projection = QPointF(s1.x() + t * dx, s1.y() + t * dy)
+    dist = math.sqrt((pt.x() - projection.x())**2 + (pt.y() - projection.y())**2)
+    return dist, projection
+
+class VertexHandleItem(QGraphicsEllipseItem):
+    def __init__(self, parent_item, index, canvas, size=8):
+        scale = canvas.transform().m11()
+        s = size / scale if scale > 0 else size
+        super().__init__(-s/2, -s/2, s, s, parent_item)
+        self.parent_item = parent_item
+        self.index = index
+        self.canvas = canvas
+        self.size = size
+        self.is_dragging = False
+        
+        self.setFlag(QGraphicsItem.ItemIsMovable, True)
+        self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
+        self.setFlag(QGraphicsItem.ItemIsSelectable, True)
+        
+        self.setBrush(QColor("#7c4dff"))
+        pen = QPen(QColor("#ffffff"), 1.5 / scale if scale > 0 else 1.5)
+        pen.setCosmetic(True)
+        self.setPen(pen)
+        self.setZValue(100)
+
+    def itemChange(self, change, value):
+        if change == QGraphicsItem.ItemPositionChange and self.scene():
+            new_pos = value
+            self.canvas.on_vertex_moved(self.parent_item, self.index, new_pos)
+            self.is_dragging = True
+        return super().itemChange(change, value)
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        if self.is_dragging:
+            self.is_dragging = False
+            self.canvas.on_vertex_move_finished(self.parent_item)
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.canvas.on_vertex_double_clicked(self.parent_item, self.index)
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
 class ToolMode:
     NONE = 0
     CALIBRATE = 1
@@ -51,6 +104,10 @@ class PDFCanvas(QGraphicsView):
     
     text_editing_finished = Signal(QPointF, str, str, str, int, str) # pos, text, item_id, font_family, font_size, color
     existing_text_edited = Signal(str, str) # item_id, new_text
+    
+    # Node editing signals
+    item_points_updated = Signal(str, list)  # id, list of QPointF
+    node_edit_ended = Signal(str)            # id
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -93,6 +150,10 @@ class PDFCanvas(QGraphicsView):
         self._mid_pan_active = False
         self._mid_pan_last = None
 
+        # 頂点編集用の状態管理
+        self.editing_node_item_id = None
+        self.vertex_handles = []
+
     def set_text_defaults(self, font_family, font_size, color, continuous=False):
         self.current_text_font = font_family
         self.current_text_size = font_size
@@ -108,6 +169,8 @@ class PDFCanvas(QGraphicsView):
         self.continuous_shape = continuous
 
     def set_tool_mode(self, mode):
+        if self.tool_mode == ToolMode.SELECT and mode != ToolMode.SELECT:
+            self.end_node_editing()
         self.tool_mode = mode
         self.temp_points = []
         self._clear_temp_items()
@@ -211,9 +274,71 @@ class PDFCanvas(QGraphicsView):
             return
 
         if self.tool_mode == ToolMode.SELECT:
+            if event.button() == Qt.RightButton:
+                pos = self.mapToScene(event.pos())
+                if self.editing_node_item_id:
+                    clicked_item = self.scene.itemAt(pos, self.transform())
+                    if isinstance(clicked_item, VertexHandleItem):
+                        self._show_vertex_context_menu(event.globalPosition().toPoint(), clicked_item)
+                        event.accept()
+                        return
+                    target_item = None
+                    for it in self.scene.items():
+                        if it.data(0) == self.editing_node_item_id:
+                            target_item = it
+                            break
+                    if target_item:
+                        best_idx, best_proj, best_dist = self._find_closest_edge(target_item, pos)
+                        if best_idx != -1:
+                            self._show_edge_context_menu(event.globalPosition().toPoint(), target_item, best_idx, best_proj)
+                            event.accept()
+                            return
+                    self._show_edit_exit_context_menu(event.globalPosition().toPoint())
+                    event.accept()
+                    return
+                else:
+                    item = self.scene.itemAt(pos, self.transform())
+                    while item and not item.data(0) and item.parentItem():
+                        item = item.parentItem()
+                    if item and item != self.background_item and item.data(0):
+                        if isinstance(item, (QGraphicsLineItem, QGraphicsPathItem, QGraphicsPolygonItem)):
+                            self._show_object_context_menu(event.globalPosition().toPoint(), item.data(0))
+                            event.accept()
+                            return
+
             if event.button() == Qt.LeftButton:
                 pos = self.mapToScene(event.pos())
                 item = self.scene.itemAt(pos, self.transform())
+                
+                # 頂点編集中の場合、クリックされた位置が現在の編集対象でもハンドルでもなければ編集を終了する
+                if self.editing_node_item_id:
+                    clicked_target = item
+                    is_edit_target = False
+                    while clicked_target:
+                        if isinstance(clicked_target, VertexHandleItem):
+                            is_edit_target = True
+                            break
+                        if clicked_target.data(0) == self.editing_node_item_id:
+                            is_edit_target = True
+                            break
+                        clicked_target = clicked_target.parentItem()
+                    
+                    if not is_edit_target:
+                        # 空き地クリックと判定されたが、編集対象エッジの近くだったら編集終了をキャンセルする
+                        target_item = None
+                        for it in self.scene.items():
+                            if it.data(0) == self.editing_node_item_id:
+                                target_item = it
+                                break
+                        if target_item:
+                            best_idx, _, _ = self._find_closest_edge(target_item, pos)
+                            if best_idx != -1:
+                                is_edit_target = True
+                                        
+                    if not is_edit_target:
+                        self.end_node_editing()
+                        # 編集終了後は item もしくは selection をクリアして処理
+                        item = None
                 
                 # Walk up to find the main item with ID
                 while item and not item.data(0) and item.parentItem():
@@ -389,6 +514,25 @@ class PDFCanvas(QGraphicsView):
         self.request_tool_change.emit(next_mode)
 
     def mouseDoubleClickEvent(self, event):
+        if self.tool_mode == ToolMode.SELECT and self.editing_node_item_id:
+            if event.button() == Qt.LeftButton:
+                pos = self.mapToScene(event.pos())
+                item = None
+                for it in self.scene.items():
+                    if it.data(0) == self.editing_node_item_id:
+                        item = it
+                        break
+                if item:
+                    best_idx, best_proj, _ = self._find_closest_edge(item, pos)
+                    if best_idx != -1:
+                        points = self._get_item_points(item)
+                        points.insert(best_idx + 1, best_proj)
+                        self._update_item_geometry(item, points)
+                        self.start_node_editing(self.editing_node_item_id)
+                        self.item_points_updated.emit(self.editing_node_item_id, points)
+                        event.accept()
+                        return
+
         if event.button() == Qt.LeftButton and self.tool_mode == ToolMode.DRAW_LINE:
             # The single-click that fired before this double-click already appended a point;
             # remove it so the path ends at the previous point.
@@ -479,7 +623,17 @@ class PDFCanvas(QGraphicsView):
                     delta = item.pos() - last_pos
                     if delta.x() != 0 or delta.y() != 0:
                         self.item_moved.emit(item_id, delta)
-                        item.setData(1, item.pos())
+                        
+                        # 直線・折れ線・多角形の場合、pos() を (0,0) にリセットし、内部形状を移動後のシーン座標で更新する
+                        if isinstance(item, (QGraphicsLineItem, QGraphicsPathItem, QGraphicsPolygonItem)):
+                            points = self._get_item_points(item)
+                            if points:
+                                moved_points = [p + delta for p in points]
+                                self._update_item_geometry(item, moved_points)
+                            item.setPos(0, 0)
+                            item.setData(1, QPointF(0, 0))
+                        else:
+                            item.setData(1, item.pos())
         super().mouseReleaseEvent(event)
 
     def add_line_annotation(self, p1, p2, text="", color="red", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100):
@@ -815,3 +969,204 @@ class PDFCanvas(QGraphicsView):
         factor = target_scale / current_zoom
         self.scale(factor, factor)
         self._emit_zoom_changed()
+
+    def keyPressEvent(self, event):
+        if self.tool_mode == ToolMode.SELECT and self.editing_node_item_id:
+            if event.key() in [Qt.Key_Delete, Qt.Key_Backspace]:
+                selected = self.scene.selectedItems()
+                for sel in selected:
+                    if isinstance(sel, VertexHandleItem):
+                        self.on_vertex_double_clicked(sel.parent_item, sel.index)
+                        event.accept()
+                        return
+            elif event.key() == Qt.Key_Escape:
+                self.end_node_editing()
+                event.accept()
+                return
+        super().keyPressEvent(event)
+
+    # === ノード（頂点）編集の実装 ===
+
+    def start_node_editing(self, item_id):
+        self.end_node_editing()
+        self.editing_node_item_id = item_id
+        
+        target_item = None
+        for item in self.scene.items():
+            if item.data(0) == item_id:
+                target_item = item
+                break
+        if not target_item:
+            return
+            
+        points = self._get_item_points(target_item)
+        if not points:
+            return
+            
+        for i, pt in enumerate(points):
+            handle = VertexHandleItem(target_item, i, self)
+            handle.setPos(pt)
+            self.vertex_handles.append(handle)
+            
+        target_item.setFlag(QGraphicsItem.ItemIsMovable, False)
+        self.viewport().update()
+
+    def end_node_editing(self):
+        if not self.editing_node_item_id:
+            return
+        ended_id = self.editing_node_item_id
+        self.editing_node_item_id = None
+        
+        for handle in self.vertex_handles:
+            try:
+                handle.setParentItem(None)
+                self.scene.removeItem(handle)
+            except RuntimeError:
+                pass
+        self.vertex_handles = []
+        
+        for item in self.scene.items():
+            if item.data(0) == ended_id:
+                if self.tool_mode == ToolMode.SELECT:
+                    item.setFlag(QGraphicsItem.ItemIsMovable, True)
+                break
+        self.node_edit_ended.emit(ended_id)
+        self.viewport().update()
+
+    def _get_item_points(self, item):
+        if isinstance(item, QGraphicsLineItem):
+            line = item.line()
+            return [line.p1(), line.p2()]
+        elif isinstance(item, QGraphicsPolygonItem):
+            return [p for p in item.polygon()]
+        elif isinstance(item, QGraphicsPathItem):
+            path = item.path()
+            pts = []
+            for i in range(path.elementCount()):
+                elem = path.elementAt(i)
+                pts.append(QPointF(elem.x, elem.y))
+            return pts
+        return []
+
+    def on_vertex_moved(self, item, index, new_pos):
+        points = self._get_item_points(item)
+        if not points or index >= len(points):
+            return
+        points[index] = new_pos
+        self._update_item_geometry(item, points)
+
+    def _update_item_geometry(self, item, points):
+        if isinstance(item, QGraphicsLineItem):
+            if len(points) >= 2:
+                item.setLine(points[0].x(), points[0].y(), points[1].x(), points[1].y())
+                for child in item.childItems():
+                    if isinstance(child, CustomTextItem):
+                        child.setPos((points[0].x() + points[1].x()) / 2, (points[0].y() + points[1].y()) / 2)
+        elif isinstance(item, QGraphicsPolygonItem):
+            item.setPolygon(QPolygonF(points))
+            avg_x = sum(p.x() for p in points) / len(points)
+            avg_y = sum(p.y() for p in points) / len(points)
+            for child in item.childItems():
+                if isinstance(child, CustomTextItem):
+                    child.setPos(avg_x, avg_y)
+        elif isinstance(item, QGraphicsPathItem):
+            path = QPainterPath()
+            path.moveTo(points[0])
+            for pt in points[1:]:
+                path.lineTo(pt)
+            item.setPath(path)
+            mid_idx = len(points) // 2
+            mid = points[mid_idx]
+            for child in item.childItems():
+                if isinstance(child, CustomTextItem):
+                    child.setPos(mid.x(), mid.y())
+
+    def on_vertex_double_clicked(self, item, index):
+        points = self._get_item_points(item)
+        if not points:
+            return
+        is_polygon = isinstance(item, QGraphicsPolygonItem)
+        min_pts = 3 if is_polygon else 2
+        if len(points) <= min_pts:
+            return
+        points.pop(index)
+        self._update_item_geometry(item, points)
+        self.start_node_editing(item.data(0))
+        self.item_points_updated.emit(item.data(0), points)
+
+    def _show_object_context_menu(self, global_pos, item_id):
+        menu = QMenu(self)
+        menu.setStyleSheet("QMenu { background-color: #1e1e2f; color: white; border: 1px solid #333344; } QMenu::item:selected { background-color: #7c4dff; }")
+        edit_action = QAction("📐 頂点を編集", self)
+        edit_action.triggered.connect(lambda: self.start_node_editing(item_id))
+        menu.addAction(edit_action)
+        delete_action = QAction("❌ 削除", self)
+        delete_action.triggered.connect(lambda: self.request_delete.emit(item_id))
+        menu.addAction(delete_action)
+        menu.exec(global_pos)
+
+    def _show_vertex_context_menu(self, global_pos, handle_item):
+        menu = QMenu(self)
+        menu.setStyleSheet("QMenu { background-color: #1e1e2f; color: white; border: 1px solid #333344; } QMenu::item:selected { background-color: #7c4dff; }")
+        points = self._get_item_points(handle_item.parent_item)
+        is_polygon = isinstance(handle_item.parent_item, QGraphicsPolygonItem)
+        min_pts = 3 if is_polygon else 2
+        can_delete = len(points) > min_pts
+        del_action = QAction("❌ 頂点を削除", self)
+        del_action.setEnabled(can_delete)
+        del_action.triggered.connect(lambda: self.on_vertex_double_clicked(handle_item.parent_item, handle_item.index))
+        menu.addAction(del_action)
+        menu.exec(global_pos)
+
+    def _show_edge_context_menu(self, global_pos, item, insert_idx, proj_point):
+        menu = QMenu(self)
+        menu.setStyleSheet("QMenu { background-color: #1e1e2f; color: white; border: 1px solid #333344; } QMenu::item:selected { background-color: #7c4dff; }")
+        add_action = QAction("➕ 頂点を追加", self)
+        def do_add():
+            pts = self._get_item_points(item)
+            pts.insert(insert_idx + 1, proj_point)
+            self._update_item_geometry(item, pts)
+            self.start_node_editing(item.data(0))
+            self.item_points_updated.emit(item.data(0), pts)
+        add_action.triggered.connect(do_add)
+        menu.addAction(add_action)
+        menu.exec(global_pos)
+
+    def _show_edit_exit_context_menu(self, global_pos):
+        menu = QMenu(self)
+        menu.setStyleSheet("QMenu { background-color: #1e1e2f; color: white; border: 1px solid #333344; } QMenu::item:selected { background-color: #7c4dff; }")
+        exit_action = QAction("✅ 編集を終了", self)
+        exit_action.triggered.connect(self.end_node_editing)
+        menu.addAction(exit_action)
+        menu.exec(global_pos)
+
+    def on_vertex_move_finished(self, item):
+        """頂点ハンドルのドラッグが完了した際に呼ばれ、外部モデルの更新と面積/長さ再計算を1回だけ要求する。"""
+        points = self._get_item_points(item)
+        if points:
+            self.item_points_updated.emit(item.data(0), points)
+
+    def _find_closest_edge(self, item, scene_pos):
+        """指定したアイテムの最も近いエッジを検索し、(best_idx, best_proj, best_dist) を返す。"""
+        points = self._get_item_points(item)
+        if not points:
+            return -1, None, float('inf')
+        
+        local_pos = item.mapFromScene(scene_pos)
+        best_dist = 15.0 / self.transform().m11()  # 15pxの閾値
+        best_idx = -1
+        best_proj = None
+        n = len(points)
+        is_polygon = isinstance(item, QGraphicsPolygonItem)
+        limit = n if is_polygon else n - 1
+        
+        for i in range(limit):
+            s1 = points[i]
+            s2 = points[(i+1)%n]
+            dist, proj = point_to_segment_distance(local_pos, s1, s2)
+            if dist < best_dist:
+                best_dist = dist
+                best_idx = i
+                best_proj = proj
+                
+        return best_idx, best_proj, best_dist

@@ -8,6 +8,7 @@ class PropertyPanel(QWidget):
     attribute_changed = Signal(str, dict) # id, {attr: value}
     delete_requested = Signal(str) # id
     calculate_requested = Signal(str) # id — triggers distance/area calculation
+    node_edit_toggled = Signal(str, bool) # id, active
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -183,6 +184,21 @@ class PropertyPanel(QWidget):
         self.calc_btn.clicked.connect(self._on_calc_clicked)
         calc_layout.addWidget(self.calc_btn)
         self.main_layout.addWidget(self.calc_container)
+        
+        # --- Node Edit Section (For line, polyline, polygon) ---
+        self.node_edit_container = QWidget()
+        node_edit_layout = QVBoxLayout(self.node_edit_container)
+        node_edit_layout.setContentsMargins(0, 0, 0, 0)
+        node_edit_layout.addWidget(self._create_section_label("ノード編集"))
+        self.node_edit_btn = QPushButton("📐 頂点を編集")
+        self.node_edit_btn.setCheckable(True)
+        self.node_edit_btn.setStyleSheet(
+            "QPushButton { background-color: #2a2a3d; color: white; border: 1px solid #7c4dff; border-radius: 4px; padding: 5px; }"
+            "QPushButton:checked { background-color: #7c4dff; border: 1px solid #9c70ff; font-weight: bold; }"
+        )
+        self.node_edit_btn.toggled.connect(self._on_node_edit_toggled)
+        node_edit_layout.addWidget(self.node_edit_btn)
+        self.main_layout.addWidget(self.node_edit_container)
 
         # --- Typography Section (For Text/Labels) ---
         self.text_container = QWidget()
@@ -239,11 +255,19 @@ class PropertyPanel(QWidget):
         can_calc = item_type in ["polyline", "polygon", "circle"]
         has_line_markers = item_type == "polyline"
         has_circle_marker = item_type == "circle"
+        is_node_editable = item_type in ["line", "polyline", "polygon"]
         
         self.line_container.setVisible(is_shape)
         self.fill_container.setVisible(has_fill)
         self.calc_container.setVisible(can_calc)
         self.text_container.setVisible(is_text or has_label)
+        self.node_edit_container.setVisible(is_node_editable)
+
+        # Reset node edit button state for the new item
+        self.node_edit_btn.blockSignals(True)
+        self.node_edit_btn.setChecked(False)
+        self.node_edit_btn.setText("📐 頂点を編集")
+        self.node_edit_btn.blockSignals(False)
 
         self.line_marker_container.setVisible(has_line_markers)
         self.circle_marker_container.setVisible(has_circle_marker)
@@ -298,6 +322,11 @@ class PropertyPanel(QWidget):
         self.color_preview.setStyleSheet("background-color: transparent; border: 1px solid #3d3d5c;")
         self.fill_container.setVisible(False)
         self.calc_container.setVisible(False)
+        self.node_edit_container.setVisible(False)
+        self.node_edit_btn.blockSignals(True)
+        self.node_edit_btn.setChecked(False)
+        self.node_edit_btn.setText("📐 頂点を編集")
+        self.node_edit_btn.blockSignals(False)
         self.marker_container.setVisible(False)
         self.setEnabled(False)
         self._block_signals = False
@@ -384,3 +413,21 @@ class PropertyPanel(QWidget):
         if self.current_item_id:
             self.delete_requested.emit(self.current_item_id)
             self.clear_panel()
+
+    def _on_node_edit_toggled(self, checked):
+        if not self._block_signals and self.current_item_id:
+            if checked:
+                self.node_edit_btn.setText("✅ 編集完了")
+            else:
+                self.node_edit_btn.setText("📐 頂点を編集")
+            self.node_edit_toggled.emit(self.current_item_id, checked)
+
+    def set_node_edit_active(self, active):
+        if self.current_item_id:
+            self._block_signals = True
+            self.node_edit_btn.setChecked(active)
+            if active:
+                self.node_edit_btn.setText("✅ 編集完了")
+            else:
+                self.node_edit_btn.setText("📐 頂点を編集")
+            self._block_signals = False
