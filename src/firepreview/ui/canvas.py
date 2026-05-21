@@ -43,6 +43,7 @@ class VertexHandleItem(QGraphicsEllipseItem):
         self.index = index
         self.canvas = canvas
         self.size = size
+        self.is_dragging = False
         
         self.setFlag(QGraphicsItem.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
@@ -58,7 +59,14 @@ class VertexHandleItem(QGraphicsEllipseItem):
         if change == QGraphicsItem.ItemPositionChange and self.scene():
             new_pos = value
             self.canvas.on_vertex_moved(self.parent_item, self.index, new_pos)
+            self.is_dragging = True
         return super().itemChange(change, value)
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        if self.is_dragging:
+            self.is_dragging = False
+            self.canvas.on_vertex_move_finished(self.parent_item)
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -280,22 +288,7 @@ class PDFCanvas(QGraphicsView):
                             target_item = it
                             break
                     if target_item:
-                        points = self._get_item_points(target_item)
-                        local_pos = target_item.mapFromScene(pos)
-                        best_dist = 15.0 / self.transform().m11()
-                        best_idx = -1
-                        best_proj = None
-                        n = len(points)
-                        is_polygon = isinstance(target_item, QGraphicsPolygonItem)
-                        limit = n if is_polygon else n - 1
-                        for i in range(limit):
-                            s1 = points[i]
-                            s2 = points[(i+1)%n]
-                            dist, proj = point_to_segment_distance(local_pos, s1, s2)
-                            if dist < best_dist:
-                                best_dist = dist
-                                best_idx = i
-                                best_proj = proj
+                        best_idx, best_proj, best_dist = self._find_closest_edge(target_item, pos)
                         if best_idx != -1:
                             self._show_edge_context_menu(event.globalPosition().toPoint(), target_item, best_idx, best_proj)
                             event.accept()
@@ -338,20 +331,9 @@ class PDFCanvas(QGraphicsView):
                                 target_item = it
                                 break
                         if target_item:
-                            points = self._get_item_points(target_item)
-                            if points:
-                                local_pos = target_item.mapFromScene(pos)
-                                best_dist = 15.0 / self.transform().m11()
-                                n = len(points)
-                                is_polygon = isinstance(target_item, QGraphicsPolygonItem)
-                                limit = n if is_polygon else n - 1
-                                for i in range(limit):
-                                    s1 = points[i]
-                                    s2 = points[(i+1)%n]
-                                    dist, _ = point_to_segment_distance(local_pos, s1, s2)
-                                    if dist < best_dist:
-                                        is_edit_target = True
-                                        break
+                            best_idx, _, _ = self._find_closest_edge(target_item, pos)
+                            if best_idx != -1:
+                                is_edit_target = True
                                         
                     if not is_edit_target:
                         self.end_node_editing()
@@ -541,30 +523,15 @@ class PDFCanvas(QGraphicsView):
                         item = it
                         break
                 if item:
-                    points = self._get_item_points(item)
-                    if points:
-                        local_pos = item.mapFromScene(pos)
-                        best_dist = 15.0 / self.transform().m11()
-                        best_idx = -1
-                        best_proj = None
-                        n = len(points)
-                        is_polygon = isinstance(item, QGraphicsPolygonItem)
-                        limit = n if is_polygon else n - 1
-                        for i in range(limit):
-                            s1 = points[i]
-                            s2 = points[(i+1)%n]
-                            dist, proj = point_to_segment_distance(local_pos, s1, s2)
-                            if dist < best_dist:
-                                best_dist = dist
-                                best_idx = i
-                                best_proj = proj
-                        if best_idx != -1:
-                            points.insert(best_idx + 1, best_proj)
-                            self._update_item_geometry(item, points)
-                            self.start_node_editing(self.editing_node_item_id)
-                            self.item_points_updated.emit(self.editing_node_item_id, points)
-                            event.accept()
-                            return
+                    best_idx, best_proj, _ = self._find_closest_edge(item, pos)
+                    if best_idx != -1:
+                        points = self._get_item_points(item)
+                        points.insert(best_idx + 1, best_proj)
+                        self._update_item_geometry(item, points)
+                        self.start_node_editing(self.editing_node_item_id)
+                        self.item_points_updated.emit(self.editing_node_item_id, points)
+                        event.accept()
+                        return
 
         if event.button() == Qt.LeftButton and self.tool_mode == ToolMode.DRAW_LINE:
             # The single-click that fired before this double-click already appended a point;
@@ -1087,7 +1054,6 @@ class PDFCanvas(QGraphicsView):
             return
         points[index] = new_pos
         self._update_item_geometry(item, points)
-        self.item_points_updated.emit(item.data(0), points)
 
     def _update_item_geometry(self, item, points):
         if isinstance(item, QGraphicsLineItem):
@@ -1173,3 +1139,34 @@ class PDFCanvas(QGraphicsView):
         exit_action.triggered.connect(self.end_node_editing)
         menu.addAction(exit_action)
         menu.exec(global_pos)
+
+    def on_vertex_move_finished(self, item):
+        """頂点ハンドルのドラッグが完了した際に呼ばれ、外部モデルの更新と面積/長さ再計算を1回だけ要求する。"""
+        points = self._get_item_points(item)
+        if points:
+            self.item_points_updated.emit(item.data(0), points)
+
+    def _find_closest_edge(self, item, scene_pos):
+        """指定したアイテムの最も近いエッジを検索し、(best_idx, best_proj, best_dist) を返す。"""
+        points = self._get_item_points(item)
+        if not points:
+            return -1, None, float('inf')
+        
+        local_pos = item.mapFromScene(scene_pos)
+        best_dist = 15.0 / self.transform().m11()  # 15pxの閾値
+        best_idx = -1
+        best_proj = None
+        n = len(points)
+        is_polygon = isinstance(item, QGraphicsPolygonItem)
+        limit = n if is_polygon else n - 1
+        
+        for i in range(limit):
+            s1 = points[i]
+            s2 = points[(i+1)%n]
+            dist, proj = point_to_segment_distance(local_pos, s1, s2)
+            if dist < best_dist:
+                best_dist = dist
+                best_idx = i
+                best_proj = proj
+                
+        return best_idx, best_proj, best_dist
