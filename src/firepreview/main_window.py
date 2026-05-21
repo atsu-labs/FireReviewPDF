@@ -149,6 +149,12 @@ class MainWindow(QMainWindow):
         self.prop_panel.attribute_changed.connect(self.on_property_changed)
         self.prop_panel.delete_requested.connect(self.on_delete_item)
         self.prop_panel.calculate_requested.connect(self.on_calculate_requested)
+        
+        # Node editing connections
+        self.prop_panel.node_edit_toggled.connect(self.on_node_edit_toggled)
+        self.canvas.item_points_updated.connect(self.on_canvas_item_points_updated)
+        self.canvas.node_edit_ended.connect(self.on_canvas_node_edit_ended)
+        
         content_area.addWidget(self.prop_panel)
 
         self.main_layout.addLayout(content_area)
@@ -897,6 +903,10 @@ class MainWindow(QMainWindow):
                                               stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity,
                                               fill_color=ann.fill_color,
                                               center_marker=ann.center_marker, start_marker=ann.start_marker, end_marker=ann.end_marker)
+                
+                # もし現在このアイテムを頂点編集中なら、トグルボタンを「編集中」状態に維持する
+                if self.canvas.editing_node_item_id == ann.id:
+                    self.prop_panel.set_node_edit_active(True)
                 break
 
     def on_request_tool_change(self, mode):
@@ -980,6 +990,29 @@ class MainWindow(QMainWindow):
         for ann in self.model.annotations:
             if ann.id == item_id:
                 ann.points = [p + delta for p in ann.points]
+                break
+
+    def on_node_edit_toggled(self, item_id, active):
+        if active:
+            self.canvas.start_node_editing(item_id)
+        else:
+            self.canvas.end_node_editing()
+
+    def on_canvas_node_edit_ended(self, item_id):
+        self.prop_panel.set_node_edit_active(False)
+
+    def on_canvas_item_points_updated(self, item_id, points):
+        for ann in self.model.annotations:
+            if ann.id == item_id:
+                ann.points = points
+                
+                # 自動計測計算
+                if self._is_current_page_calibrated():
+                    self.on_calculate_requested(item_id)
+                
+                # マーカー等の再描画（頂点移動や頂点数変更によってマーカーの位置が変わるため、再構築を促す）
+                if ann.type == "polyline":
+                    self.canvas.update_item_properties(item_id, {"start_marker": ann.start_marker, "end_marker": ann.end_marker})
                 break
 
     def on_delete_item(self, item_id):
