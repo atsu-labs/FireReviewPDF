@@ -123,6 +123,8 @@ class MainWindow(QMainWindow):
         self.navigator = NavigatorPanel()
         self.navigator.setFixedWidth(220)
         self.navigator.page_changed.connect(self.go_to_page)
+        self.navigator.object_selected.connect(self.on_object_selected_from_panel)
+        self.navigator.object_edit_toggled.connect(self.on_object_edit_toggled_from_panel)
         content_area.addWidget(self.navigator)
 
         # Canvas (Center)
@@ -907,6 +909,7 @@ class MainWindow(QMainWindow):
                 # もし現在このアイテムを頂点編集中なら、トグルボタンを「編集中」状態に維持する
                 if self.canvas.editing_node_item_id == ann.id:
                     self.prop_panel.set_node_edit_active(True)
+                self.update_object_panel()
                 break
 
     def on_request_tool_change(self, mode):
@@ -948,6 +951,7 @@ class MainWindow(QMainWindow):
         ann.text = text
         ann.page_num = self.current_page
         self.model.annotations.append(ann)
+        self.update_object_panel()
         return ann
 
     def on_item_selected(self, item_id):
@@ -958,10 +962,12 @@ class MainWindow(QMainWindow):
                                               stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity,
                                               fill_color=ann.fill_color,
                                               center_marker=ann.center_marker, start_marker=ann.start_marker, end_marker=ann.end_marker)
+                self.navigator.set_selected_object(item_id)
                 break
 
     def on_selection_cleared(self):
         self.prop_panel.clear_panel()
+        self.navigator.set_selected_object(None)
 
     def on_property_changed(self, item_id, attrs):
         for ann in self.model.annotations:
@@ -984,12 +990,25 @@ class MainWindow(QMainWindow):
                     attrs["end_marker"] = ann.end_marker
                     attrs["center_marker"] = ann.center_marker
                 self.canvas.update_item_properties(item_id, attrs)
+                self.update_object_panel()
                 break
 
     def on_item_moved(self, item_id, delta):
         for ann in self.model.annotations:
             if ann.id == item_id:
                 ann.points = [p + delta for p in ann.points]
+                
+                # ドラッグ移動後にマーカーを正しい新しい端点に再描画させる
+                attrs = {}
+                if hasattr(ann, 'start_marker') and ann.start_marker is not None:
+                    attrs['start_marker'] = ann.start_marker
+                if hasattr(ann, 'end_marker') and ann.end_marker is not None:
+                    attrs['end_marker'] = ann.end_marker
+                if hasattr(ann, 'center_marker') and ann.center_marker is not None:
+                    attrs['center_marker'] = ann.center_marker
+                
+                if attrs:
+                    self.canvas.update_item_properties(item_id, attrs)
                 break
 
     def on_node_edit_toggled(self, item_id, active):
@@ -1013,9 +1032,12 @@ class MainWindow(QMainWindow):
                 # マーカー等の再描画（頂点移動や頂点数変更によってマーカーの位置が変わるため、再構築を促す）
                 if ann.type == "polyline":
                     self.canvas.update_item_properties(item_id, {"start_marker": ann.start_marker, "end_marker": ann.end_marker})
+                self.update_object_panel()
                 break
 
     def on_delete_item(self, item_id):
+        if hasattr(self.canvas, 'active_edit_mode') and self.canvas.active_edit_mode and self.canvas.editing_item_id == item_id:
+            self.on_object_edit_toggled_from_panel(item_id, False)
         self.model.annotations = [a for a in self.model.annotations if a.id != item_id]
         self.update_page_view()
 
@@ -1106,6 +1128,7 @@ class MainWindow(QMainWindow):
                         self.canvas.add_text_annotation(ann.points[0], ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, stroke_opacity=ann.stroke_opacity)
             self._update_scale_status_label()
             self._update_pdf_size_label()
+            self.update_object_panel()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_O and event.modifiers() & Qt.ControlModifier:
@@ -1113,3 +1136,36 @@ class MainWindow(QMainWindow):
         elif event.key() == Qt.Key_A and not event.modifiers():
             # 「a」キーで選択ツールに切り替え
             self.on_request_tool_change(ToolMode.SELECT)
+
+    def update_object_panel(self):
+        page_anns = [ann for ann in self.model.annotations if ann.page_num == self.current_page]
+        self.navigator.update_objects(page_anns)
+
+    def on_object_selected_from_panel(self, item_id):
+        self.canvas.scene.clearSelection()
+        target_item = None
+        for item in self.canvas.scene.items():
+            if item.data(0) == item_id:
+                target_item = item
+                break
+        if target_item:
+            target_item.setSelected(True)
+            self.on_item_selected(item_id)
+
+    def on_object_edit_toggled_from_panel(self, item_id, active):
+        self.canvas.set_active_edit_item(item_id, active)
+        self.navigator.set_editing_object(item_id, active)
+        
+        # 編集モード中は、他の操作を完全にガードするため、ツールバーの描画ボタンを無効化する
+        if active:
+            # 選択ツールに強制切り替え
+            self.on_request_tool_change(ToolMode.SELECT)
+            
+        for btn in self.tool_btns:
+            mode = btn.property("tool_mode")
+            if mode != ToolMode.SELECT:
+                btn.setEnabled(not active)
+                
+        # 頂点編集トグルボタン（もしあれば）なども無効化
+        if hasattr(self.prop_panel, 'node_edit_btn'):
+            self.prop_panel.node_edit_btn.setEnabled(not active)

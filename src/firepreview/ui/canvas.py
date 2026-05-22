@@ -154,6 +154,10 @@ class PDFCanvas(QGraphicsView):
         self.editing_node_item_id = None
         self.vertex_handles = []
 
+        # 個別オブジェクト移動・編集モード用の状態管理
+        self.active_edit_mode = False
+        self.editing_item_id = None
+
     def set_text_defaults(self, font_family, font_size, color, continuous=False):
         self.current_text_font = font_family
         self.current_text_size = font_size
@@ -189,6 +193,61 @@ class PDFCanvas(QGraphicsView):
             self.setCursor(Qt.CrossCursor)
             self._set_items_interactive(False)
             self.scene.clearSelection()
+
+    def _debug_print_scene_state(self, context_name):
+        print(f"=== DEBUG: {context_name} ===")
+        print(f"  active_edit_mode: {self.active_edit_mode}")
+        print(f"  editing_item_id: {self.editing_item_id}")
+        for i, item in enumerate(self.scene.items()):
+            if item == self.background_item:
+                print(f"  [{i}] BackgroundItem")
+                continue
+            iid = item.data(0)
+            p_iid = item.parentItem().data(0) if item.parentItem() else None
+            m_type = item.data(2)
+            print(f"  [{i}] ItemType: {type(item).__name__}, ID: {iid}, ParentID: {p_iid}, MarkerType: {m_type}, "
+                  f"Enabled: {item.isEnabled()}, Visible: {item.isVisible()}, "
+                  f"Opacity: {item.opacity()}, Selected: {item.isSelected()}")
+        print("==============================")
+
+    def set_active_edit_item(self, item_id, active):
+        """特定のオブジェクトのみを編集可能にし、他のオブジェクトを半透明・操作不可にする"""
+        self.active_edit_mode = active
+        self.editing_item_id = item_id if active else None
+
+        for item in self.scene.items():
+            if item == self.background_item:
+                continue
+            
+            # メインアノテーションオブジェクト（親がない、あるいはdata(0)を持つ）のみを対象とする
+            iid = item.data(0)
+            if iid and item.parentItem() is None:
+                if active:
+                    if iid == item_id:
+                        item.setEnabled(True)
+                        item.setOpacity(1.0)
+                        item.setFlag(QGraphicsItem.ItemIsSelectable, True)
+                        item.setFlag(QGraphicsItem.ItemIsMovable, True)
+                    else:
+                        item.setEnabled(False)
+                        item.setOpacity(0.25)
+                        item.setFlag(QGraphicsItem.ItemIsSelectable, False)
+                        item.setFlag(QGraphicsItem.ItemIsMovable, False)
+                else:
+                    item.setEnabled(True)
+                    item.setOpacity(1.0)
+                    interactive = (self.tool_mode == ToolMode.SELECT)
+                    item.setFlag(QGraphicsItem.ItemIsSelectable, interactive)
+                    item.setFlag(QGraphicsItem.ItemIsMovable, interactive)
+        
+        self.scene.clearSelection()
+        if active:
+            for item in self.scene.items():
+                if item.data(0) == item_id and item.parentItem() is None:
+                    item.setSelected(True)
+                    break
+        self.viewport().update()
+        self._debug_print_scene_state("set_active_edit_item")
 
     def _set_items_interactive(self, interactive):
         for item in self.scene.items():
@@ -272,6 +331,70 @@ class PDFCanvas(QGraphicsView):
             self.setCursor(Qt.ClosedHandCursor)
             event.accept()
             return
+
+        # ★最優先: 個別オブジェクト編集モード中のガード＆貫通処理★
+        # tool_mode に依存せず、個別編集モードが有効な場合は常にこの処理を最優先で実行する
+        if self.active_edit_mode:
+            if event.button() == Qt.LeftButton:
+                pos = self.mapToScene(event.pos())
+                clicked_edit_item = False
+                
+                # クリックした位置にあるすべてのアイテムを前面から順に探索（半透明オブジェクトの手前を貫通させる）
+                items_at_pos = self.scene.items(pos, Qt.IntersectsItemShape, Qt.DescendingOrder, self.transform())
+                for item_at_pos in items_at_pos:
+                    temp_item = item_at_pos
+                    while temp_item:
+                        if temp_item.data(0) == self.editing_item_id:
+                            clicked_edit_item = True
+                            break
+                        temp_item = temp_item.parentItem()
+                    if clicked_edit_item:
+                        break
+                
+                if clicked_edit_item:
+                    target_item = None
+                    for it in self.scene.items():
+                        if it.data(0) == self.editing_item_id and it.parentItem() is None:
+                            target_item = it
+                            break
+                    if target_item:
+                        self.scene.clearSelection()
+                        target_item.setSelected(True)
+                    
+                    # super().mousePressEvent() の間だけ、非編集対象の親アノテーションを一瞬 disable にして
+                    # ヒットテストから除外し、イベントを完璧に貫通させる
+                    disabled_items = []
+                    for it in self.scene.items():
+                        if it == self.background_item:
+                            continue
+                        iid = it.data(0)
+                        if iid and it.parentItem() is None and iid != self.editing_item_id:
+                            if it.isEnabled():
+                                it.setEnabled(False)
+                                disabled_items.append(it)
+                    
+                    try:
+                        super().mousePressEvent(event)
+                    finally:
+                        # 判定終了後、即座に Enabled(True) に復元する（描画消失を防ぐ）
+                        for it in disabled_items:
+                            it.setEnabled(True)
+                else:
+                    # 空き地クリック時は選択を維持するためにイベントを無視する
+                    event.accept()
+                return
+            elif event.button() == Qt.RightButton:
+                pos = self.mapToScene(event.pos())
+                # 編集状態中は、編集中のオブジェクトの右クリックのみ許可する（削除など）
+                item = self.scene.itemAt(pos, self.transform())
+                while item and not item.data(0) and item.parentItem():
+                    item = item.parentItem()
+                if item and item.data(0) == self.editing_item_id:
+                    self._show_object_context_menu(event.globalPosition().toPoint(), item.data(0))
+                    event.accept()
+                    return
+                event.accept()
+                return
 
         if self.tool_mode == ToolMode.SELECT:
             if event.button() == Qt.RightButton:
