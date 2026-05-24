@@ -154,6 +154,13 @@ class PDFCanvas(QGraphicsView):
         self.editing_node_item_id = None
         self.vertex_handles = []
 
+        # 個別オブジェクト移動・編集モード用の状態管理
+        self.active_edit_mode = False
+        self.editing_item_id = None
+
+        # ★強参照を保持してGCによるオブジェクト消失を防ぐ
+        self.annotation_items = {}
+
     def set_text_defaults(self, font_family, font_size, color, continuous=False):
         self.current_text_font = font_family
         self.current_text_size = font_size
@@ -190,6 +197,62 @@ class PDFCanvas(QGraphicsView):
             self._set_items_interactive(False)
             self.scene.clearSelection()
 
+    def _debug_print_scene_state(self, context_name):
+        print(f"=== DEBUG: {context_name} ===")
+        print(f"  active_edit_mode: {self.active_edit_mode}")
+        print(f"  editing_item_id: {self.editing_item_id}")
+        for i, item in enumerate(self.scene.items()):
+            if item == self.background_item:
+                print(f"  [{i}] BackgroundItem")
+                continue
+            iid = item.data(0)
+            p_iid = item.parentItem().data(0) if item.parentItem() else None
+            m_type = item.data(2)
+            print(f"  [{i}] ItemType: {type(item).__name__}, ID: {iid}, ParentID: {p_iid}, MarkerType: {m_type}, "
+                  f"Enabled: {item.isEnabled()}, Visible: {item.isVisible()}, "
+                  f"Opacity: {item.opacity()}, Selected: {item.isSelected()}")
+        print("==============================")
+
+    def set_active_edit_item(self, item_id, active):
+        """特定のオブジェクトのみを編集可能にし、他のオブジェクトを半透明・操作不可にする"""
+        self.active_edit_mode = active
+        self.editing_item_id = item_id if active else None
+
+        for item in self.scene.items():
+            if item == self.background_item:
+                continue
+            
+            # メインアノテーションオブジェクト（親がない、あるいはdata(0)を持つ）のみを対象とする
+            iid = item.data(0)
+            if iid and item.parentItem() is None:
+                if active:
+                    if iid == item_id:
+                        item.setEnabled(True)
+                        item.setOpacity(1.0)
+                        item.setFlag(QGraphicsItem.ItemIsSelectable, True)
+                        item.setFlag(QGraphicsItem.ItemIsMovable, True)
+                    else:
+                        # 表示消失を防ぐため、Enabled(True) を常に維持する
+                        item.setEnabled(True)
+                        item.setOpacity(0.25)
+                        item.setFlag(QGraphicsItem.ItemIsSelectable, False)
+                        item.setFlag(QGraphicsItem.ItemIsMovable, False)
+                else:
+                    item.setEnabled(True)
+                    item.setOpacity(1.0)
+                    interactive = (self.tool_mode == ToolMode.SELECT)
+                    item.setFlag(QGraphicsItem.ItemIsSelectable, interactive)
+                    item.setFlag(QGraphicsItem.ItemIsMovable, interactive)
+        
+        self.scene.clearSelection()
+        if active:
+            for item in self.scene.items():
+                if item.data(0) == item_id and item.parentItem() is None:
+                    item.setSelected(True)
+                    break
+        self.viewport().update()
+        self._debug_print_scene_state("set_active_edit_item")
+
     def _set_items_interactive(self, interactive):
         for item in self.scene.items():
             if item == self.background_item: continue
@@ -216,6 +279,7 @@ class PDFCanvas(QGraphicsView):
         self.temp_line = None
         self.temp_poly = None
         self.temp_circle = None
+        self.annotation_items.clear()
         self.scene.clear()
         self.background_item = QGraphicsPixmapItem(pixmap)
         self.background_item.setZValue(-1)
@@ -272,6 +336,70 @@ class PDFCanvas(QGraphicsView):
             self.setCursor(Qt.ClosedHandCursor)
             event.accept()
             return
+
+        # ★最優先: 個別オブジェクト編集モード中のガード＆貫通処理★
+        # tool_mode に依存せず、個別編集モードが有効な場合は常にこの処理を最優先で実行する
+        if self.active_edit_mode:
+            if event.button() == Qt.LeftButton:
+                pos = self.mapToScene(event.pos())
+                clicked_edit_item = False
+                
+                # クリックした位置にあるすべてのアイテムを前面から順に探索（半透明オブジェクトの手前を貫通させる）
+                items_at_pos = self.scene.items(pos, Qt.IntersectsItemShape, Qt.DescendingOrder, self.transform())
+                for item_at_pos in items_at_pos:
+                    temp_item = item_at_pos
+                    while temp_item:
+                        if temp_item.data(0) == self.editing_item_id:
+                            clicked_edit_item = True
+                            break
+                        temp_item = temp_item.parentItem()
+                    if clicked_edit_item:
+                        break
+                
+                if clicked_edit_item:
+                    target_item = None
+                    for it in self.scene.items():
+                        if it.data(0) == self.editing_item_id and it.parentItem() is None:
+                            target_item = it
+                            break
+                    if target_item:
+                        self.scene.clearSelection()
+                        target_item.setSelected(True)
+                    
+                    # super().mousePressEvent() の間だけ、非編集対象の親アノテーションの acceptedMouseButtons をクリアして
+                    # ヒットテストから除外し、イベントを完璧に貫通させる
+                    # (setEnabled(False) は表示消失を引き起こすバグがあるため使用しない)
+                    original_buttons = {}
+                    for it in self.scene.items():
+                        if it == self.background_item:
+                            continue
+                        iid = it.data(0)
+                        if iid and it.parentItem() is None and iid != self.editing_item_id:
+                            original_buttons[it] = it.acceptedMouseButtons()
+                            it.setAcceptedMouseButtons(Qt.NoButton)
+                    
+                    try:
+                        super().mousePressEvent(event)
+                    finally:
+                        # 判定終了後、即座に元の acceptedMouseButtons に復元する
+                        for it, buttons in original_buttons.items():
+                            it.setAcceptedMouseButtons(buttons)
+                else:
+                    # 空き地クリック時は選択を維持するためにイベントを無視する
+                    event.accept()
+                return
+            elif event.button() == Qt.RightButton:
+                pos = self.mapToScene(event.pos())
+                # 編集状態中は、編集中のオブジェクトの右クリックのみ許可する（削除など）
+                item = self.scene.itemAt(pos, self.transform())
+                while item and not item.data(0) and item.parentItem():
+                    item = item.parentItem()
+                if item and item.data(0) == self.editing_item_id:
+                    self._show_object_context_menu(event.globalPosition().toPoint(), item.data(0))
+                    event.accept()
+                    return
+                event.accept()
+                return
 
         if self.tool_mode == ToolMode.SELECT:
             if event.button() == Qt.RightButton:
@@ -622,8 +750,6 @@ class PDFCanvas(QGraphicsView):
                     # ItemIsMovable handles the pos update, we calculate delta
                     delta = item.pos() - last_pos
                     if delta.x() != 0 or delta.y() != 0:
-                        self.item_moved.emit(item_id, delta)
-                        
                         # 直線・折れ線・多角形の場合、pos() を (0,0) にリセットし、内部形状を移動後のシーン座標で更新する
                         if isinstance(item, (QGraphicsLineItem, QGraphicsPathItem, QGraphicsPolygonItem)):
                             points = self._get_item_points(item)
@@ -634,6 +760,14 @@ class PDFCanvas(QGraphicsView):
                             item.setData(1, QPointF(0, 0))
                         else:
                             item.setData(1, item.pos())
+                        
+                        # シグナルの発火は座標と位置のリセットが完了した後に実行する
+                        # これにより、移動後の最新ジオメトリを元にマーカーを正しく再描画できます
+                        self.item_moved.emit(item_id, delta)
+        
+        # 移動完了やツールの操作完了後、シーンとビューポートを確実に強制再描画する
+        self.scene.update()
+        self.viewport().update()
         super().mouseReleaseEvent(event)
 
     def add_line_annotation(self, p1, p2, text="", color="red", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100):
@@ -651,6 +785,9 @@ class PDFCanvas(QGraphicsView):
         txt_item = self._add_text_item(text, (p1.x() + p2.x()) / 2, (p1.y() + p2.y()) / 2, color, font_family, font_size)
         if txt_item:
             txt_item.setParentItem(line)
+            
+        if item_id:
+            self.annotation_items[item_id] = line
 
     def add_polyline_annotation(self, points, text="", color="#7c4dff", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, start_marker="", end_marker=""):
         if not points:
@@ -683,6 +820,9 @@ class PDFCanvas(QGraphicsView):
             txt_item = self._add_text_item(text, mid.x(), mid.y(), color, font_family, font_size)
             if txt_item:
                 txt_item.setParentItem(item)
+                
+        if item_id:
+            self.annotation_items[item_id] = item
 
     def add_polygon_annotation(self, points, text="", color="blue", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, fill_opacity=30, fill_color=""):
         poly = QGraphicsPolygonItem(QPolygonF(points))
@@ -707,6 +847,9 @@ class PDFCanvas(QGraphicsView):
         txt_item = self._add_text_item(text, avg_x, avg_y, color, font_family, font_size)
         if txt_item:
             txt_item.setParentItem(poly)
+            
+        if item_id:
+            self.annotation_items[item_id] = poly
 
     def add_circle_annotation(self, center, radius_px, text="", color="green", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, fill_opacity=30, fill_color="", center_marker=""):
         circle = QGraphicsEllipseItem(center.x() - radius_px, center.y() - radius_px, radius_px * 2, radius_px * 2)
@@ -733,6 +876,9 @@ class PDFCanvas(QGraphicsView):
         txt_item = self._add_text_item(text, center.x(), center.y() - radius_px - 10, color, font_family, font_size)
         if txt_item:
             txt_item.setParentItem(circle)
+            
+        if item_id:
+            self.annotation_items[item_id] = circle
 
     def _draw_center_marker(self, parent, cx, cy, marker_type, color, size=10):
         """Draw a center marker as a child of parent at local coords (cx, cy)."""
@@ -816,6 +962,7 @@ class PDFCanvas(QGraphicsView):
             if item_id:
                 txt_item.setData(0, item_id)
                 txt_item.setData(1, QPointF(0,0))
+                self.annotation_items[item_id] = txt_item
 
     def _add_text_item(self, text, x, y, color, font_family="Arial", font_size=12):
         if not text: return None
@@ -895,6 +1042,7 @@ class PDFCanvas(QGraphicsView):
                     # Remove existing marker children
                     for child in list(item.childItems()):
                         if child.data(2) == "marker":
+                            child.setParentItem(None)
                             self.scene.removeItem(child)
                     color_str = item.pen().color().name() if hasattr(item, 'pen') else "#7c4dff"
                     if isinstance(item, QGraphicsEllipseItem) and "center_marker" in attrs:
@@ -953,6 +1101,10 @@ class PDFCanvas(QGraphicsView):
                     txt_new = self._add_text_item(attrs["text"], tx, ty, color_str, ff, fs)
                     if txt_new:
                         txt_new.setParentItem(item)
+                
+                # ビューポートとシーンの再描画を強制し、描画キャッシュの不整合や表示の欠けを防ぐ
+                self.scene.update()
+                self.viewport().update()
                 break
 
     def reset_view(self):
