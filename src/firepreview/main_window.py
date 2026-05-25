@@ -810,14 +810,18 @@ class MainWindow(QMainWindow):
 
     def on_circle_drag_complete(self, center, radius_px):
         import math
-        # If radius is ~0 (click without drag) and calibrated, use radius from tool options
         current_scale_factor = self._get_current_scale_factor()
-        if radius_px < 3 and self._is_current_page_calibrated() and current_scale_factor > 0:
-            if self.model.unit == 'm':
-                radius_mm = self.tool_radius_spin.value() * 1000
+        if radius_px < 3:
+            if self._is_current_page_calibrated() and current_scale_factor > 0:
+                if self.model.unit == 'm':
+                    radius_mm = self.tool_radius_spin.value() * 1000
+                else:
+                    radius_mm = self.tool_radius_spin.value()
+                radius_px = radius_mm / current_scale_factor
             else:
-                radius_mm = self.tool_radius_spin.value()
-            radius_px = radius_mm / current_scale_factor
+                QMessageBox.warning(self, "警告", "半径を指定して円を描画するには、先にキャリブレーションを行ってください。")
+                return
+
         ann = self._add_to_model("circle", [center], real_value=0.0, text="")
         ann.color = self.current_shape_color
         ann.line_width = self.current_line_width
