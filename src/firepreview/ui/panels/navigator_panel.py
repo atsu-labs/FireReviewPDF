@@ -170,23 +170,42 @@ class NavigatorPanel(QWidget):
             self.thumbnails_layout.addWidget(thumb)
 
     def update_objects(self, annotations):
-        # Clear existing
-        for i in reversed(range(self.obj_layout.count())): 
-            widget = self.obj_layout.itemAt(i).widget()
-            if widget:
-                widget.setParent(None)
-                widget.deleteLater()
-        
+        # 1. Update the objects count label
         self.obj_count_label.setText(str(len(annotations)))
         
-        self.rows = {}
-        for ann in annotations:
+        # 2. Get the new set of IDs
+        new_ids = {ann.id for ann in annotations}
+        
+        # 3. Identify and remove rows that are no longer present
+        removed_ids = set(self.rows.keys()) - new_ids
+        for rid in removed_ids:
+            row = self.rows.pop(rid)
+            self.obj_layout.removeWidget(row)
+            row.setParent(None)
+            row.deleteLater()
+            
+        # 4. Update existing or add new rows, ensuring correct order in the layout
+        for index, ann in enumerate(annotations):
             is_editing = (self.active_edit_id == ann.id)
-            row = ObjectItemRow(ann, is_editing=is_editing)
-            row.clicked.connect(self.object_selected.emit)
-            row.edit_toggled.connect(self.object_edit_toggled.emit)
-            self.obj_layout.addWidget(row)
-            self.rows[ann.id] = row
+            
+            if ann.id in self.rows:
+                # Existing row
+                row = self.rows[ann.id]
+                # Update display values on existing row if they changed
+                row.update_properties(ann, is_editing=is_editing)
+                
+                # Check if it's already at the correct index in the layout.
+                current_idx = self.obj_layout.indexOf(row)
+                if current_idx != index:
+                    self.obj_layout.removeWidget(row)
+                    self.obj_layout.insertWidget(index, row)
+            else:
+                # New row
+                row = ObjectItemRow(ann, is_editing=is_editing)
+                row.clicked.connect(self.object_selected.emit)
+                row.edit_toggled.connect(self.object_edit_toggled.emit)
+                self.obj_layout.insertWidget(index, row)
+                self.rows[ann.id] = row
 
     def set_selected_object(self, item_id):
         # Clear all selections
@@ -278,10 +297,12 @@ class ObjectItemRow(QFrame):
         layout.setSpacing(8)
         
         # 1. Icon according to type
-        icon_label = QLabel()
+        self.icon_label = QLabel()
+        self.current_type = ann.type
+        self.current_color = ann.color
         icon = self.get_icon_for_type(ann.type, ann.color)
-        icon_label.setPixmap(icon.pixmap(16, 16))
-        layout.addWidget(icon_label)
+        self.icon_label.setPixmap(icon.pixmap(16, 16))
+        layout.addWidget(self.icon_label)
         
         # 2. Text (Type & value)
         display_text = self.get_display_text(ann)
@@ -294,7 +315,12 @@ class ObjectItemRow(QFrame):
         self.edit_btn = QPushButton()
         self.edit_btn.setFixedSize(24, 24)
         self.edit_btn.setCursor(Qt.PointingHandCursor)
-        
+        self.update_edit_button_state()
+            
+        self.edit_btn.clicked.connect(self.on_edit_clicked)
+        layout.addWidget(self.edit_btn)
+
+    def update_edit_button_state(self):
         if self.is_editing:
             # Done state
             self.edit_btn.setIcon(qta.icon('fa5s.check', color='#ffffff'))
@@ -311,9 +337,24 @@ class ObjectItemRow(QFrame):
                 "QPushButton:hover { background-color: #7c4dff; border-color: #7c4dff; }"
             )
             self.edit_btn.setToolTip("オブジェクトを編集")
+
+    def update_properties(self, ann, is_editing=False):
+        # 1. Type or color changed -> update icon
+        if self.current_type != ann.type or self.current_color != ann.color:
+            self.current_type = ann.type
+            self.current_color = ann.color
+            icon = self.get_icon_for_type(ann.type, ann.color)
+            self.icon_label.setPixmap(icon.pixmap(16, 16))
             
-        self.edit_btn.clicked.connect(self.on_edit_clicked)
-        layout.addWidget(self.edit_btn)
+        # 2. Display text changed -> update text label
+        display_text = self.get_display_text(ann)
+        if self.text_label.text() != display_text:
+            self.text_label.setText(display_text)
+            
+        # 3. Editing state changed -> update edit button
+        if self.is_editing != is_editing:
+            self.is_editing = is_editing
+            self.update_edit_button_state()
 
     def get_icon_for_type(self, type_str, color_hex):
         color = QColor(color_hex)
