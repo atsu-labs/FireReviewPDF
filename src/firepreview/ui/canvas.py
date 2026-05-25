@@ -160,6 +160,7 @@ class PDFCanvas(QGraphicsView):
 
         # ★強参照を保持してGCによるオブジェクト消失を防ぐ
         self.annotation_items = {}
+        self._original_accepted_buttons = {}
 
     def set_text_defaults(self, font_family, font_size, color, continuous=False):
         self.current_text_font = font_family
@@ -197,35 +198,26 @@ class PDFCanvas(QGraphicsView):
             self._set_items_interactive(False)
             self.scene.clearSelection()
 
-    def _debug_print_scene_state(self, context_name):
-        print(f"=== DEBUG: {context_name} ===")
-        print(f"  active_edit_mode: {self.active_edit_mode}")
-        print(f"  editing_item_id: {self.editing_item_id}")
-        for i, item in enumerate(self.scene.items()):
-            if item == self.background_item:
-                print(f"  [{i}] BackgroundItem")
-                continue
-            iid = item.data(0)
-            p_iid = item.parentItem().data(0) if item.parentItem() else None
-            m_type = item.data(2)
-            print(f"  [{i}] ItemType: {type(item).__name__}, ID: {iid}, ParentID: {p_iid}, MarkerType: {m_type}, "
-                  f"Enabled: {item.isEnabled()}, Visible: {item.isVisible()}, "
-                  f"Opacity: {item.opacity()}, Selected: {item.isSelected()}")
-        print("==============================")
-
     def set_active_edit_item(self, item_id, active):
         """特定のオブジェクトのみを編集可能にし、他のオブジェクトを半透明・操作不可にする"""
+        if active:
+            # すでに別のアイテムが編集中の場合は、一度解除して状態を復元する
+            if self.active_edit_mode and self.editing_item_id != item_id:
+                self.set_active_edit_item(self.editing_item_id, False)
+
         self.active_edit_mode = active
         self.editing_item_id = item_id if active else None
 
-        for item in self.scene.items():
-            if item == self.background_item:
-                continue
-            
-            # メインアノテーションオブジェクト（親がない、あるいはdata(0)を持つ）のみを対象とする
-            iid = item.data(0)
-            if iid and item.parentItem() is None:
-                if active:
+        if active:
+            # 編集モード開始
+            self._original_accepted_buttons.clear()
+            for item in self.scene.items():
+                if item == self.background_item:
+                    continue
+                
+                # メインアノテーションオブジェクト（親がない、あるいはdata(0)を持つ）のみを対象とする
+                iid = item.data(0)
+                if iid and item.parentItem() is None:
                     if iid == item_id:
                         item.setEnabled(True)
                         item.setOpacity(1.0)
@@ -237,21 +229,37 @@ class PDFCanvas(QGraphicsView):
                         item.setOpacity(0.25)
                         item.setFlag(QGraphicsItem.ItemIsSelectable, False)
                         item.setFlag(QGraphicsItem.ItemIsMovable, False)
-                else:
+                        
+                        # マウスイベント貫通のため、元の設定を退避して Qt.NoButton を設定
+                        self._original_accepted_buttons[item] = item.acceptedMouseButtons()
+                        item.setAcceptedMouseButtons(Qt.NoButton)
+        else:
+            # 編集モード終了
+            for item in self.scene.items():
+                if item == self.background_item:
+                    continue
+                
+                iid = item.data(0)
+                if iid and item.parentItem() is None:
                     item.setEnabled(True)
                     item.setOpacity(1.0)
                     interactive = (self.tool_mode == ToolMode.SELECT)
                     item.setFlag(QGraphicsItem.ItemIsSelectable, interactive)
                     item.setFlag(QGraphicsItem.ItemIsMovable, interactive)
-        
+            
+            # 元の acceptedMouseButtons を復元
+            for item, buttons in self._original_accepted_buttons.items():
+                try:
+                    item.setAcceptedMouseButtons(buttons)
+                except RuntimeError:
+                    pass
+            self._original_accepted_buttons.clear()
         self.scene.clearSelection()
         if active:
-            for item in self.scene.items():
-                if item.data(0) == item_id and item.parentItem() is None:
-                    item.setSelected(True)
-                    break
+            target_item = self.annotation_items.get(item_id)
+            if target_item:
+                target_item.setSelected(True)
         self.viewport().update()
-        self._debug_print_scene_state("set_active_edit_item")
 
     def _set_items_interactive(self, interactive):
         for item in self.scene.items():
@@ -357,33 +365,11 @@ class PDFCanvas(QGraphicsView):
                         break
                 
                 if clicked_edit_item:
-                    target_item = None
-                    for it in self.scene.items():
-                        if it.data(0) == self.editing_item_id and it.parentItem() is None:
-                            target_item = it
-                            break
+                    target_item = self.annotation_items.get(self.editing_item_id)
                     if target_item:
                         self.scene.clearSelection()
                         target_item.setSelected(True)
-                    
-                    # super().mousePressEvent() の間だけ、非編集対象の親アノテーションの acceptedMouseButtons をクリアして
-                    # ヒットテストから除外し、イベントを完璧に貫通させる
-                    # (setEnabled(False) は表示消失を引き起こすバグがあるため使用しない)
-                    original_buttons = {}
-                    for it in self.scene.items():
-                        if it == self.background_item:
-                            continue
-                        iid = it.data(0)
-                        if iid and it.parentItem() is None and iid != self.editing_item_id:
-                            original_buttons[it] = it.acceptedMouseButtons()
-                            it.setAcceptedMouseButtons(Qt.NoButton)
-                    
-                    try:
-                        super().mousePressEvent(event)
-                    finally:
-                        # 判定終了後、即座に元の acceptedMouseButtons に復元する
-                        for it, buttons in original_buttons.items():
-                            it.setAcceptedMouseButtons(buttons)
+                    super().mousePressEvent(event)
                 else:
                     # 空き地クリック時は選択を維持するためにイベントを無視する
                     event.accept()
