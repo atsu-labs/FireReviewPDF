@@ -12,6 +12,7 @@ class NavigatorPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.active_edit_id = None
+        self.selected_id = None
         self.rows = {}
         self.setup_ui()
 
@@ -187,18 +188,15 @@ class NavigatorPanel(QWidget):
         # 4. Update existing or add new rows, ensuring correct order in the layout
         for index, ann in enumerate(annotations):
             is_editing = (self.active_edit_id == ann.id)
+            is_selected = (self.selected_id == ann.id)
             
             if ann.id in self.rows:
                 # Existing row
                 row = self.rows[ann.id]
                 # Update display values on existing row if they changed
-                row.update_properties(ann, is_editing=is_editing)
-                
-                # Check if it's already at the correct index in the layout.
-                current_idx = self.obj_layout.indexOf(row)
-                if current_idx != index:
-                    self.obj_layout.removeWidget(row)
-                    self.obj_layout.insertWidget(index, row)
+                row.update_properties(ann, is_editing=is_editing, selected=is_selected)
+                # Reposition row widget to preserve exact ordering (very fast in Qt)
+                self.obj_layout.insertWidget(index, row)
             else:
                 # New row
                 row = ObjectItemRow(ann, is_editing=is_editing)
@@ -208,44 +206,43 @@ class NavigatorPanel(QWidget):
                 self.rows[ann.id] = row
 
     def set_selected_object(self, item_id):
-        # Clear all selections
-        for rid, row in self.rows.items():
-            row.apply_styles(rid == item_id)
+        # O(1) selection update: only repaint previously selected and newly selected rows
+        previous_selected_id = self.selected_id
+        self.selected_id = item_id
+        
+        affected_ids = set()
+        if previous_selected_id:
+            affected_ids.add(previous_selected_id)
+        if item_id:
+            affected_ids.add(item_id)
+            
+        for rid in affected_ids:
+            row = self.rows.get(rid)
+            if row:
+                row.apply_styles(rid == item_id)
 
     def set_editing_object(self, item_id, is_editing):
+        previous_edit_id = self.active_edit_id
+        
         if is_editing:
             self.active_edit_id = item_id
         else:
             if self.active_edit_id == item_id:
                 self.active_edit_id = None
                 
-        # Re-apply styles/state to all rows
-        for rid, row in self.rows.items():
-            if rid == item_id:
-                row.is_editing = is_editing
-                if is_editing:
-                    row.edit_btn.setIcon(qta.icon('fa5s.check', color='#ffffff'))
-                    row.edit_btn.setStyleSheet(
-                        "QPushButton { background-color: #2e7d32; border: none; border-radius: 4px; }"
-                        "QPushButton:hover { background-color: #388e3c; }"
-                    )
-                    row.edit_btn.setToolTip("編集完了")
-                else:
-                    row.edit_btn.setIcon(qta.icon('fa5s.pencil-alt', color='#ffffff'))
-                    row.edit_btn.setStyleSheet(
-                        "QPushButton { background-color: #2a2a3d; border: 1px solid #555566; border-radius: 4px; }"
-                        "QPushButton:hover { background-color: #7c4dff; border-color: #7c4dff; }"
-                    )
-                    row.edit_btn.setToolTip("オブジェクトを編集")
-            else:
-                row.is_editing = False
-                row.edit_btn.setIcon(qta.icon('fa5s.pencil-alt', color='#ffffff'))
-                row.edit_btn.setStyleSheet(
-                    "QPushButton { background-color: #2a2a3d; border: 1px solid #555566; border-radius: 4px; }"
-                    "QPushButton:hover { background-color: #7c4dff; border-color: #7c4dff; }"
-                )
-                row.edit_btn.setToolTip("オブジェクトを編集")
-            row.apply_styles(rid == item_id)
+        # O(1) edit state update: only repaint previously editing and newly editing rows
+        affected_ids = set()
+        if previous_edit_id:
+            affected_ids.add(previous_edit_id)
+        if item_id:
+            affected_ids.add(item_id)
+            
+        for rid in affected_ids:
+            row = self.rows.get(rid)
+            if row:
+                row_is_editing = (self.active_edit_id == rid)
+                row_is_selected = (rid == self.selected_id) or (rid == item_id and is_editing)
+                row.set_editing_state(row_is_editing, row_is_selected)
 
 class PageThumbnail(QFrame):
     clicked = Signal(int)
@@ -338,7 +335,12 @@ class ObjectItemRow(QFrame):
             )
             self.edit_btn.setToolTip("オブジェクトを編集")
 
-    def update_properties(self, ann, is_editing=False):
+    def set_editing_state(self, is_editing, selected):
+        self.is_editing = is_editing
+        self.update_edit_button_state()
+        self.apply_styles(selected)
+
+    def update_properties(self, ann, is_editing=False, selected=False):
         # 1. Type or color changed -> update icon
         if self.current_type != ann.type or self.current_color != ann.color:
             self.current_type = ann.type
@@ -351,10 +353,8 @@ class ObjectItemRow(QFrame):
         if self.text_label.text() != display_text:
             self.text_label.setText(display_text)
             
-        # 3. Editing state changed -> update edit button
-        if self.is_editing != is_editing:
-            self.is_editing = is_editing
-            self.update_edit_button_state()
+        # 3. Editing/Selection state changed
+        self.set_editing_state(is_editing, selected)
 
     def get_icon_for_type(self, type_str, color_hex):
         color = QColor(color_hex)
