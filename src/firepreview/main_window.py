@@ -29,7 +29,6 @@ class MainWindow(QMainWindow):
     # 表示倍率を整数表示に丸める際の許容差（単位: パーセントポイント）。
     # 例: 99.5%〜100.5% の範囲は 100% と表示する。
     ZOOM_LABEL_ROUNDING_TOLERANCE_PP = 0.5
-    FIXED_CIRCLE_RADIUS_MM = 15000
 
     def __init__(self):
         super().__init__()
@@ -131,9 +130,7 @@ class MainWindow(QMainWindow):
         self.canvas = PDFCanvas()
         self.canvas.setStyleSheet("background-color: #0f0f1a; border: none;")
         self.canvas.calibration_points_selected.connect(self.on_calibration_selected)
-        self.canvas.measurement_complete.connect(self.on_measurement_complete)
         self.canvas.polygon_complete.connect(self.on_polygon_complete)
-        self.canvas.point_selected.connect(self.on_point_selected)
         self.canvas.polyline_complete.connect(self.on_polyline_complete)
         self.canvas.circle_drag_complete.connect(self.on_circle_drag_complete)
         self.canvas.item_selected.connect(self.on_item_selected)
@@ -211,8 +208,6 @@ class MainWindow(QMainWindow):
             ('fa5s.square', "矩形", ToolMode.POLYGON_AREA),
             ('fa5s.circle', "円", ToolMode.DRAW_CIRCLE_DRAG),
             ('fa5s.font', "テキスト", ToolMode.TEXT),
-            ('fa5s.ruler', "計測ライン", ToolMode.MEASURE_LINE),
-            ('fa5s.bullseye', "15m円（計測）", ToolMode.CIRCLE_FIXED),
         ]
 
         self.tool_btns = []
@@ -729,15 +724,6 @@ class MainWindow(QMainWindow):
             btn.setProperty("active", is_active)
             btn.style().unpolish(btn)
             btn.style().polish(btn)
-        
-        # Only measurement tools (not drawing tools) require calibration
-        if mode in [ToolMode.MEASURE_LINE, ToolMode.CIRCLE_FIXED]:
-            if not self._is_current_page_calibrated():
-                QMessageBox.warning(self, "警告", "先にキャリブレーションを行ってください。")
-                if active_btn:
-                    active_btn.setChecked(False)
-                return
-
         self.canvas.set_tool_mode(mode)
         
         is_shape_tool = mode in [ToolMode.DRAW_LINE, ToolMode.POLYGON_AREA, ToolMode.DRAW_CIRCLE_DRAG]
@@ -799,16 +785,6 @@ class MainWindow(QMainWindow):
                 self.pref_dialog.show()
             self._calib_all_pages_from_prefs = False
 
-    def on_measurement_complete(self, p1, p2):
-        # 防御的チェック: ページ切り替え後に未キャリブレーションページへ遷移した場合に備える
-        if not self._is_current_page_calibrated():
-            QMessageBox.warning(self, "警告", "このページは未キャリブレーションです。")
-            return
-        dist_mm = self.model.calculate_real_distance(p1, p2, self._get_current_scale_factor())
-        text = self._format_distance(dist_mm)
-        ann = self._add_to_model("line", [p1, p2], dist_mm, text=text)
-        self.canvas.add_line_annotation(p1, p2, text=text, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size)
-
     def on_polygon_complete(self, points):
         ann = self._add_to_model("polygon", points, real_value=0.0, text="")
         ann.color = self.current_shape_color
@@ -854,21 +830,6 @@ class MainWindow(QMainWindow):
                                           line_width=ann.line_width, stroke_opacity=ann.stroke_opacity,
                                           fill_opacity=ann.fill_opacity, fill_color=ann.fill_color,
                                           center_marker=ann.center_marker)
-
-    def on_point_selected(self, pos):
-        if self.canvas.tool_mode == ToolMode.CIRCLE_FIXED:
-            if not self._is_current_page_calibrated():
-                QMessageBox.warning(self, "警告", "このページは未キャリブレーションです。")
-                return
-            current_scale_factor = self._get_current_scale_factor()
-            if current_scale_factor <= 0:
-                return
-            radius_mm = self.FIXED_CIRCLE_RADIUS_MM
-            radius_px = radius_mm / current_scale_factor
-            text = "R=15m"
-            ann = self._add_to_model("circle", [pos], radius_mm, text=text)
-            ann.radius_px = radius_px
-            self.canvas.add_circle_annotation(pos, radius_px, text=text, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size)
 
     def on_calculate_requested(self, item_id):
         import math
