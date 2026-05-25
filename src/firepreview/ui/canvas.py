@@ -78,8 +78,6 @@ class VertexHandleItem(QGraphicsEllipseItem):
 class ToolMode:
     NONE = 0
     CALIBRATE = 1
-    MEASURE_LINE = 2
-    CIRCLE_FIXED = 3
     POLYGON_AREA = 4
     TEXT = 5
     SELECT = 6
@@ -88,9 +86,7 @@ class ToolMode:
 
 class PDFCanvas(QGraphicsView):
     calibration_points_selected = Signal(QPointF, QPointF)
-    measurement_complete = Signal(QPointF, QPointF)
     polygon_complete = Signal(list) # list of QPointF
-    point_selected = Signal(QPointF) # For circle and text
     polyline_complete = Signal(list)  # list of QPointF for polyline tool
     circle_drag_complete = Signal(QPointF, float)  # center, radius_px
     
@@ -492,7 +488,7 @@ class PDFCanvas(QGraphicsView):
         pos = self.mapToScene(event.pos())
         
         if event.button() == Qt.LeftButton:
-            if self.tool_mode in [ToolMode.CALIBRATE, ToolMode.MEASURE_LINE]:
+            if self.tool_mode == ToolMode.CALIBRATE:
                 self.temp_points.append(pos)
                 if len(self.temp_points) == 1:
                     self.temp_line = QGraphicsLineItem(pos.x(), pos.y(), pos.x(), pos.y())
@@ -502,10 +498,7 @@ class PDFCanvas(QGraphicsView):
                     self.scene.addItem(self.temp_line)
                 elif len(self.temp_points) == 2:
                     p1, p2 = self.temp_points
-                    if self.tool_mode == ToolMode.CALIBRATE:
-                        self.calibration_points_selected.emit(p1, p2)
-                    else:
-                        self.measurement_complete.emit(p1, p2)
+                    self.calibration_points_selected.emit(p1, p2)
                     self._finish_tool()
 
             elif self.tool_mode == ToolMode.DRAW_LINE:
@@ -540,10 +533,6 @@ class PDFCanvas(QGraphicsView):
 
             elif self.tool_mode == ToolMode.DRAW_CIRCLE_DRAG:
                 self.drag_start = pos
-
-            elif self.tool_mode == ToolMode.CIRCLE_FIXED:
-                self.point_selected.emit(pos)
-                self._finish_tool(ToolMode.SELECT)
                 
             elif self.tool_mode == ToolMode.TEXT:
                 item = self.scene.itemAt(pos, self.transform())
