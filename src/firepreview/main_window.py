@@ -653,6 +653,8 @@ class MainWindow(QMainWindow):
                     attrs["start_marker"] = ann.start_marker
                     attrs["end_marker"] = ann.end_marker
                     attrs["center_marker"] = ann.center_marker
+                if "color" in attrs:
+                    attrs["fill_color"] = ann.fill_color
                 self.canvas.update_item_properties(item_id, attrs)
                 self.update_object_panel()
                 break

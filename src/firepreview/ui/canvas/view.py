@@ -636,7 +636,7 @@ class PDFCanvas(QGraphicsView):
                             pen.setWidth(attrs["line_width"])
                         item.setPen(pen)
 
-                        if "color" in attrs and isinstance(item, QGraphicsPolygonItem):
+                        if "color" in attrs and isinstance(item, QGraphicsPolygonItem) and "fill_color" not in attrs:
                             cur_brush = item.brush()
                             if cur_brush.style() != Qt.NoBrush:
                                 cur_fill_a = cur_brush.color().alpha()
