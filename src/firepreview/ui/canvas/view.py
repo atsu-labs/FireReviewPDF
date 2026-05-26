@@ -314,6 +314,7 @@ class PDFCanvas(QGraphicsView):
         # Delegate event handling to current tool
         tool = self._get_active_tool()
         if tool and tool.mouse_press(event, self.scene):
+            event.accept()
             return
 
         super().mousePressEvent(event)
@@ -329,6 +330,7 @@ class PDFCanvas(QGraphicsView):
 
         tool = self._get_active_tool()
         if tool and tool.mouse_move(event, self.scene):
+            event.accept()
             return
 
         super().mouseMoveEvent(event)
@@ -346,6 +348,7 @@ class PDFCanvas(QGraphicsView):
 
         tool = self._get_active_tool()
         if tool and tool.mouse_release(event, self.scene):
+            event.accept()
             return
 
         super().mouseReleaseEvent(event)

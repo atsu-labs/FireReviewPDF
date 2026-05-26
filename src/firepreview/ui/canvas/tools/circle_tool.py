@@ -47,7 +47,7 @@ class CircleTool(BaseCanvasTool):
                 scene.removeItem(self.canvas.temp_circle)
                 self.canvas.temp_circle = None
                 
-            from ..canvas import ToolMode
+            from .. import ToolMode
             self.canvas.circle_drag_complete.emit(center, radius)
             self.canvas._finish_tool(ToolMode.DRAW_CIRCLE_DRAG if self.canvas.continuous_shape else ToolMode.SELECT)
             return True

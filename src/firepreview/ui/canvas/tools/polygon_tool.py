@@ -31,7 +31,7 @@ class PolygonTool(BaseCanvasTool):
 
         elif event.button() == Qt.RightButton:
             if len(self.canvas.temp_points) >= 3:
-                from ..canvas import ToolMode
+                from .. import ToolMode
                 self.canvas.polygon_complete.emit(self.canvas.temp_points)
                 self.canvas._finish_tool(ToolMode.POLYGON_AREA if self.canvas.continuous_shape else ToolMode.SELECT)
             return True

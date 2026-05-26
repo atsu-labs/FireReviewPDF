@@ -28,7 +28,7 @@ class DrawLineTool(BaseCanvasTool):
 
         elif event.button() == Qt.RightButton:
             if len(self.canvas.temp_points) >= 2:
-                from ..canvas import ToolMode  # Late import to prevent circular issues
+                from .. import ToolMode  # Late import to prevent circular issues
                 self.canvas.polyline_complete.emit(self.canvas.temp_points[:])
                 self.canvas._finish_tool(ToolMode.DRAW_LINE if self.canvas.continuous_shape else ToolMode.SELECT)
             return True
@@ -50,7 +50,7 @@ class DrawLineTool(BaseCanvasTool):
             if len(self.canvas.temp_points) >= 2:
                 self.canvas.temp_points.pop()  # Pop the extra double-click click
             if len(self.canvas.temp_points) >= 2:
-                from ..canvas import ToolMode
+                from .. import ToolMode
                 self.canvas.polyline_complete.emit(self.canvas.temp_points[:])
                 self.canvas._finish_tool(ToolMode.DRAW_LINE if self.canvas.continuous_shape else ToolMode.SELECT)
             return True
