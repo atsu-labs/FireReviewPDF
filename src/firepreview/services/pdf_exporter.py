@@ -232,6 +232,67 @@ def export_pdf_document(model, output_path: str) -> None:
                     fill_opacity=stroke_opacity,
                 )
 
+                has_border = getattr(ann, "has_border", False)
+                has_leader = getattr(ann, "has_leader", False)
+
+                if has_border or has_leader:
+                    b_color_value = QColor(getattr(ann, "border_color", "#ff0000"))
+                    b_color = (
+                        b_color_value.red() / 255.0,
+                        b_color_value.green() / 255.0,
+                        b_color_value.blue() / 255.0,
+                    )
+                    b_width = getattr(ann, "border_width", 2)
+
+                    # Calculate precise text bounding box
+                    text_w = fitz.get_text_length(ann.text, fontsize=ann.font_size, fontname="helv")
+                    text_h = ann.font_size
+                    margin = 4 * dpi_factor
+
+                    # Define the border rectangle (insert_text starts at bottom-left)
+                    rect = fitz.Rect(
+                        pos.x - margin,
+                        pos.y - text_h - margin,
+                        pos.x + text_w + margin,
+                        pos.y + margin
+                    )
+
+                    if has_border:
+                        page.draw_rect(
+                            rect,
+                            color=b_color,
+                            width=b_width,
+                            stroke_opacity=stroke_opacity
+                        )
+
+                    if has_leader and len(ann.points) >= 2:
+                        p2 = to_pdf_pt(ann.points[1])
+                        # Check all 4 corners
+                        corners = [
+                            fitz.Point(rect.x0, rect.y0),  # Top-left
+                            fitz.Point(rect.x1, rect.y0),  # Top-right
+                            fitz.Point(rect.x0, rect.y1),  # Bottom-left
+                            fitz.Point(rect.x1, rect.y1)   # Bottom-right
+                        ]
+                        # Find closest corner to the end point
+                        best_pt = corners[0]
+                        min_dist = float('inf')
+                        for pt in corners:
+                            dx = pt.x - p2.x
+                            dy = pt.y - p2.y
+                            dist = dx * dx + dy * dy
+                            if dist < min_dist:
+                                min_dist = dist
+                                best_pt = pt
+
+                        page.draw_line(
+                            best_pt,
+                            p2,
+                            color=b_color,
+                            width=b_width,
+                            stroke_opacity=stroke_opacity
+                        )
+
         export_doc.save(output_path)
     finally:
         if export_doc is not None:

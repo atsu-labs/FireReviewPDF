@@ -627,7 +627,11 @@ class MainWindow(QMainWindow):
                                               ann.font_family, ann.font_size, ann.line_width,
                                               stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity,
                                               fill_color=ann.fill_color,
-                                              center_marker=ann.center_marker, start_marker=ann.start_marker, end_marker=ann.end_marker)
+                                              center_marker=ann.center_marker, start_marker=ann.start_marker, end_marker=ann.end_marker,
+                                              has_border=getattr(ann, "has_border", False),
+                                              border_color=getattr(ann, "border_color", "#ff0000"),
+                                              border_width=getattr(ann, "border_width", 2),
+                                              has_leader=getattr(ann, "has_leader", False))
                 self.navigator.set_selected_object(item_id)
                 break
 
@@ -649,6 +653,24 @@ class MainWindow(QMainWindow):
                 if "center_marker" in attrs: ann.center_marker = attrs["center_marker"]
                 if "start_marker" in attrs: ann.start_marker = attrs["start_marker"]
                 if "end_marker" in attrs: ann.end_marker = attrs["end_marker"]
+                
+                # Border & Leader settings
+                if "has_border" in attrs: ann.has_border = attrs["has_border"]
+                if "border_color" in attrs: ann.border_color = attrs["border_color"]
+                if "border_width" in attrs: ann.border_width = attrs["border_width"]
+                
+                if "has_leader" in attrs:
+                    if attrs["has_leader"] and not getattr(ann, "has_leader", False):
+                        if len(ann.points) < 2:
+                            from PySide6.QtCore import QPointF
+                            end_pt = ann.points[0] + QPointF(50, 50)
+                            ann.points.append(end_pt)
+                        attrs["leader_end_point"] = ann.points[1]
+                    elif not attrs["has_leader"] and getattr(ann, "has_leader", False):
+                        if len(ann.points) >= 2:
+                            ann.points = [ann.points[0]]
+                    ann.has_leader = attrs["has_leader"]
+                    
                 if any(k in attrs for k in ("start_marker", "end_marker", "center_marker")):
                     attrs["start_marker"] = ann.start_marker
                     attrs["end_marker"] = ann.end_marker
@@ -662,7 +684,11 @@ class MainWindow(QMainWindow):
     def on_item_moved(self, item_id, delta):
         for ann in self.model.annotations:
             if ann.id == item_id:
-                ann.points = [p + delta for p in ann.points]
+                if ann.type == "text":
+                    if len(ann.points) >= 1:
+                        ann.points[0] = ann.points[0] + delta
+                else:
+                    ann.points = [p + delta for p in ann.points]
                 
                 attrs = {}
                 if hasattr(ann, 'start_marker') and ann.start_marker is not None:
@@ -788,7 +814,13 @@ class MainWindow(QMainWindow):
                             radius_px = 0
                         self.canvas.add_circle_annotation(ann.points[0], radius_px, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity, fill_color=ann.fill_color, center_marker=ann.center_marker)
                     elif ann.type == "text":
-                        self.canvas.add_text_annotation(ann.points[0], ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, stroke_opacity=ann.stroke_opacity)
+                        leader_end = ann.points[1] if len(ann.points) >= 2 else None
+                        self.canvas.add_text_annotation(ann.points[0], ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, stroke_opacity=ann.stroke_opacity,
+                                                        has_border=getattr(ann, "has_border", False),
+                                                        border_color=getattr(ann, "border_color", "#ff0000"),
+                                                        border_width=getattr(ann, "border_width", 2),
+                                                        has_leader=getattr(ann, "has_leader", False),
+                                                        leader_end_point=leader_end)
             self._update_scale_status_label()
             self._update_pdf_size_label()
             self.update_object_panel()

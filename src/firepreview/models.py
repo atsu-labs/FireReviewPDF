@@ -112,6 +112,10 @@ class Annotation:
         self.center_marker = ""  # For circles: "", "circle", "cross", "x"
         self.start_marker = ""   # For polylines: "", "circle", "arrow"
         self.end_marker = ""     # For polylines: "", "circle", "arrow"
+        self.has_border = False
+        self.border_color = "#ff0000"
+        self.border_width = 2
+        self.has_leader = False
         self.page_num = 0
 
     def to_dict(self):
@@ -139,6 +143,10 @@ class Annotation:
             "center_marker": self.center_marker,
             "start_marker": self.start_marker,
             "end_marker": self.end_marker,
+            "has_border": self.has_border,
+            "border_color": self.border_color,
+            "border_width": self.border_width,
+            "has_leader": self.has_leader,
             "page_num": self.page_num
         }
 
@@ -162,5 +170,9 @@ class Annotation:
         ann.center_marker = data.get("center_marker", "")
         ann.start_marker = data.get("start_marker", "")
         ann.end_marker = data.get("end_marker", "")
+        ann.has_border = data.get("has_border", False)
+        ann.border_color = data.get("border_color", "#ff0000")
+        ann.border_width = data.get("border_width", 2)
+        ann.has_leader = data.get("has_leader", False)
         ann.page_num = data.get("page_num", 0)
         return ann
