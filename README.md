@@ -70,7 +70,21 @@ python src/main.py
 
 ### ファイル構成
 - `src/main.py`: 起動用のエントリーポイント。
-- `src/firepreview/main_window.py`: メインウィンドウと画面全体の制御。
-- `src/firepreview/ui/`: キャンバスやサイドパネルなどのUIコンポーネント。
-- `src/firepreview/services/`: PDF入出力やプロジェクト保存などのアプリケーションサービス。
-- `src/firepreview/models.py`: データモデル（Annotation）、シリアライズ処理。
+- `src/firepreview/main_window.py`: メインウィンドウおよび全体の連携を制御するコントローラー（Orchestrator）。
+- `src/firepreview/models.py`: データモデル（Annotation、DrawingModel）の定義。
+- `src/firepreview/services/`:
+  - `pdf_handler.py`: PyMuPDFを使用したPDFページの画像化・読み込み制御。
+  - `pdf_exporter.py`: PDFへの注釈合成と書き出し処理。
+  - `project_store.py`: JSON形式によるプロジェクトデータの保存およびロード。
+- `src/firepreview/ui/`:
+  - `components/`: 分割・独立した共通UIパーツ群（`MainMenuBar` メニューバー、`MainToolBar` ツールバー、`ToolOptionsBar` プロパティオプションバー）。
+  - `panels/`: サイド操作ドック（左：`NavigatorPanel`、右：`PropertyPanel`）。
+  - `preferences_dialog.py`: キャリブレーション設定・測定単位ダイアログ。
+  - `styles.py`: QSSスタイルシート定義（ダークテーマベース）。
+  - `canvas/`: 描画エンジンパッケージ。
+    - `__init__.py`: 描画領域のパブリックインターフェースエントリー。
+    - `view.py`: `QGraphicsView` を継承し、ズームやスクロール、パン操作などを司るビューア本体 (`PDFCanvas`)。
+    - `items.py`: 頂点編集ハンドル (`VertexHandleItem`) やインラインテキスト (`CustomTextItem`) などのカスタムアイテム。
+    - `utils.py`: 角度スナップや点間距離計算などのジオメトリユーティリティ。
+    - `tools/`: 各描画モード（選択、直線、多角形、円、テキスト、キャリブレーション）のStateパターンによるイベントハンドラ。
+
