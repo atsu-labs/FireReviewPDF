@@ -3,6 +3,7 @@ from PySide6.QtWidgets import QGraphicsPolygonItem
 from PySide6.QtGui import QPen, QColor, QPolygonF
 from .base_tool import BaseCanvasTool
 from ..utils import apply_angle_snap
+from ..enums import ToolMode
 
 class PolygonTool(BaseCanvasTool):
     def mouse_press(self, event, scene):
@@ -31,7 +32,6 @@ class PolygonTool(BaseCanvasTool):
 
         elif event.button() == Qt.RightButton:
             if len(self.canvas.temp_points) >= 3:
-                from .. import ToolMode
                 self.canvas.polygon_complete.emit(self.canvas.temp_points)
                 self.canvas._finish_tool(ToolMode.POLYGON_AREA if self.canvas.continuous_shape else ToolMode.SELECT)
             return True

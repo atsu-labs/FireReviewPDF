@@ -7,15 +7,7 @@ from PySide6.QtGui import QPainter, QPen, QColor, QPolygonF, QAction, QFont, QPa
 
 from .items import CustomTextItem, VertexHandleItem
 from .utils import point_to_segment_distance, apply_angle_snap
-
-class ToolMode:
-    NONE = 0
-    CALIBRATE = 1
-    POLYGON_AREA = 4
-    TEXT = 5
-    SELECT = 6
-    DRAW_LINE = 7         # Polyline drawing
-    DRAW_CIRCLE_DRAG = 8  # Circle by dragging center→radius
+from .enums import ToolMode
 
 class PDFCanvas(QGraphicsView):
     calibration_points_selected = Signal(QPointF, QPointF)

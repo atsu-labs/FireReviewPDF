@@ -3,6 +3,7 @@ from PySide6.QtWidgets import QGraphicsPathItem
 from PySide6.QtGui import QPen, QColor, QPainterPath
 from .base_tool import BaseCanvasTool
 from ..utils import apply_angle_snap
+from ..enums import ToolMode
 
 class DrawLineTool(BaseCanvasTool):
     def mouse_press(self, event, scene):
@@ -28,7 +29,6 @@ class DrawLineTool(BaseCanvasTool):
 
         elif event.button() == Qt.RightButton:
             if len(self.canvas.temp_points) >= 2:
-                from .. import ToolMode  # Late import to prevent circular issues
                 self.canvas.polyline_complete.emit(self.canvas.temp_points[:])
                 self.canvas._finish_tool(ToolMode.DRAW_LINE if self.canvas.continuous_shape else ToolMode.SELECT)
             return True
@@ -50,7 +50,6 @@ class DrawLineTool(BaseCanvasTool):
             if len(self.canvas.temp_points) >= 2:
                 self.canvas.temp_points.pop()  # Pop the extra double-click click
             if len(self.canvas.temp_points) >= 2:
-                from .. import ToolMode
                 self.canvas.polyline_complete.emit(self.canvas.temp_points[:])
                 self.canvas._finish_tool(ToolMode.DRAW_LINE if self.canvas.continuous_shape else ToolMode.SELECT)
             return True

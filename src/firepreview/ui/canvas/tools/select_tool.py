@@ -16,11 +16,7 @@ class SelectTool(BaseCanvasTool):
                     return True
                 
                 # Check closest edge to insert node
-                target_item = None
-                for it in scene.items():
-                    if it.data(0) == self.canvas.editing_node_item_id:
-                        target_item = it
-                        break
+                target_item = self.canvas.annotation_items.get(self.canvas.editing_node_item_id)
                 if target_item:
                     best_idx, best_proj, best_dist = self.canvas._find_closest_edge(target_item, pos)
                     if best_idx != -1:
@@ -58,11 +54,7 @@ class SelectTool(BaseCanvasTool):
                     clicked_target = clicked_target.parentItem()
                 
                 if not is_edit_target:
-                    target_item = None
-                    for it in scene.items():
-                        if it.data(0) == self.canvas.editing_node_item_id:
-                            target_item = it
-                            break
+                    target_item = self.canvas.annotation_items.get(self.canvas.editing_node_item_id)
                     if target_item:
                         best_idx, _, _ = self.canvas._find_closest_edge(target_item, pos)
                         if best_idx != -1:
@@ -100,7 +92,7 @@ class SelectTool(BaseCanvasTool):
                 last_pos = item.data(1)
                 if item_id and last_pos is not None:
                     delta = item.pos() - last_pos
-                    if delta.x() != 0 or delta.y() != 0:
+                    if not delta.isNull():
                         if isinstance(item, (QGraphicsLineItem, QGraphicsPathItem, QGraphicsPolygonItem)):
                             points = self.canvas._get_item_points(item)
                             if points:
@@ -119,11 +111,7 @@ class SelectTool(BaseCanvasTool):
     def double_click(self, event, scene):
         if self.canvas.editing_node_item_id and event.button() == Qt.LeftButton:
             pos = self.canvas.mapToScene(event.pos())
-            item = None
-            for it in scene.items():
-                if it.data(0) == self.canvas.editing_node_item_id:
-                    item = it
-                    break
+            item = self.canvas.annotation_items.get(self.canvas.editing_node_item_id)
             if item:
                 best_idx, best_proj, _ = self.canvas._find_closest_edge(item, pos)
                 if best_idx != -1:

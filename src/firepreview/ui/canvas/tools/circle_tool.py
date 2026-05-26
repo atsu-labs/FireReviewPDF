@@ -3,6 +3,7 @@ from PySide6.QtCore import Qt, QPointF
 from PySide6.QtWidgets import QGraphicsEllipseItem
 from PySide6.QtGui import QPen, QColor
 from .base_tool import BaseCanvasTool
+from ..enums import ToolMode
 
 class CircleTool(BaseCanvasTool):
     def mouse_press(self, event, scene):
@@ -47,7 +48,6 @@ class CircleTool(BaseCanvasTool):
                 scene.removeItem(self.canvas.temp_circle)
                 self.canvas.temp_circle = None
                 
-            from .. import ToolMode
             self.canvas.circle_drag_complete.emit(center, radius)
             self.canvas._finish_tool(ToolMode.DRAW_CIRCLE_DRAG if self.canvas.continuous_shape else ToolMode.SELECT)
             return True
