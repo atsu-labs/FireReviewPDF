@@ -1,79 +1,12 @@
-from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QGraphicsLineItem, QGraphicsTextItem, QGraphicsEllipseItem, QGraphicsPolygonItem, QGraphicsPathItem, QMenu, QGraphicsItem
+import math
+from PySide6.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, 
+                                 QGraphicsLineItem, QGraphicsTextItem, QGraphicsEllipseItem, 
+                                 QGraphicsPolygonItem, QGraphicsPathItem, QMenu, QGraphicsItem)
 from PySide6.QtCore import Qt, Signal, QPointF, QRectF
 from PySide6.QtGui import QPainter, QPen, QColor, QPolygonF, QAction, QFont, QPainterPath
-import math
 
-class CustomTextItem(QGraphicsTextItem):
-    editing_finished = Signal(str)
-    
-    def __init__(self, text, parent=None):
-        super().__init__(text, parent)
-        
-    def mouseDoubleClickEvent(self, event):
-        if self.flags() & QGraphicsItem.ItemIsSelectable:
-            self.setTextInteractionFlags(Qt.TextEditorInteraction)
-            self.setFocus()
-            event.accept()
-        else:
-            super().mouseDoubleClickEvent(event)
-
-    def focusOutEvent(self, event):
-        super().focusOutEvent(event)
-        self.setTextInteractionFlags(Qt.NoTextInteraction)
-        self.editing_finished.emit(self.toPlainText())
-
-def point_to_segment_distance(pt, s1, s2):
-    dx = s2.x() - s1.x()
-    dy = s2.y() - s1.y()
-    l2 = dx*dx + dy*dy
-    if l2 == 0:
-        return math.sqrt((pt.x() - s1.x())**2 + (pt.y() - s1.y())**2), s1
-    t = ((pt.x() - s1.x()) * dx + (pt.y() - s1.y()) * dy) / l2
-    t = max(0.0, min(1.0, t))
-    projection = QPointF(s1.x() + t * dx, s1.y() + t * dy)
-    dist = math.sqrt((pt.x() - projection.x())**2 + (pt.y() - projection.y())**2)
-    return dist, projection
-
-class VertexHandleItem(QGraphicsEllipseItem):
-    def __init__(self, parent_item, index, canvas, size=8):
-        scale = canvas.transform().m11()
-        s = size / scale if scale > 0 else size
-        super().__init__(-s/2, -s/2, s, s, parent_item)
-        self.parent_item = parent_item
-        self.index = index
-        self.canvas = canvas
-        self.size = size
-        self.is_dragging = False
-        
-        self.setFlag(QGraphicsItem.ItemIsMovable, True)
-        self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
-        self.setFlag(QGraphicsItem.ItemIsSelectable, True)
-        
-        self.setBrush(QColor("#7c4dff"))
-        pen = QPen(QColor("#ffffff"), 1.5 / scale if scale > 0 else 1.5)
-        pen.setCosmetic(True)
-        self.setPen(pen)
-        self.setZValue(100)
-
-    def itemChange(self, change, value):
-        if change == QGraphicsItem.ItemPositionChange and self.scene():
-            new_pos = value
-            self.canvas.on_vertex_moved(self.parent_item, self.index, new_pos)
-            self.is_dragging = True
-        return super().itemChange(change, value)
-
-    def mouseReleaseEvent(self, event):
-        super().mouseReleaseEvent(event)
-        if self.is_dragging:
-            self.is_dragging = False
-            self.canvas.on_vertex_move_finished(self.parent_item)
-
-    def mouseDoubleClickEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.canvas.on_vertex_double_clicked(self.parent_item, self.index)
-            event.accept()
-            return
-        super().mouseDoubleClickEvent(event)
+from .items import CustomTextItem, VertexHandleItem
+from .utils import point_to_segment_distance, apply_angle_snap
 
 class ToolMode:
     NONE = 0
@@ -81,8 +14,8 @@ class ToolMode:
     POLYGON_AREA = 4
     TEXT = 5
     SELECT = 6
-    DRAW_LINE = 7       # Polyline drawing (no calibration required)
-    DRAW_CIRCLE_DRAG = 8  # Circle by dragging center→radius (no calibration required)
+    DRAW_LINE = 7         # Polyline drawing
+    DRAW_CIRCLE_DRAG = 8  # Circle by dragging center→radius
 
 class PDFCanvas(QGraphicsView):
     calibration_points_selected = Signal(QPointF, QPointF)
@@ -154,9 +87,22 @@ class PDFCanvas(QGraphicsView):
         self.active_edit_mode = False
         self.editing_item_id = None
 
-        # ★強参照を保持してGCによるオブジェクト消失を防ぐ
         self.annotation_items = {}
         self._original_accepted_buttons = {}
+
+        # Instantiate modular drawing tools
+        from .tools import SelectTool, DrawLineTool, PolygonTool, CircleTool, TextTool, CalibrationTool
+        self.tools = {
+            ToolMode.SELECT: SelectTool(self),
+            ToolMode.DRAW_LINE: DrawLineTool(self),
+            ToolMode.POLYGON_AREA: PolygonTool(self),
+            ToolMode.DRAW_CIRCLE_DRAG: CircleTool(self),
+            ToolMode.TEXT: TextTool(self),
+            ToolMode.CALIBRATE: CalibrationTool(self)
+        }
+
+    def _get_active_tool(self):
+        return self.tools.get(self.tool_mode)
 
     def set_text_defaults(self, font_family, font_size, color, continuous=False):
         self.current_text_font = font_family
@@ -197,7 +143,6 @@ class PDFCanvas(QGraphicsView):
     def set_active_edit_item(self, item_id, active):
         """特定のオブジェクトのみを編集可能にし、他のオブジェクトを半透明・操作不可にする"""
         if active:
-            # すでに別のアイテムが編集中の場合は、一度解除して状態を復元する
             if self.active_edit_mode and self.editing_item_id != item_id:
                 self.set_active_edit_item(self.editing_item_id, False)
 
@@ -205,13 +150,11 @@ class PDFCanvas(QGraphicsView):
         self.editing_item_id = item_id if active else None
 
         if active:
-            # 編集モード開始
             self._original_accepted_buttons.clear()
             for item in self.scene.items():
                 if item == self.background_item:
                     continue
                 
-                # メインアノテーションオブジェクト（親がない、あるいはdata(0)を持つ）のみを対象とする
                 iid = item.data(0)
                 if iid and item.parentItem() is None:
                     if iid == item_id:
@@ -220,17 +163,14 @@ class PDFCanvas(QGraphicsView):
                         item.setFlag(QGraphicsItem.ItemIsSelectable, True)
                         item.setFlag(QGraphicsItem.ItemIsMovable, True)
                     else:
-                        # 表示消失を防ぐため、Enabled(True) を常に維持する
                         item.setEnabled(True)
                         item.setOpacity(0.25)
                         item.setFlag(QGraphicsItem.ItemIsSelectable, False)
                         item.setFlag(QGraphicsItem.ItemIsMovable, False)
                         
-                        # マウスイベント貫通のため、元の設定を退避して Qt.NoButton を設定
                         self._original_accepted_buttons[item] = item.acceptedMouseButtons()
                         item.setAcceptedMouseButtons(Qt.NoButton)
         else:
-            # 編集モード終了
             for item in self.scene.items():
                 if item == self.background_item:
                     continue
@@ -243,7 +183,6 @@ class PDFCanvas(QGraphicsView):
                     item.setFlag(QGraphicsItem.ItemIsSelectable, interactive)
                     item.setFlag(QGraphicsItem.ItemIsMovable, interactive)
             
-            # 元の acceptedMouseButtons を復元
             for item, buttons in self._original_accepted_buttons.items():
                 try:
                     item.setAcceptedMouseButtons(buttons)
@@ -260,10 +199,9 @@ class PDFCanvas(QGraphicsView):
     def _set_items_interactive(self, interactive):
         for item in self.scene.items():
             if item == self.background_item: continue
-            if item.data(0): # Check for item ID
+            if item.data(0):
                 item.setFlag(QGraphicsItem.ItemIsSelectable, interactive)
                 item.setFlag(QGraphicsItem.ItemIsMovable, interactive)
-                # Visual effect for selectable items could go here
 
     def _clear_temp_items(self):
         def _safe_remove(item):
@@ -298,14 +236,12 @@ class PDFCanvas(QGraphicsView):
             self.scale(zoom_factor, zoom_factor)
             self._emit_zoom_changed()
         elif event.modifiers() & Qt.ShiftModifier:
-            # Shift+スクロールで左右スクロール
             delta = event.angleDelta().y()
             self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta)
         else:
             super().wheelEvent(event)
 
     def _emit_zoom_changed(self):
-        """現在のキャンバス拡大率を通知する。"""
         current_zoom = self.transform().m11()
         if current_zoom <= 0:
             self.zoom_changed.emit(0.0)
@@ -313,27 +249,23 @@ class PDFCanvas(QGraphicsView):
         self.zoom_changed.emit(current_zoom)
 
     def drawForeground(self, painter, rect):
-        # Draw selection boxes for selected items
         for item in self.scene.selectedItems():
             if item == self.background_item: continue
             painter.save()
             painter.setPen(QPen(QColor(255, 255, 255), 1, Qt.DashLine))
             painter.setBrush(Qt.NoBrush)
-            # Map item's bounding rect to scene
             br = item.sceneBoundingRect()
             painter.drawRect(br.adjusted(-2, -2, 2, 2))
             
-            # Draw handles at corners
             painter.setBrush(QColor(124, 77, 255))
             painter.setPen(Qt.NoPen)
-            s = 6 / self.transform().m11() # Scale handle size with zoom
+            s = 6 / self.transform().m11()
             for p in [br.topLeft(), br.topRight(), br.bottomLeft(), br.bottomRight()]:
                 painter.drawRect(QRectF(p.x() - s/2, p.y() - s/2, s, s))
             painter.restore()
         super().drawForeground(painter, rect)
 
     def mousePressEvent(self, event):
-        # 中ボタンでパン（どのツールでも有効）
         if event.button() == Qt.MiddleButton:
             self._mid_pan_active = True
             self._mid_pan_last = event.pos()
@@ -342,13 +274,11 @@ class PDFCanvas(QGraphicsView):
             return
 
         # ★最優先: 個別オブジェクト編集モード中のガード＆貫通処理★
-        # tool_mode に依存せず、個別編集モードが有効な場合は常にこの処理を最優先で実行する
         if self.active_edit_mode:
             if event.button() == Qt.LeftButton:
                 pos = self.mapToScene(event.pos())
                 clicked_edit_item = False
                 
-                # クリックした位置にあるすべてのアイテムを前面から順に探索（半透明オブジェクトの手前を貫通させる）
                 items_at_pos = self.scene.items(pos, Qt.IntersectsItemShape, Qt.DescendingOrder, self.transform())
                 for item_at_pos in items_at_pos:
                     temp_item = item_at_pos
@@ -367,12 +297,10 @@ class PDFCanvas(QGraphicsView):
                         target_item.setSelected(True)
                     super().mousePressEvent(event)
                 else:
-                    # 空き地クリック時は選択を維持するためにイベントを無視する
                     event.accept()
                 return
             elif event.button() == Qt.RightButton:
                 pos = self.mapToScene(event.pos())
-                # 編集状態中は、編集中のオブジェクトの右クリックのみ許可する（削除など）
                 item = self.scene.itemAt(pos, self.transform())
                 while item and not item.data(0) and item.parentItem():
                     item = item.parentItem()
@@ -383,204 +311,66 @@ class PDFCanvas(QGraphicsView):
                 event.accept()
                 return
 
-        if self.tool_mode == ToolMode.SELECT:
-            if event.button() == Qt.RightButton:
-                pos = self.mapToScene(event.pos())
-                if self.editing_node_item_id:
-                    clicked_item = self.scene.itemAt(pos, self.transform())
-                    if isinstance(clicked_item, VertexHandleItem):
-                        self._show_vertex_context_menu(event.globalPosition().toPoint(), clicked_item)
+        # Delegate event handling to current tool
+        tool = self._get_active_tool()
+        if tool and tool.mouse_press(event, self.scene):
+            return
+
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._mid_pan_active:
+            delta = event.pos() - self._mid_pan_last
+            self._mid_pan_last = event.pos()
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
+            self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
+            event.accept()
+            return
+
+        tool = self._get_active_tool()
+        if tool and tool.mouse_move(event, self.scene):
+            return
+
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MiddleButton and self._mid_pan_active:
+            self._mid_pan_active = False
+            self._mid_pan_last = None
+            if self.tool_mode in [ToolMode.SELECT, ToolMode.NONE]:
+                self.setCursor(Qt.ArrowCursor)
+            else:
+                self.setCursor(Qt.CrossCursor)
+            event.accept()
+            return
+
+        tool = self._get_active_tool()
+        if tool and tool.mouse_release(event, self.scene):
+            return
+
+        super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        tool = self._get_active_tool()
+        if tool and tool.double_click(event, self.scene):
+            return
+
+        super().mouseDoubleClickEvent(event)
+
+    def keyPressEvent(self, event):
+        if self.tool_mode == ToolMode.SELECT and self.editing_node_item_id:
+            if event.key() in [Qt.Key_Delete, Qt.Key_Backspace]:
+                selected = self.scene.selectedItems()
+                for sel in selected:
+                    if isinstance(sel, VertexHandleItem):
+                        self.on_vertex_double_clicked(sel.parent_item, sel.index)
                         event.accept()
                         return
-                    target_item = None
-                    for it in self.scene.items():
-                        if it.data(0) == self.editing_node_item_id:
-                            target_item = it
-                            break
-                    if target_item:
-                        best_idx, best_proj, best_dist = self._find_closest_edge(target_item, pos)
-                        if best_idx != -1:
-                            self._show_edge_context_menu(event.globalPosition().toPoint(), target_item, best_idx, best_proj)
-                            event.accept()
-                            return
-                    self._show_edit_exit_context_menu(event.globalPosition().toPoint())
-                    event.accept()
-                    return
-                else:
-                    item = self.scene.itemAt(pos, self.transform())
-                    while item and not item.data(0) and item.parentItem():
-                        item = item.parentItem()
-                    if item and item != self.background_item and item.data(0):
-                        if isinstance(item, (QGraphicsLineItem, QGraphicsPathItem, QGraphicsPolygonItem)):
-                            self._show_object_context_menu(event.globalPosition().toPoint(), item.data(0))
-                            event.accept()
-                            return
-
-            if event.button() == Qt.LeftButton:
-                pos = self.mapToScene(event.pos())
-                item = self.scene.itemAt(pos, self.transform())
-                
-                # 頂点編集中の場合、クリックされた位置が現在の編集対象でもハンドルでもなければ編集を終了する
-                if self.editing_node_item_id:
-                    clicked_target = item
-                    is_edit_target = False
-                    while clicked_target:
-                        if isinstance(clicked_target, VertexHandleItem):
-                            is_edit_target = True
-                            break
-                        if clicked_target.data(0) == self.editing_node_item_id:
-                            is_edit_target = True
-                            break
-                        clicked_target = clicked_target.parentItem()
-                    
-                    if not is_edit_target:
-                        # 空き地クリックと判定されたが、編集対象エッジの近くだったら編集終了をキャンセルする
-                        target_item = None
-                        for it in self.scene.items():
-                            if it.data(0) == self.editing_node_item_id:
-                                target_item = it
-                                break
-                        if target_item:
-                            best_idx, _, _ = self._find_closest_edge(target_item, pos)
-                            if best_idx != -1:
-                                is_edit_target = True
-                                        
-                    if not is_edit_target:
-                        self.end_node_editing()
-                        # 編集終了後は item もしくは selection をクリアして処理
-                        item = None
-                
-                # Walk up to find the main item with ID
-                while item and not item.data(0) and item.parentItem():
-                    item = item.parentItem()
-                
-                if item and item != self.background_item and item.data(0):
-                    # Our hit-test found the item — select it directly
-                    self.scene.clearSelection()
-                    item.setSelected(True)
-                    self.item_selected.emit(item.data(0))
-                    self.viewport().update()
-                    super().mousePressEvent(event)
-                    return
-                # Our hit-test missed — clear and let Qt's built-in selection try
-                self.scene.clearSelection()
-            super().mousePressEvent(event)
-            # After Qt's selection attempt, check what ended up selected
-            if event.button() == Qt.LeftButton:
-                selected = self.scene.selectedItems()
-                if selected:
-                    top = selected[0]
-                    while top and not top.data(0) and top.parentItem():
-                        top = top.parentItem()
-                    if top and top.data(0) and top != self.background_item:
-                        self.item_selected.emit(top.data(0))
-                    else:
-                        self.selection_cleared.emit()
-                else:
-                    self.selection_cleared.emit()
-                self.viewport().update()
-            return
-
-        if self.tool_mode == ToolMode.NONE:
-            super().mousePressEvent(event)
-            return
-
-        pos = self.mapToScene(event.pos())
-        
-        if event.button() == Qt.LeftButton:
-            if self.tool_mode == ToolMode.CALIBRATE:
-                self.temp_points.append(pos)
-                if len(self.temp_points) == 1:
-                    self.temp_line = QGraphicsLineItem(pos.x(), pos.y(), pos.x(), pos.y())
-                    pen = QPen(QColor(124, 77, 255), 2)
-                    pen.setCosmetic(True)
-                    self.temp_line.setPen(pen)
-                    self.scene.addItem(self.temp_line)
-                elif len(self.temp_points) == 2:
-                    p1, p2 = self.temp_points
-                    self.calibration_points_selected.emit(p1, p2)
-                    self._finish_tool()
-
-            elif self.tool_mode == ToolMode.DRAW_LINE:
-                # Shiftキー押下中：前点に対して水平・垂直・45度スナップ
-                snap_pos = pos
-                if (event.modifiers() & Qt.ShiftModifier) and self.temp_points:
-                    snap_pos = self._apply_angle_snap(self.temp_points[-1], pos)
-                self.temp_points.append(snap_pos)
-                if not self.temp_poly:
-                    self.temp_poly = QGraphicsPathItem()
-                    pen = QPen(QColor(self.current_shape_color), self.current_shape_line_width)
-                    pen.setCosmetic(True)
-                    self.temp_poly.setPen(pen)
-                    self.scene.addItem(self.temp_poly)
-                self._update_temp_polyline_path()
-
-            elif self.tool_mode == ToolMode.POLYGON_AREA:
-                # Shiftキー押下中：前点に対して水平・垂直・45度スナップ
-                if (event.modifiers() & Qt.ShiftModifier) and self.temp_points:
-                    pos = self._apply_angle_snap(self.temp_points[-1], pos)
-                self.temp_points.append(pos)
-                if not self.temp_poly:
-                    self.temp_poly = QGraphicsPolygonItem()
-                    pen = QPen(QColor(self.current_shape_color), self.current_shape_line_width)
-                    pen.setCosmetic(True)
-                    self.temp_poly.setPen(pen)
-                    fill = QColor(self.current_fill_color) if self.current_fill_color else QColor(self.current_shape_color)
-                    fill.setAlpha(50)
-                    self.temp_poly.setBrush(fill)
-                    self.scene.addItem(self.temp_poly)
-                self.temp_poly.setPolygon(QPolygonF(self.temp_points))
-
-            elif self.tool_mode == ToolMode.DRAW_CIRCLE_DRAG:
-                self.drag_start = pos
-                
-            elif self.tool_mode == ToolMode.TEXT:
-                item = self.scene.itemAt(pos, self.transform())
-                if item == self.editing_text_item:
-                    super().mousePressEvent(event)
-                    return
-                
-                if self.editing_text_item:
-                    self.editing_text_item.clearFocus()
-                    if not self.continuous_text_input:
-                        super().mousePressEvent(event)
-                        return
-                        
-                self._start_inline_text_editing(pos)
-                super().mousePressEvent(event)
+            elif event.key() == Qt.Key_Escape:
+                self.end_node_editing()
+                event.accept()
                 return
-
-        elif event.button() == Qt.RightButton:
-            if self.tool_mode == ToolMode.POLYGON_AREA and len(self.temp_points) >= 3:
-                self.polygon_complete.emit(self.temp_points)
-                self._finish_tool(self.tool_mode if self.continuous_shape else ToolMode.SELECT)
-            elif self.tool_mode == ToolMode.DRAW_LINE and len(self.temp_points) >= 2:
-                self.polyline_complete.emit(self.temp_points[:])
-                self._finish_tool(self.tool_mode if self.continuous_shape else ToolMode.SELECT)
-
-    def _apply_angle_snap(self, start: QPointF, pos: QPointF) -> QPointF:
-        """Shiftキー押下時に水平・垂直・45度スナップを適用する"""
-        dx = pos.x() - start.x()
-        dy = pos.y() - start.y()
-        distance = math.sqrt(dx * dx + dy * dy)
-        if distance < 0.001:
-            return pos
-        angle_deg = math.degrees(math.atan2(dy, dx))
-        snapped_deg = round(angle_deg / 45.0) * 45.0
-        snapped_rad = math.radians(snapped_deg)
-        return QPointF(start.x() + distance * math.cos(snapped_rad),
-                       start.y() + distance * math.sin(snapped_rad))
-
-    def _update_temp_polyline_path(self, preview_end=None):
-        if not self.temp_poly or not self.temp_points:
-            return
-        path = QPainterPath()
-        path.moveTo(self.temp_points[0])
-        for pt in self.temp_points[1:]:
-            path.lineTo(pt)
-        if preview_end:
-            path.lineTo(preview_end)
-        self.temp_poly.setPath(path)
+        super().keyPressEvent(event)
 
     def _start_inline_text_editing(self, pos):
         if self.editing_text_item:
@@ -616,134 +406,7 @@ class PDFCanvas(QGraphicsView):
         self.temp_points = []
         self.request_tool_change.emit(next_mode)
 
-    def mouseDoubleClickEvent(self, event):
-        if self.tool_mode == ToolMode.SELECT and self.editing_node_item_id:
-            if event.button() == Qt.LeftButton:
-                pos = self.mapToScene(event.pos())
-                item = None
-                for it in self.scene.items():
-                    if it.data(0) == self.editing_node_item_id:
-                        item = it
-                        break
-                if item:
-                    best_idx, best_proj, _ = self._find_closest_edge(item, pos)
-                    if best_idx != -1:
-                        points = self._get_item_points(item)
-                        points.insert(best_idx + 1, best_proj)
-                        self._update_item_geometry(item, points)
-                        self.start_node_editing(self.editing_node_item_id)
-                        self.item_points_updated.emit(self.editing_node_item_id, points)
-                        event.accept()
-                        return
-
-        if event.button() == Qt.LeftButton and self.tool_mode == ToolMode.DRAW_LINE:
-            # The single-click that fired before this double-click already appended a point;
-            # remove it so the path ends at the previous point.
-            if len(self.temp_points) >= 2:
-                self.temp_points.pop()
-            if len(self.temp_points) >= 2:
-                self.polyline_complete.emit(self.temp_points[:])
-                self._finish_tool(self.tool_mode if self.continuous_shape else ToolMode.SELECT)
-            return
-        super().mouseDoubleClickEvent(event)
-
-    def mouseMoveEvent(self, event):
-        # 中ボタンパン処理
-        if self._mid_pan_active:
-            delta = event.pos() - self._mid_pan_last
-            self._mid_pan_last = event.pos()
-            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
-            self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
-            event.accept()
-            return
-
-        pos = self.mapToScene(event.pos())
-        shift_held = bool(event.modifiers() & Qt.ShiftModifier)
-        if self.temp_line and len(self.temp_points) == 1:
-            # Shiftキー押下中：スナップしたプレビュー表示
-            preview_pos = self._apply_angle_snap(self.temp_points[0], pos) if shift_held else pos
-            self.temp_line.setLine(self.temp_points[0].x(), self.temp_points[0].y(),
-                                   preview_pos.x(), preview_pos.y())
-        elif self.temp_poly and self.tool_mode == ToolMode.DRAW_LINE and len(self.temp_points) >= 1:
-            # Shiftキー押下中：直前の点に対してスナップしたプレビュー表示
-            preview_pos = self._apply_angle_snap(self.temp_points[-1], pos) if shift_held else pos
-            self._update_temp_polyline_path(preview_end=preview_pos)
-        elif self.temp_poly and self.tool_mode == ToolMode.POLYGON_AREA and len(self.temp_points) >= 1:
-            # Shiftキー押下中：直前の点に対してスナップしたプレビュー表示
-            preview_pos = self._apply_angle_snap(self.temp_points[-1], pos) if shift_held else pos
-            preview_points = self.temp_points + [preview_pos]
-            self.temp_poly.setPolygon(QPolygonF(preview_points))
-        elif self.tool_mode == ToolMode.DRAW_CIRCLE_DRAG and self.drag_start:
-            radius = math.sqrt((pos.x() - self.drag_start.x()) ** 2 + (pos.y() - self.drag_start.y()) ** 2)
-            if self.temp_circle:
-                self.scene.removeItem(self.temp_circle)
-            cx, cy = self.drag_start.x(), self.drag_start.y()
-            self.temp_circle = QGraphicsEllipseItem(cx - radius, cy - radius, radius * 2, radius * 2)
-            pen = QPen(QColor(self.current_shape_color), self.current_shape_line_width)
-            pen.setCosmetic(True)
-            self.temp_circle.setPen(pen)
-            if self.current_fill_color:
-                fill = QColor(self.current_fill_color)
-                fill.setAlpha(50)
-                self.temp_circle.setBrush(fill)
-            self.scene.addItem(self.temp_circle)
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        # 中ボタンパン終了
-        if event.button() == Qt.MiddleButton and self._mid_pan_active:
-            self._mid_pan_active = False
-            self._mid_pan_last = None
-            # ツールモードに応じてカーソルを復元
-            if self.tool_mode == ToolMode.SELECT:
-                self.setCursor(Qt.ArrowCursor)
-            elif self.tool_mode == ToolMode.NONE:
-                self.setCursor(Qt.ArrowCursor)
-            else:
-                self.setCursor(Qt.CrossCursor)
-            event.accept()
-            return
-
-        if self.tool_mode == ToolMode.DRAW_CIRCLE_DRAG and self.drag_start and event.button() == Qt.LeftButton:
-            pos = self.mapToScene(event.pos())
-            radius = math.sqrt((pos.x() - self.drag_start.x()) ** 2 + (pos.y() - self.drag_start.y()) ** 2)
-            center = self.drag_start
-            self.drag_start = None
-            if self.temp_circle:
-                self.scene.removeItem(self.temp_circle)
-                self.temp_circle = None
-            # Emit even with small radius (0 means "use preset from tool options")
-            self.circle_drag_complete.emit(center, radius)
-            self._finish_tool(self.tool_mode if self.continuous_shape else ToolMode.SELECT)
-            return
-        if self.tool_mode == ToolMode.SELECT:
-            # Check if any item moved
-            for item in self.scene.selectedItems():
-                item_id = item.data(0)
-                last_pos = item.data(1)
-                if item_id and last_pos is not None:
-                    # ItemIsMovable handles the pos update, we calculate delta
-                    delta = item.pos() - last_pos
-                    if delta.x() != 0 or delta.y() != 0:
-                        # 直線・折れ線・多角形の場合、pos() を (0,0) にリセットし、内部形状を移動後のシーン座標で更新する
-                        if isinstance(item, (QGraphicsLineItem, QGraphicsPathItem, QGraphicsPolygonItem)):
-                            points = self._get_item_points(item)
-                            if points:
-                                moved_points = [p + delta for p in points]
-                                self._update_item_geometry(item, moved_points)
-                            item.setPos(0, 0)
-                            item.setData(1, QPointF(0, 0))
-                        else:
-                            item.setData(1, item.pos())
-                        
-                        # シグナルの発火は座標と位置のリセットが完了した後に実行する
-                        # これにより、移動後の最新ジオメトリを元にマーカーを正しく再描画できます
-                        self.item_moved.emit(item_id, delta)
-        
-        # 移動完了やツールの操作完了後、シーンとビューポートを確実に強制再描画する
-        self.scene.update()
-        self.viewport().update()
-        super().mouseReleaseEvent(event)
+    # === Annotation rendering API methods ===
 
     def add_line_annotation(self, p1, p2, text="", color="red", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100):
         line = QGraphicsLineItem(p1.x(), p1.y(), p2.x(), p2.y())
@@ -754,7 +417,7 @@ class PDFCanvas(QGraphicsView):
         line.setPen(pen)
         if item_id: 
             line.setData(0, item_id)
-            line.setData(1, QPointF(0,0)) # Initial relative pos
+            line.setData(1, QPointF(0,0))
         self.scene.addItem(line)
         
         txt_item = self._add_text_item(text, (p1.x() + p2.x()) / 2, (p1.y() + p2.y()) / 2, color, font_family, font_size)
@@ -856,7 +519,6 @@ class PDFCanvas(QGraphicsView):
             self.annotation_items[item_id] = circle
 
     def _draw_center_marker(self, parent, cx, cy, marker_type, color, size=10):
-        """Draw a center marker as a child of parent at local coords (cx, cy)."""
         if marker_type == "circle":
             s = size / 2
             item = QGraphicsEllipseItem(cx - s, cy - s, size, size, parent)
@@ -891,8 +553,6 @@ class PDFCanvas(QGraphicsView):
         item.setData(2, "marker")
 
     def _draw_endpoint_marker(self, parent, point, neighbor, marker_type, color, size=10):
-        """Draw a start/end marker as a child of parent. point is where it goes, neighbor
-        is the adjacent point used to compute arrow direction."""
         px, py = point.x(), point.y()
         if marker_type == "circle":
             s = size / 2
@@ -903,7 +563,6 @@ class PDFCanvas(QGraphicsView):
             item.setBrush(QColor(color))
             item.setData(2, "marker")
         elif marker_type == "arrow":
-            # Direction pointing away from the interior (outward)
             dx = px - neighbor.x()
             dy = py - neighbor.y()
             length = math.sqrt(dx * dx + dy * dy)
@@ -911,9 +570,7 @@ class PDFCanvas(QGraphicsView):
                 return
             dx /= length
             dy /= length
-            # Perpendicular
             perp_x, perp_y = -dy, dx
-            # Arrow wings behind the tip
             bx = px - dx * size
             by = py - dy * size
             wing1 = QPointF(bx + perp_x * size * 0.45, by + perp_y * size * 0.45)
@@ -976,7 +633,6 @@ class PDFCanvas(QGraphicsView):
                             pen.setWidth(attrs["line_width"])
                         item.setPen(pen)
 
-                        # When stroke color changes, update brush on polygon if fill derives from stroke
                         if "color" in attrs and isinstance(item, QGraphicsPolygonItem):
                             cur_brush = item.brush()
                             if cur_brush.style() != Qt.NoBrush:
@@ -986,14 +642,12 @@ class PDFCanvas(QGraphicsView):
                 if "fill_color" in attrs or "fill_opacity" in attrs:
                     if isinstance(item, (QGraphicsPolygonItem, QGraphicsEllipseItem)):
                         cur_brush = item.brush()
-                        # Determine fill alpha
                         if "fill_opacity" in attrs:
                             fill_alpha = round(attrs["fill_opacity"] / 100.0 * 255)
                         elif cur_brush.style() != Qt.NoBrush:
                             fill_alpha = cur_brush.color().alpha()
                         else:
                             fill_alpha = 0
-                        # Determine fill RGB
                         if "fill_color" in attrs:
                             fill_base = QColor(attrs["fill_color"]) if attrs["fill_color"] else None
                         elif cur_brush.style() != Qt.NoBrush:
@@ -1007,14 +661,11 @@ class PDFCanvas(QGraphicsView):
                             fill_base.setAlpha(fill_alpha)
                             item.setBrush(fill_base)
                         else:
-                            # No explicit fill color — derive from stroke color
                             pen_c = item.pen().color()
                             item.setBrush(QColor(pen_c.red(), pen_c.green(), pen_c.blue(), fill_alpha))
 
-                # Handle marker updates
                 has_marker_change = any(k in attrs for k in ("center_marker", "start_marker", "end_marker"))
                 if has_marker_change:
-                    # Remove existing marker children
                     for child in list(item.childItems()):
                         if child.data(2) == "marker":
                             child.setParentItem(None)
@@ -1054,7 +705,6 @@ class PDFCanvas(QGraphicsView):
                     if "stroke_opacity" in attrs:
                         txt.setOpacity(attrs["stroke_opacity"] / 100.0)
 
-                # If text is being set but no text child exists yet, create one
                 if "text" in attrs and attrs["text"].strip() and not text_items and not isinstance(item, QGraphicsTextItem):
                     color_str = item.pen().color().name() if hasattr(item, 'pen') else "#7c4dff"
                     ff = attrs.get("font_family", "Arial")
@@ -1077,7 +727,6 @@ class PDFCanvas(QGraphicsView):
                     if txt_new:
                         txt_new.setParentItem(item)
                 
-                # ビューポートとシーンの再描画を強制し、描画キャッシュの不整合や表示の欠けを防ぐ
                 self.scene.update()
                 self.viewport().update()
                 break
@@ -1089,7 +738,6 @@ class PDFCanvas(QGraphicsView):
         self._emit_zoom_changed()
 
     def set_zoom_scale(self, target_scale):
-        """指定の絶対拡大率（等倍＝1.0）を設定する。表示中心を維持したまま拡大縮小します。"""
         current_zoom = self.transform().m11()
         if current_zoom <= 0 or target_scale <= 0:
             return
@@ -1097,22 +745,7 @@ class PDFCanvas(QGraphicsView):
         self.scale(factor, factor)
         self._emit_zoom_changed()
 
-    def keyPressEvent(self, event):
-        if self.tool_mode == ToolMode.SELECT and self.editing_node_item_id:
-            if event.key() in [Qt.Key_Delete, Qt.Key_Backspace]:
-                selected = self.scene.selectedItems()
-                for sel in selected:
-                    if isinstance(sel, VertexHandleItem):
-                        self.on_vertex_double_clicked(sel.parent_item, sel.index)
-                        event.accept()
-                        return
-            elif event.key() == Qt.Key_Escape:
-                self.end_node_editing()
-                event.accept()
-                return
-        super().keyPressEvent(event)
-
-    # === ノード（頂点）編集の実装 ===
+    # === Node Editing Implementation ===
 
     def start_node_editing(self, item_id):
         self.end_node_editing()
@@ -1268,19 +901,17 @@ class PDFCanvas(QGraphicsView):
         menu.exec(global_pos)
 
     def on_vertex_move_finished(self, item):
-        """頂点ハンドルのドラッグが完了した際に呼ばれ、外部モデルの更新と面積/長さ再計算を1回だけ要求する。"""
         points = self._get_item_points(item)
         if points:
             self.item_points_updated.emit(item.data(0), points)
 
     def _find_closest_edge(self, item, scene_pos):
-        """指定したアイテムの最も近いエッジを検索し、(best_idx, best_proj, best_dist) を返す。"""
         points = self._get_item_points(item)
         if not points:
             return -1, None, float('inf')
         
         local_pos = item.mapFromScene(scene_pos)
-        best_dist = 15.0 / self.transform().m11()  # 15pxの閾値
+        best_dist = 15.0 / self.transform().m11()
         best_idx = -1
         best_proj = None
         n = len(points)

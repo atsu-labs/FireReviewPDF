@@ -3,10 +3,9 @@ import math
 from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, 
                              QLabel, QHBoxLayout, QWidget, QVBoxLayout, 
                              QInputDialog, QMessageBox, QPushButton, 
-                             QFrame, QSpacerItem, QSizePolicy, QFontComboBox, QSpinBox, QDoubleSpinBox, QColorDialog, QCheckBox, QComboBox,
-                             QDialog, QDialogButtonBox, QMenu)
-from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QAction, QColor, QFont, QShortcut, QKeySequence
+                             QFrame)
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QFont, QShortcut, QKeySequence
 import qtawesome as qta
 
 from .services.pdf_exporter import export_pdf_document
@@ -18,16 +17,16 @@ from .models import DrawingModel, Annotation
 from .ui.panels.property_panel import PropertyPanel
 from .ui.panels.navigator_panel import NavigatorPanel
 from .ui.styles import GLOBAL_STYLE
+from .ui.components import MainMenuBar, MainToolBar, ToolOptionsBar
 
 class MainWindow(QMainWindow):
-    # PDF描画解像度（pdf_handler.get_page_pixmap と合わせる）
+    # PDF描画解像度
     PDF_RENDER_DPI = 150
-    # PDF座標系の基準DPI（1pt=1/72inch）
+    # PDF座標系の基準DPI
     PDF_BASE_DPI = 72
-    # 縮尺比率を整数表示に丸める際の許容差（例: 100.03 -> 1/100）
+    # 縮尺比率を整数表示に丸める際の許容差
     SCALE_RATIO_ROUNDING_TOLERANCE = 0.05
-    # 表示倍率を整数表示に丸める際の許容差（単位: パーセントポイント）。
-    # 例: 99.5%〜100.5% の範囲は 100% と表示する。
+    # 表示倍率を整数表示に丸める際の許容差
     ZOOM_LABEL_ROUNDING_TOLERANCE_PP = 0.5
 
     def __init__(self):
@@ -47,8 +46,8 @@ class MainWindow(QMainWindow):
 
         # Shape tool defaults
         self.current_shape_color = "#7c4dff"
-        self.current_fill_color = "#7c4dff"  # デフォルトは線と同色
-        self.current_fill_opacity = 30  # デフォルトは線と同じ色・30%
+        self.current_fill_color = "#7c4dff"
+        self.current_fill_opacity = 30
         self.current_line_width = 2
         self.current_start_marker = ""
         self.current_end_marker = ""
@@ -63,39 +62,14 @@ class MainWindow(QMainWindow):
         self._setup_shortcuts()
 
     def _setup_menus(self):
-        menubar = self.menuBar()
-        # Ensure menubar style matches dark theme
-        menubar.setStyleSheet("QMenuBar { background-color: #151521; color: #ffffff; border-bottom: 1px solid #333344; } QMenuBar::item:selected { background-color: #2a2a3d; }")
+        self.menubar = MainMenuBar(self)
+        self.setMenuBar(self.menubar)
         
-        file_menu = menubar.addMenu("ファイル")
-        
-        open_action = QAction("PDF図面を開く", self)
-        open_action.setShortcut("Ctrl+O")
-        open_action.triggered.connect(self.open_pdf)
-        file_menu.addAction(open_action)
-
-        swap_action = QAction("背景PDFを差し替え", self)
-        swap_action.triggered.connect(self.swap_pdf)
-        file_menu.addAction(swap_action)
-
-        file_menu.addSeparator()
-
-        save_action = QAction("プロジェクトを保存", self)
-        save_action.setShortcut("Ctrl+S")
-        save_action.triggered.connect(self.save_project)
-        file_menu.addAction(save_action)
-
-        load_action = QAction("プロジェクトを読み込み", self)
-        load_action.setShortcut("Ctrl+L")
-        load_action.triggered.connect(self.load_project)
-        file_menu.addAction(load_action)
-
-        file_menu.addSeparator()
-
-        export_action = QAction("PDFを書き出し", self)
-        export_action.setShortcut("Ctrl+E")
-        export_action.triggered.connect(self.export_pdf)
-        file_menu.addAction(export_action)
+        self.menubar.open_pdf_requested.connect(self.open_pdf)
+        self.menubar.swap_pdf_requested.connect(self.swap_pdf)
+        self.menubar.save_project_requested.connect(self.save_project)
+        self.menubar.load_project_requested.connect(self.load_project)
+        self.menubar.export_pdf_requested.connect(self.export_pdf)
 
     def setup_ui(self):
         # Central Widget
@@ -109,10 +83,34 @@ class MainWindow(QMainWindow):
         self._setup_header()
 
         # 2. Main Tool Bar
-        self._setup_toolbar()
+        self.toolbar = MainToolBar()
+        self.zoom_combo = self.toolbar.zoom_combo
+        self.scale_status_label = self.toolbar.scale_status_label
+        self.pdf_size_label = self.toolbar.pdf_size_label
+        self.tool_btns = self.toolbar.tool_btns
+        
+        self.toolbar.tool_changed.connect(self.set_tool)
+        self.toolbar.zoom_changed.connect(self._on_zoom_combo_changed_from_toolbar)
+        self.main_layout.addWidget(self.toolbar)
 
         # 3. Tool Options Bar
-        self._setup_options_bar()
+        self.options_bar = ToolOptionsBar()
+        
+        self.options_bar.line_width_changed.connect(self._on_options_line_width_changed)
+        self.options_bar.shape_color_changed.connect(self._on_options_shape_color_changed)
+        self.options_bar.fill_color_changed.connect(self._on_options_fill_color_changed)
+        self.options_bar.fill_opacity_changed.connect(self._on_options_fill_opacity_changed)
+        self.options_bar.start_marker_changed.connect(self._on_options_start_marker_changed)
+        self.options_bar.end_marker_changed.connect(self._on_options_end_marker_changed)
+        self.options_bar.center_marker_changed.connect(self._on_options_center_marker_changed)
+        self.options_bar.shape_continuous_changed.connect(self._on_options_shape_continuous_changed)
+        
+        self.options_bar.font_changed.connect(self._on_options_font_changed)
+        self.options_bar.font_size_changed.connect(self._on_options_font_size_changed)
+        self.options_bar.text_color_changed.connect(self._on_options_text_color_changed)
+        self.options_bar.text_continuous_changed.connect(self._on_options_text_continuous_changed)
+        
+        self.main_layout.addWidget(self.options_bar)
 
         # 4. Content Area (Navigator | Canvas | Property)
         content_area = QHBoxLayout()
@@ -195,285 +193,118 @@ class MainWindow(QMainWindow):
 
         self.main_layout.addWidget(header)
 
-    def _setup_toolbar(self):
-        toolbar = QFrame()
-        toolbar.setObjectName("ToolBar")
-        t_layout = QHBoxLayout(toolbar)
-        t_layout.setContentsMargins(10, 0, 10, 0)
-
-        tools = [
-            ('fa5s.mouse-pointer', "選択", ToolMode.SELECT),
-            ('fa5s.hand-paper', "パン", ToolMode.NONE),
-            ('fa5s.pencil-alt', "直線（折れ線）", ToolMode.DRAW_LINE),
-            ('fa5s.square', "矩形", ToolMode.POLYGON_AREA),
-            ('fa5s.circle', "円", ToolMode.DRAW_CIRCLE_DRAG),
-            ('fa5s.font', "テキスト", ToolMode.TEXT),
-        ]
-
-        self.tool_btns = []
-        for icon_name, tip, mode in tools:
-            btn = QPushButton()
-            btn.setIcon(qta.icon(icon_name, color='white'))
-            btn.setIconSize(QSize(20, 20))
-            btn.setObjectName("ToolBtn")
-            btn.setProperty("tool_mode", mode)
-            btn.setToolTip(tip)
-            btn.setFixedSize(40, 40)
-            btn.setCheckable(True)
-            btn.clicked.connect(lambda checked, m=mode, b=btn: self.set_tool(m, b))
-            t_layout.addWidget(btn)
-            self.tool_btns.append(btn)
-
-        t_layout.addStretch()
+    def _setup_status_bar(self):
+        status = QFrame()
+        status.setFixedHeight(25)
+        status.setStyleSheet("background-color: #151521; border-top: 1px solid #333344;")
+        s_layout = QHBoxLayout(status)
+        s_layout.setContentsMargins(10, 0, 10, 0)
         
-        t_layout.addWidget(QLabel("表示倍率:"))
-        self.zoom_combo = QComboBox()
-        self.zoom_combo.setEditable(True)
-        self.zoom_combo.setFixedWidth(85)
-        self.zoom_combo.setStyleSheet(
-            "QComboBox { background-color: #2a2a3d; color: #ffffff; border: 1px solid #555566; border-radius: 4px; padding: 2px 5px; }"
-            "QComboBox::drop-down { border: none; }"
-            "QComboBox QAbstractItemView { background-color: #1e1e2e; color: #ffffff; selection-background-color: #7c4dff; }"
-        )
-        presets = ["25%", "50%", "75%", "100%", "125%", "150%", "200%", "300%", "400%"]
-        self.zoom_combo.addItems(presets)
-        self.zoom_combo.setCurrentText("100%")
-        self.zoom_combo.currentIndexChanged.connect(self._on_zoom_combo_changed)
-        self.zoom_combo.lineEdit().returnPressed.connect(self._on_zoom_combo_changed)
-        t_layout.addWidget(self.zoom_combo)
-        self.scale_status_label = QLabel("スケール: 未キャリブレーション")
-        t_layout.addWidget(self.scale_status_label)
-        self.pdf_size_label = QLabel(PDFHandler.SIZE_LABEL_UNKNOWN)
-        t_layout.addWidget(self.pdf_size_label)
-
-        self.main_layout.addWidget(toolbar)
-
-    def _setup_options_bar(self):
-        self.options_bar = QFrame()
-        self.options_bar.setObjectName("ToolOptionsBar")
-        self.options_bar.setMinimumHeight(40)
-        o_layout = QHBoxLayout(self.options_bar)
-        o_layout.setContentsMargins(15, 0, 15, 0)
-
-        self.default_opt_label = QLabel("ツールプロパティ: 未選択")
-        o_layout.addWidget(self.default_opt_label)
+        self.coord_label = QLabel("X: 0.0px  Y: 0.0px")
+        self.coord_label.setStyleSheet("color: #888899; font-size: 10px;")
+        s_layout.addStretch()
+        s_layout.addWidget(self.coord_label)
         
-        # --- Shape tool options ---
-        self.shape_options_widget = QWidget()
-        shape_layout = QHBoxLayout(self.shape_options_widget)
-        shape_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.addWidget(status)
 
-        shape_layout.addWidget(QLabel("線の太さ:"))
-        self.tool_line_width_spin = QSpinBox()
-        self.tool_line_width_spin.setRange(1, 20)
-        self.tool_line_width_spin.setValue(self.current_line_width)
-        self.tool_line_width_spin.valueChanged.connect(self._on_tool_line_width_changed)
-        shape_layout.addWidget(self.tool_line_width_spin)
+    def apply_styles(self):
+        self.setStyleSheet(GLOBAL_STYLE)
 
-        shape_layout.addWidget(QLabel("線の色:"))
-        self.tool_shape_color_preview = QFrame()
-        self.tool_shape_color_preview.setFixedSize(20, 20)
-        self.tool_shape_color_preview.setStyleSheet(f"background-color: {self.current_shape_color}; border-radius: 4px;")
-        shape_layout.addWidget(self.tool_shape_color_preview)
-        self.tool_shape_color_btn = QPushButton("変更")
-        self.tool_shape_color_btn.clicked.connect(self._on_tool_shape_color_clicked)
-        shape_layout.addWidget(self.tool_shape_color_btn)
+    # --- Toolbar & Optionsbar callbacks ---
+    def set_tool(self, mode, active_btn=None):
+        self.toolbar.set_tool_mode(mode)
+        self.canvas.set_tool_mode(mode)
+        self.options_bar.update_options_visibility(mode, self._is_current_page_calibrated())
 
-        # Fill color (shown for polygon and circle tools)
-        self.tool_fill_container = QWidget()
-        fill_layout = QHBoxLayout(self.tool_fill_container)
-        fill_layout.setContentsMargins(0, 0, 0, 0)
-        fill_layout.addWidget(QLabel("塗りの色:"))
-        self.tool_fill_color_preview = QFrame()
-        self.tool_fill_color_preview.setFixedSize(20, 20)
-        self.tool_fill_color_preview.setStyleSheet(f"background-color: {self.current_fill_color}; border: 1px solid #888; border-radius: 4px;")
-        fill_layout.addWidget(self.tool_fill_color_preview)
-        self.tool_fill_color_btn = QPushButton("変更")
-        self.tool_fill_color_btn.clicked.connect(self._on_tool_fill_color_clicked)
-        fill_layout.addWidget(self.tool_fill_color_btn)
-        self.tool_fill_clear_btn = QPushButton("なし")
-        self.tool_fill_clear_btn.clicked.connect(self._on_tool_fill_color_cleared)
-        fill_layout.addWidget(self.tool_fill_clear_btn)
-        fill_layout.addWidget(QLabel("不透明度:"))
-        self.tool_fill_opacity_spin = QSpinBox()
-        self.tool_fill_opacity_spin.setRange(0, 100)
-        self.tool_fill_opacity_spin.setValue(30)
-        self.tool_fill_opacity_spin.setSuffix("%")
-        self.tool_fill_opacity_spin.setFixedWidth(65)
-        self.tool_fill_opacity_spin.valueChanged.connect(self._on_tool_fill_opacity_changed)
-        fill_layout.addWidget(self.tool_fill_opacity_spin)
-        shape_layout.addWidget(self.tool_fill_container)
+        is_shape_tool = mode in [ToolMode.DRAW_LINE, ToolMode.POLYGON_AREA, ToolMode.DRAW_CIRCLE_DRAG]
+        if mode == ToolMode.TEXT:
+            self.canvas.set_text_defaults(self.current_text_font, self.current_text_size, self.current_text_color, self.options_bar.tool_continuous_check.isChecked())
+        elif is_shape_tool:
+            self._update_canvas_shape_defaults()
+            self.canvas.set_shape_continuous(self.options_bar.tool_shape_continuous_check.isChecked())
 
-        # Radius input for calibrated circle tool
-        self.tool_radius_container = QWidget()
-        radius_layout = QHBoxLayout(self.tool_radius_container)
-        radius_layout.setContentsMargins(0, 0, 0, 0)
-        radius_layout.addWidget(QLabel("半径:"))
-        self.tool_radius_spin = QDoubleSpinBox()
-        if self.model.unit == 'm':
-            self.tool_radius_spin.setRange(0.001, 1000)
-            self.tool_radius_spin.setDecimals(3)
-            self.tool_radius_spin.setValue(15.0)
-            self.tool_radius_spin.setSuffix(" m")
-        else:
-            self.tool_radius_spin.setRange(0.1, 1000000)
-            self.tool_radius_spin.setDecimals(1)
-            self.tool_radius_spin.setValue(15000.0)
-            self.tool_radius_spin.setSuffix(" mm")
-        radius_layout.addWidget(self.tool_radius_spin)
-        shape_layout.addWidget(self.tool_radius_container)
-
-        # Line endpoint markers (shown for DRAW_LINE only)
-        self.tool_line_marker_container = QWidget()
-        lm_layout = QHBoxLayout(self.tool_line_marker_container)
-        lm_layout.setContentsMargins(0, 0, 0, 0)
-        lm_layout.addWidget(QLabel("始点:"))
-        self.tool_start_marker_combo = QComboBox()
-        self.tool_start_marker_combo.addItems(["なし", "丸", "矢印"])
-        self.tool_start_marker_combo.currentIndexChanged.connect(self._on_tool_start_marker_changed)
-        lm_layout.addWidget(self.tool_start_marker_combo)
-        lm_layout.addWidget(QLabel("終点:"))
-        self.tool_end_marker_combo = QComboBox()
-        self.tool_end_marker_combo.addItems(["なし", "丸", "矢印"])
-        self.tool_end_marker_combo.currentIndexChanged.connect(self._on_tool_end_marker_changed)
-        lm_layout.addWidget(self.tool_end_marker_combo)
-        shape_layout.addWidget(self.tool_line_marker_container)
-
-        # Circle center marker (shown for DRAW_CIRCLE_DRAG only)
-        self.tool_circle_marker_container = QWidget()
-        cm_layout = QHBoxLayout(self.tool_circle_marker_container)
-        cm_layout.setContentsMargins(0, 0, 0, 0)
-        cm_layout.addWidget(QLabel("中心点:"))
-        self.tool_center_marker_combo = QComboBox()
-        self.tool_center_marker_combo.addItems(["なし", "丸", "十字", "バツ"])
-        self.tool_center_marker_combo.currentIndexChanged.connect(self._on_tool_center_marker_changed)
-        cm_layout.addWidget(self.tool_center_marker_combo)
-        shape_layout.addWidget(self.tool_circle_marker_container)
-
-        # Continuous creation checkbox (all shape tools)
-        self.tool_shape_continuous_check = QCheckBox("連続作成")
-        self.tool_shape_continuous_check.setChecked(False)
-        self.tool_shape_continuous_check.setStyleSheet("color: white;")
-        self.tool_shape_continuous_check.toggled.connect(self._on_tool_shape_continuous_changed)
-        shape_layout.addWidget(self.tool_shape_continuous_check)
-
-        o_layout.addWidget(self.shape_options_widget)
-        self.shape_options_widget.hide()
-
-        # --- Text tool options ---
-        self.text_options_widget = QWidget()
-        text_layout = QHBoxLayout(self.text_options_widget)
-        text_layout.setContentsMargins(0, 0, 0, 0)
-        
-        text_layout.addWidget(QLabel("フォント:"))
-        self.tool_font_combo = QFontComboBox()
-        self.tool_font_combo.setCurrentFont(QFont(self.current_text_font))
-        self.tool_font_combo.currentFontChanged.connect(self._on_tool_font_changed)
-        text_layout.addWidget(self.tool_font_combo)
-        
-        text_layout.addWidget(QLabel("サイズ:"))
-        self.tool_font_size_spin = QSpinBox()
-        self.tool_font_size_spin.setRange(1, 200)
-        self.tool_font_size_spin.setValue(self.current_text_size)
-        self.tool_font_size_spin.valueChanged.connect(self._on_tool_font_size_changed)
-        text_layout.addWidget(self.tool_font_size_spin)
-        
-        text_layout.addWidget(QLabel("色:"))
-        self.tool_color_preview = QFrame()
-        self.tool_color_preview.setFixedSize(20, 20)
-        self.tool_color_preview.setStyleSheet(f"background-color: {self.current_text_color}; border-radius: 4px;")
-        text_layout.addWidget(self.tool_color_preview)
-        
-        self.tool_color_btn = QPushButton("変更")
-        self.tool_color_btn.clicked.connect(self._on_tool_color_clicked)
-        text_layout.addWidget(self.tool_color_btn)
-        
-        self.tool_continuous_check = QCheckBox("連続入力")
-        self.tool_continuous_check.setChecked(False)
-        self.tool_continuous_check.setStyleSheet("color: white;")
-        self.tool_continuous_check.toggled.connect(self._on_tool_continuous_changed)
-        text_layout.addWidget(self.tool_continuous_check)
-        
-        o_layout.addWidget(self.text_options_widget)
-        self.text_options_widget.hide()
-        
-        o_layout.addStretch()
-        self.main_layout.addWidget(self.options_bar)
-
-    def _on_tool_continuous_changed(self, checked):
-        if self.canvas.tool_mode == ToolMode.TEXT:
-            self.canvas.set_text_defaults(self.current_text_font, self.current_text_size, self.current_text_color, checked)
-
-    def _on_tool_shape_continuous_changed(self, checked):
-        self.canvas.set_shape_continuous(checked)
-
-    def _on_tool_start_marker_changed(self, index):
-        self.current_start_marker = self._start_marker_values[index]
-
-    def _on_tool_end_marker_changed(self, index):
-        self.current_end_marker = self._end_marker_values[index]
-
-    def _on_tool_center_marker_changed(self, index):
-        self.current_center_marker = self._center_marker_values[index]
-
-    def _on_tool_line_width_changed(self, width):
+    def _on_options_line_width_changed(self, width):
         self.current_line_width = width
         self._update_canvas_shape_defaults()
 
-    def _on_tool_shape_color_clicked(self):
-        color = QColorDialog.getColor(QColor(self.current_shape_color))
-        if color.isValid():
-            self.current_shape_color = color.name()
-            self.tool_shape_color_preview.setStyleSheet(f"background-color: {self.current_shape_color}; border-radius: 4px;")
-            self._update_fill_preview()  # 塗りが「線と同色」のときプレビューも追従
-            self._update_canvas_shape_defaults()
-
-    def _on_tool_fill_color_clicked(self):
-        initial = QColor(self.current_fill_color) if self.current_fill_color else QColor(self.current_shape_color)
-        color = QColorDialog.getColor(initial)
-        if color.isValid():
-            self.current_fill_color = color.name()
-            if self.tool_fill_opacity_spin.value() == 0:
-                self.tool_fill_opacity_spin.setValue(30)
-                self.current_fill_opacity = 30
-            else:
-                self.current_fill_opacity = self.tool_fill_opacity_spin.value()
-            self._update_fill_preview()
-            self._update_canvas_shape_defaults()
-
-    def _on_tool_fill_color_cleared(self):
-        self.current_fill_color = ""
-        self.current_fill_opacity = 0
-        self.tool_fill_opacity_spin.setValue(0)
-        self._update_fill_preview()
+    def _on_options_shape_color_changed(self, color):
+        self.current_shape_color = color
         self._update_canvas_shape_defaults()
 
-    def _on_tool_fill_opacity_changed(self, value):
-        self.current_fill_opacity = value
-        self._update_fill_preview()
+    def _on_options_fill_color_changed(self, color):
+        self.current_fill_color = color
+        self._update_canvas_shape_defaults()
 
-    def _update_fill_preview(self):
-        if self.current_fill_color:
-            self.tool_fill_color_preview.setStyleSheet(f"background-color: {self.current_fill_color}; border: 1px solid #888; border-radius: 4px;")
-        elif self.current_fill_opacity > 0:
-            self.tool_fill_color_preview.setStyleSheet(f"background-color: {self.current_shape_color}; border: 2px dashed #888; border-radius: 4px;")
-        else:
-            self.tool_fill_color_preview.setStyleSheet("background-color: transparent; border: 1px solid #888; border-radius: 4px;")
+    def _on_options_fill_opacity_changed(self, opacity):
+        self.current_fill_opacity = opacity
+        if self.canvas.editing_item_id:
+            self.canvas.update_item_properties(self.canvas.editing_item_id, {"fill_opacity": opacity})
+
+    def _on_options_start_marker_changed(self, index):
+        self.current_start_marker = self._start_marker_values[index]
+        if self.canvas.editing_item_id:
+            self.canvas.update_item_properties(self.canvas.editing_item_id, {"start_marker": self.current_start_marker})
+
+    def _on_options_end_marker_changed(self, index):
+        self.current_end_marker = self._end_marker_values[index]
+        if self.canvas.editing_item_id:
+            self.canvas.update_item_properties(self.canvas.editing_item_id, {"end_marker": self.current_end_marker})
+
+    def _on_options_center_marker_changed(self, index):
+        self.current_center_marker = self._center_marker_values[index]
+        if self.canvas.editing_item_id:
+            self.canvas.update_item_properties(self.canvas.editing_item_id, {"center_marker": self.current_center_marker})
+
+    def _on_options_shape_continuous_changed(self, checked):
+        self.canvas.set_shape_continuous(checked)
+
+    def _on_options_radius_changed(self, radius):
+        pass
+
+    def _on_options_font_changed(self, family):
+        self.current_text_font = family
+        self.canvas.set_text_defaults(self.current_text_font, self.current_text_size, self.current_text_color, self.options_bar.tool_continuous_check.isChecked())
+        if self.canvas.editing_item_id:
+            self.canvas.update_item_properties(self.canvas.editing_item_id, {"font_family": family})
+
+    def _on_options_font_size_changed(self, size):
+        self.current_text_size = size
+        self.canvas.set_text_defaults(self.current_text_font, self.current_text_size, self.current_text_color, self.options_bar.tool_continuous_check.isChecked())
+        if self.canvas.editing_item_id:
+            self.canvas.update_item_properties(self.canvas.editing_item_id, {"font_size": size})
+
+    def _on_options_text_color_changed(self, color):
+        self.current_text_color = color
+        self.canvas.set_text_defaults(self.current_text_font, self.current_text_size, self.current_text_color, self.options_bar.tool_continuous_check.isChecked())
+        if self.canvas.editing_item_id:
+            self.canvas.update_item_properties(self.canvas.editing_item_id, {"color": color})
+
+    def _on_options_text_continuous_changed(self, checked):
+        self.canvas.set_text_defaults(self.current_text_font, self.current_text_size, self.current_text_color, checked)
+
+    def _on_zoom_combo_changed_from_toolbar(self, text):
+        clean_text = text.replace("%", "").strip()
+        try:
+            zoom_percent = float(clean_text)
+        except ValueError:
+            if hasattr(self, "canvas") and self.canvas is not None:
+                self._update_zoom_label(self.canvas.transform().m11())
+            return
+
+        if zoom_percent <= 0:
+            if hasattr(self, "canvas") and self.canvas is not None:
+                self._update_zoom_label(self.canvas.transform().m11())
+            return
+
+        physical_dpi = self._get_physical_dpi()
+        if physical_dpi <= 0:
+            return
+
+        target_canvas_scale = (zoom_percent / 100.0) * physical_dpi / self.PDF_RENDER_DPI
+        self.canvas.set_zoom_scale(target_canvas_scale)
 
     def _update_canvas_shape_defaults(self):
         self.canvas.set_shape_defaults(self.current_shape_color, self.current_line_width, self.current_fill_color)
-
-    def _on_tool_font_changed(self, font):
-        self.current_text_font = font.family()
-
-    def _on_tool_font_size_changed(self, size):
-        self.current_text_size = size
-
-    def _on_tool_color_clicked(self):
-        color = QColorDialog.getColor(QColor(self.current_text_color))
-        if color.isValid():
-            self.current_text_color = color.name()
-            self.tool_color_preview.setStyleSheet(f"background-color: {self.current_text_color}; border-radius: 4px;")
 
     # --- 単位フォーマットヘルパー ---
     def _format_distance(self, value_mm):
@@ -504,9 +335,6 @@ class MainWindow(QMainWindow):
         return self._is_page_calibrated(self.current_page)
 
     def _format_scale_ratio(self, scale_factor):
-        """ページの mm/px から「1/N」形式の縮尺文字列を返す（無効値は空文字）。"""
-        # PDF描画DPIに対する1pxあたりの実寸(mm)を求める
-        # 25.4 mm/inch は 1インチをミリメートルへ変換する係数
         mm_per_pixel_on_pdf = 25.4 / self.PDF_RENDER_DPI
         if scale_factor <= 0 or mm_per_pixel_on_pdf <= 0:
             return ""
@@ -524,14 +352,12 @@ class MainWindow(QMainWindow):
             self.scale_status_label.setText("スケール: 未キャリブレーション")
 
     def _update_pdf_size_label(self):
-        """現在ページのPDFサイズ表示を更新する。"""
         if not self.pdf_handler:
             self.pdf_size_label.setText(PDFHandler.SIZE_LABEL_UNKNOWN)
             return
         self.pdf_size_label.setText(self.pdf_handler.get_page_size_label(self.current_page))
 
     def _update_zoom_label(self, canvas_scale):
-        """キャンバス拡大率を受け取り、PDF原寸基準の表示倍率コンボボックスを更新する。"""
         if canvas_scale <= 0:
             self.zoom_combo.blockSignals(True)
             self.zoom_combo.setCurrentText("---")
@@ -543,8 +369,6 @@ class MainWindow(QMainWindow):
             self.zoom_combo.setCurrentText("---")
             self.zoom_combo.blockSignals(False)
             return
-        # canvas_scale に (PDF_RENDER_DPI / physical_dpi) を掛けて、
-        # 画面物理DPI基準で「PDF原寸=100%」となる表示倍率を算出する。
         zoom_percent = (canvas_scale * self.PDF_RENDER_DPI / physical_dpi) * 100.0
         rounded = round(zoom_percent)
         if abs(zoom_percent - rounded) <= self.ZOOM_LABEL_ROUNDING_TOLERANCE_PP:
@@ -556,39 +380,11 @@ class MainWindow(QMainWindow):
         self.zoom_combo.setCurrentText(text)
         self.zoom_combo.blockSignals(False)
 
-    def _on_zoom_combo_changed(self):
-        """ズームコンボボックスの入力・選択値が変更されたときにキャンバスにズーム率を適用する。"""
-        text = self.zoom_combo.currentText().strip()
-        clean_text = text.replace("%", "").strip()
-        try:
-            zoom_percent = float(clean_text)
-        except ValueError:
-            # 入力が不正な場合、現在の実際のスケールに合わせて表示を復元する
-            if hasattr(self, "canvas") and self.canvas is not None:
-                self._update_zoom_label(self.canvas.transform().m11())
-            return
-
-        if zoom_percent <= 0:
-            # 0以下の無効値の場合も同様に復元する
-            if hasattr(self, "canvas") and self.canvas is not None:
-                self._update_zoom_label(self.canvas.transform().m11())
-            return
-
-        physical_dpi = self._get_physical_dpi()
-        if physical_dpi <= 0:
-            return
-
-        target_canvas_scale = (zoom_percent / 100.0) * physical_dpi / self.PDF_RENDER_DPI
-        self.canvas.set_zoom_scale(target_canvas_scale)
-
     def _setup_shortcuts(self):
-        """ショートカットキーを設定する。"""
-        # Ctrl+0 で100%ズームリセット
         self.shortcut_zoom_reset = QShortcut(QKeySequence("Ctrl+0"), self)
         self.shortcut_zoom_reset.activated.connect(self._reset_zoom_to_100)
 
     def _reset_zoom_to_100(self):
-        """表示倍率を物理DPI基準の100%（実寸大）にリセットする。"""
         physical_dpi = self._get_physical_dpi()
         if physical_dpi <= 0:
             return
@@ -597,25 +393,17 @@ class MainWindow(QMainWindow):
 
     def showEvent(self, event):
         super().showEvent(event)
-        # ウィンドウが表示された段階で、ウィンドウハンドルの画面切り替えシグナルを購読
         window = self.windowHandle()
         if window is not None and not hasattr(self, "_screen_changed_connected"):
             window.screenChanged.connect(self._on_screen_changed)
             self._screen_changed_connected = True
 
     def _on_screen_changed(self, screen):
-        """ウィンドウが別のモニタへ移動したときに、新しいモニタの物理DPIで表示倍率を自動更新する。"""
         if hasattr(self, "canvas") and self.canvas is not None:
             current_scale = self.canvas.transform().m11()
             self._update_zoom_label(current_scale)
 
     def _get_physical_dpi(self):
-        """現在表示中スクリーンの物理DPIを返す。
-
-        Returns:
-            float: 物理DPI値。スクリーン取得失敗、DPI取得例外、
-                0以下の異常値時は 一般的なOSモニターの標準DPI 96.0 を返す。
-        """
         screen = None
         window = self.windowHandle()
         if window is not None:
@@ -655,8 +443,6 @@ class MainWindow(QMainWindow):
         self._calib_all_pages_from_prefs = all_pages
         if hasattr(self, "pref_dialog") and self.pref_dialog:
             self.pref_dialog.hide()
-        
-        # 既存のキャリブレーションツールを起動（ボタンがないため直接 set_tool を呼ぶ）
         self.set_tool(ToolMode.CALIBRATE, None)
 
     def _on_pref_settings_updated(self):
@@ -666,26 +452,7 @@ class MainWindow(QMainWindow):
     def apply_unit_change(self, new_unit):
         old_unit = self.model.unit
         self.model.unit = new_unit
-
-        # 半径スピナーの値を単位変換して更新
-        current_val = self.tool_radius_spin.value()
-        if old_unit == 'mm' and new_unit == 'm':
-            new_radius_val = current_val / 1000.0
-        elif old_unit == 'm' and new_unit == 'mm':
-            new_radius_val = current_val * 1000.0
-        else:
-            new_radius_val = current_val
-
-        if new_unit == 'm':
-            self.tool_radius_spin.setRange(0.001, 1000)
-            self.tool_radius_spin.setDecimals(3)
-            self.tool_radius_spin.setSuffix(" m")
-            self.tool_radius_spin.setValue(new_radius_val)
-        else:
-            self.tool_radius_spin.setRange(0.1, 1000000)
-            self.tool_radius_spin.setDecimals(1)
-            self.tool_radius_spin.setSuffix(" mm")
-            self.tool_radius_spin.setValue(new_radius_val)
+        self.options_bar.apply_unit_change(new_unit, old_unit)
 
         # 計算済みアノテーションのテキストを再フォーマット
         for ann in self.model.annotations:
@@ -699,58 +466,6 @@ class MainWindow(QMainWindow):
                 elif ann.type == "circle" and ann.text != "R=15m":
                     ann.text = self._format_radius(ann.real_value)
                     self.canvas.update_item_properties(ann.id, {"text": ann.text})
-
-    def _setup_status_bar(self):
-        status = QFrame()
-        status.setFixedHeight(25)
-        status.setStyleSheet("background-color: #151521; border-top: 1px solid #333344;")
-        s_layout = QHBoxLayout(status)
-        s_layout.setContentsMargins(10, 0, 10, 0)
-        
-        self.coord_label = QLabel("X: 0.0px  Y: 0.0px")
-        self.coord_label.setStyleSheet("color: #888899; font-size: 10px;")
-        s_layout.addStretch()
-        s_layout.addWidget(self.coord_label)
-        
-        self.main_layout.addWidget(status)
-
-    def apply_styles(self):
-        self.setStyleSheet(GLOBAL_STYLE)
-
-    def set_tool(self, mode, active_btn):
-        for btn in self.tool_btns:
-            is_active = (active_btn is not None and btn == active_btn)
-            btn.setChecked(is_active)
-            btn.setProperty("active", is_active)
-            btn.style().unpolish(btn)
-            btn.style().polish(btn)
-        self.canvas.set_tool_mode(mode)
-        
-        is_shape_tool = mode in [ToolMode.DRAW_LINE, ToolMode.POLYGON_AREA, ToolMode.DRAW_CIRCLE_DRAG]
-        has_fill = mode in [ToolMode.POLYGON_AREA, ToolMode.DRAW_CIRCLE_DRAG]
-        has_radius = mode == ToolMode.DRAW_CIRCLE_DRAG and self._is_current_page_calibrated()
-        has_line_markers = mode == ToolMode.DRAW_LINE
-        has_circle_marker = mode == ToolMode.DRAW_CIRCLE_DRAG
-
-        if mode == ToolMode.TEXT:
-            self.default_opt_label.hide()
-            self.shape_options_widget.hide()
-            self.text_options_widget.show()
-            self.canvas.set_text_defaults(self.current_text_font, self.current_text_size, self.current_text_color, self.tool_continuous_check.isChecked())
-        elif is_shape_tool:
-            self.default_opt_label.hide()
-            self.text_options_widget.hide()
-            self.tool_fill_container.setVisible(has_fill)
-            self.tool_radius_container.setVisible(has_radius)
-            self.tool_line_marker_container.setVisible(has_line_markers)
-            self.tool_circle_marker_container.setVisible(has_circle_marker)
-            self.shape_options_widget.show()
-            self._update_canvas_shape_defaults()
-            self.canvas.set_shape_continuous(self.tool_shape_continuous_check.isChecked())
-        else:
-            self.default_opt_label.show()
-            self.shape_options_widget.hide()
-            self.text_options_widget.hide()
 
     def go_to_page(self, page_idx):
         self.current_page = page_idx
@@ -768,8 +483,6 @@ class MainWindow(QMainWindow):
         dist_val, ok = QInputDialog.getDouble(self, "キャリブレーション", label, default_val, 0, max_val, decimals)
         if ok:
             dist_mm = dist_val * 1000 if unit == 'm' else dist_val
-            
-            # 設定ダイアログから全ページ適用が要求されていたか確認
             all_pages = getattr(self, "_calib_all_pages_from_prefs", False)
             total_pages = self.pdf_handler.get_page_count() if self.pdf_handler else 1
             
@@ -778,7 +491,6 @@ class MainWindow(QMainWindow):
                 self._update_scale_status_label()
                 self.update_page_view()
 
-        # 設定ダイアログから起動されていた場合、ダイアログを再表示してステータスを更新する
         if getattr(self, "_pref_dialog_active", False):
             if hasattr(self, "pref_dialog") and self.pref_dialog:
                 self.pref_dialog.update_status_display()
@@ -809,14 +521,13 @@ class MainWindow(QMainWindow):
                                             end_marker=ann.end_marker)
 
     def on_circle_drag_complete(self, center, radius_px):
-        import math
         current_scale_factor = self._get_current_scale_factor()
         if radius_px < 3:
             if self._is_current_page_calibrated() and current_scale_factor > 0:
                 if self.model.unit == 'm':
-                    radius_mm = self.tool_radius_spin.value() * 1000
+                    radius_mm = self.options_bar.tool_radius_spin.value() * 1000
                 else:
-                    radius_mm = self.tool_radius_spin.value()
+                    radius_mm = self.options_bar.tool_radius_spin.value()
                 radius_px = radius_mm / current_scale_factor
             else:
                 QMessageBox.warning(self, "警告", "半径を指定して円を描画するには、先にキャリブレーションを行ってください。")
@@ -836,7 +547,6 @@ class MainWindow(QMainWindow):
                                           center_marker=ann.center_marker)
 
     def on_calculate_requested(self, item_id):
-        import math
         if not self._is_current_page_calibrated():
             QMessageBox.warning(self, "警告", "キャリブレーションが完了していません。先にキャリブレーションを行ってください。")
             return
@@ -864,24 +574,19 @@ class MainWindow(QMainWindow):
                     ann.real_value = radius_mm
                     ann.text = self._format_radius(radius_mm)
                 self.canvas.update_item_properties(item_id, {"text": ann.text})
-                # Refresh selection in property panel
                 self.prop_panel.set_item_data(ann.id, ann.type, ann.text, ann.color,
                                               ann.font_family, ann.font_size, ann.line_width,
                                               stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity,
                                               fill_color=ann.fill_color,
                                               center_marker=ann.center_marker, start_marker=ann.start_marker, end_marker=ann.end_marker)
                 
-                # もし現在このアイテムを頂点編集中なら、トグルボタンを「編集中」状態に維持する
                 if self.canvas.editing_node_item_id == ann.id:
                     self.prop_panel.set_node_edit_active(True)
                 self.update_object_panel()
                 break
 
     def on_request_tool_change(self, mode):
-        for btn in self.tool_btns:
-            if btn.property("tool_mode") == mode:
-                self.set_tool(mode, btn)
-                break
+        self.set_tool(mode, None)
 
     def on_text_editing_finished(self, pos, text, item_id, font_family, font_size, color):
         if not item_id:
@@ -890,9 +595,6 @@ class MainWindow(QMainWindow):
             ann.font_size = font_size
             ann.color = color
             self.canvas.add_text_annotation(pos, text, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, color=ann.color)
-        else:
-            # Update existing if needed
-            pass
 
     def on_existing_text_edited(self, item_id, new_text):
         for ann in self.model.annotations:
@@ -900,7 +602,6 @@ class MainWindow(QMainWindow):
                 ann.text = new_text
                 break
         
-        # If the edited item is currently selected in the property panel, update it there too
         if hasattr(self.prop_panel, 'current_item_id') and self.prop_panel.current_item_id == item_id:
             self.prop_panel._block_signals = True
             if hasattr(self.prop_panel.text_edit, 'setPlainText'):
@@ -948,8 +649,6 @@ class MainWindow(QMainWindow):
                 if "center_marker" in attrs: ann.center_marker = attrs["center_marker"]
                 if "start_marker" in attrs: ann.start_marker = attrs["start_marker"]
                 if "end_marker" in attrs: ann.end_marker = attrs["end_marker"]
-                # When any marker changed, always include ALL current marker values so
-                # canvas can redraw both endpoints without losing the unchanged one
                 if any(k in attrs for k in ("start_marker", "end_marker", "center_marker")):
                     attrs["start_marker"] = ann.start_marker
                     attrs["end_marker"] = ann.end_marker
@@ -963,7 +662,6 @@ class MainWindow(QMainWindow):
             if ann.id == item_id:
                 ann.points = [p + delta for p in ann.points]
                 
-                # ドラッグ移動後にマーカーを正しい新しい端点に再描画させる
                 attrs = {}
                 if hasattr(ann, 'start_marker') and ann.start_marker is not None:
                     attrs['start_marker'] = ann.start_marker
@@ -990,11 +688,9 @@ class MainWindow(QMainWindow):
             if ann.id == item_id:
                 ann.points = points
                 
-                # 自動計測計算
                 if self._is_current_page_calibrated():
                     self.on_calculate_requested(item_id)
                 
-                # マーカー等の再描画（頂点移動や頂点数変更によってマーカーの位置が変わるため、再構築を促す）
                 if ann.type == "polyline":
                     self.canvas.update_item_properties(item_id, {"start_marker": ann.start_marker, "end_marker": ann.end_marker})
                 self.update_object_panel()
@@ -1099,7 +795,6 @@ class MainWindow(QMainWindow):
         if event.key() == Qt.Key_O and event.modifiers() & Qt.ControlModifier:
             self.open_pdf()
         elif event.key() == Qt.Key_A and not event.modifiers():
-            # 「a」キーで選択ツールに切り替え
             self.on_request_tool_change(ToolMode.SELECT)
 
     def update_object_panel(self):
@@ -1121,9 +816,7 @@ class MainWindow(QMainWindow):
         self.canvas.set_active_edit_item(item_id, active)
         self.navigator.set_editing_object(item_id, active)
         
-        # 編集モード中は、他の操作を完全にガードするため、ツールバーの描画ボタンを無効化する
         if active:
-            # 選択ツールに強制切り替え
             self.on_request_tool_change(ToolMode.SELECT)
             
         for btn in self.tool_btns:
@@ -1131,6 +824,5 @@ class MainWindow(QMainWindow):
             if mode != ToolMode.SELECT:
                 btn.setEnabled(not active)
                 
-        # 頂点編集トグルボタン（もしあれば）なども無効化
         if hasattr(self.prop_panel, 'node_edit_btn'):
             self.prop_panel.node_edit_btn.setEnabled(not active)
