@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QLineEdit, 
                              QPushButton, QColorDialog, QHBoxLayout, QFontComboBox, 
-                             QSpinBox, QSlider, QFrame, QGridLayout, QPlainTextEdit, QComboBox)
+                             QSpinBox, QSlider, QFrame, QGridLayout, QPlainTextEdit, QComboBox,
+                             QCheckBox)
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QColor, QFont
 
@@ -16,6 +17,7 @@ class PropertyPanel(QWidget):
         self.current_item_type = None
         self.current_color = "#7c4dff"
         self.current_fill_color = ""
+        self.current_border_color = "#ff0000"
         self._block_signals = False
         self._start_marker_values = ["", "circle", "arrow"]
         self._end_marker_values = ["", "circle", "arrow"]
@@ -225,6 +227,58 @@ class PropertyPanel(QWidget):
         text_layout.addWidget(self.text_edit)
         self.main_layout.addWidget(self.text_container)
 
+        # --- Border & Leader Section (For Text) ---
+        self.border_leader_container = QWidget()
+        bl_layout = QVBoxLayout(self.border_leader_container)
+        bl_layout.setContentsMargins(0, 0, 0, 0)
+        bl_layout.addWidget(self._create_section_label("囲みと引き出し線"))
+        
+        # Checkboxes
+        check_layout = QHBoxLayout()
+        self.has_border_check = QCheckBox("枠線で囲む")
+        self.has_border_check.stateChanged.connect(self._on_border_leader_ui_changed)
+        check_layout.addWidget(self.has_border_check)
+        
+        self.has_leader_check = QCheckBox("引き出し線を表示")
+        self.has_leader_check.stateChanged.connect(self._on_border_leader_ui_changed)
+        check_layout.addWidget(self.has_leader_check)
+        bl_layout.addLayout(check_layout)
+        
+        # Color & Width UI
+        self.bl_properties_widget = QWidget()
+        bl_prop_layout = QVBoxLayout(self.bl_properties_widget)
+        bl_prop_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Color picker
+        color_layout = QHBoxLayout()
+        color_layout.addWidget(QLabel("枠線カラー:"))
+        self.bl_color_preview = QFrame()
+        self.bl_color_preview.setFixedSize(20, 20)
+        self.bl_color_preview.setStyleSheet("background-color: #ff0000; border-radius: 4px;")
+        color_layout.addWidget(self.bl_color_preview)
+        self.bl_color_hex_label = QLabel("#FF0000")
+        self.bl_color_hex_label.setStyleSheet("color: #ffffff; font-family: monospace;")
+        color_layout.addWidget(self.bl_color_hex_label)
+        color_layout.addStretch()
+        self.bl_color_btn = QPushButton("✎")
+        self.bl_color_btn.setFixedSize(26, 26)
+        self.bl_color_btn.clicked.connect(self._on_bl_color_clicked)
+        color_layout.addWidget(self.bl_color_btn)
+        bl_prop_layout.addLayout(color_layout)
+        
+        # Width spin
+        width_layout = QHBoxLayout()
+        width_layout.addWidget(QLabel("枠線の太さ:"))
+        self.bl_width_spin = QSpinBox()
+        self.bl_width_spin.setRange(1, 20)
+        self.bl_width_spin.setSuffix(" px")
+        self.bl_width_spin.valueChanged.connect(self._on_border_leader_ui_changed)
+        width_layout.addWidget(self.bl_width_spin)
+        bl_prop_layout.addLayout(width_layout)
+        
+        bl_layout.addWidget(self.bl_properties_widget)
+        self.main_layout.addWidget(self.border_leader_container)
+
         self.main_layout.addStretch()
         
         self.delete_btn = QPushButton("この要素を削除")
@@ -239,7 +293,7 @@ class PropertyPanel(QWidget):
         lbl.setStyleSheet("color: #888899; font-size: 11px; font-weight: bold; margin-top: 5px;")
         return lbl
 
-    def set_item_data(self, item_id, item_type, text, color_hex, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, fill_opacity=30, fill_color="", center_marker="", start_marker="", end_marker=""):
+    def set_item_data(self, item_id, item_type, text, color_hex, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, fill_opacity=30, fill_color="", center_marker="", start_marker="", end_marker="", has_border=False, border_color="#ff0000", border_width=2, has_leader=False):
         self._block_signals = True
         self.current_item_id = item_id
         self.current_item_type = item_type
@@ -255,13 +309,14 @@ class PropertyPanel(QWidget):
         can_calc = item_type in ["polyline", "polygon", "circle"]
         has_line_markers = item_type == "polyline"
         has_circle_marker = item_type == "circle"
-        is_node_editable = item_type in ["line", "polyline", "polygon"]
+        is_node_editable = item_type in ["line", "polyline", "polygon"] or (item_type == "text" and has_leader)
         
         self.line_container.setVisible(is_shape)
         self.fill_container.setVisible(has_fill)
         self.calc_container.setVisible(can_calc)
         self.text_container.setVisible(is_text or has_label)
         self.node_edit_container.setVisible(is_node_editable)
+        self.border_leader_container.setVisible(is_text)
 
         # Reset node edit button state for the new item
         self.node_edit_btn.blockSignals(True)
@@ -310,6 +365,16 @@ class PropertyPanel(QWidget):
         cm_idx = self._center_marker_values.index(center_marker) if center_marker in self._center_marker_values else 0
         self.center_marker_combo.setCurrentIndex(cm_idx)
         
+        # Border & Leader UI Values
+        if is_text:
+            self.has_border_check.setChecked(has_border)
+            self.has_leader_check.setChecked(has_leader)
+            self.bl_width_spin.setValue(border_width)
+            self.bl_color_preview.setStyleSheet(f"background-color: {border_color}; border-radius: 4px;")
+            self.bl_color_hex_label.setText(border_color.upper())
+            self.current_border_color = border_color
+            self.bl_properties_widget.setVisible(has_border or has_leader)
+        
         self.setEnabled(True)
         self._block_signals = False
 
@@ -323,6 +388,7 @@ class PropertyPanel(QWidget):
         self.fill_container.setVisible(False)
         self.calc_container.setVisible(False)
         self.node_edit_container.setVisible(False)
+        self.border_leader_container.setVisible(False)
         self.node_edit_btn.blockSignals(True)
         self.node_edit_btn.setChecked(False)
         self.node_edit_btn.setText("📐 頂点を編集")
@@ -431,3 +497,30 @@ class PropertyPanel(QWidget):
             else:
                 self.node_edit_btn.setText("📐 頂点を編集")
             self._block_signals = False
+
+    def _on_border_leader_ui_changed(self, *args):
+        if not self._block_signals and self.current_item_id:
+            has_b = self.has_border_check.isChecked()
+            has_l = self.has_leader_check.isChecked()
+            b_wid = self.bl_width_spin.value()
+            
+            # Enable/disable sub-panels dynamically
+            self.bl_properties_widget.setVisible(has_b or has_l)
+            self.node_edit_container.setVisible(has_l)
+            
+            self.attribute_changed.emit(self.current_item_id, {
+                "has_border": has_b,
+                "has_leader": has_l,
+                "border_width": b_wid,
+                "border_color": self.current_border_color
+            })
+
+    def _on_bl_color_clicked(self):
+        if not self.current_item_id: return
+        color = QColorDialog.getColor(QColor(self.current_border_color))
+        if color.isValid():
+            hex_color = color.name()
+            self.bl_color_preview.setStyleSheet(f"background-color: {hex_color}; border-radius: 4px;")
+            self.bl_color_hex_label.setText(hex_color.upper())
+            self.current_border_color = hex_color
+            self._on_border_leader_ui_changed()

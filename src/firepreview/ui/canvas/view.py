@@ -582,10 +582,16 @@ class PDFCanvas(QGraphicsView):
             item.setBrush(QColor(color))
             item.setData(2, "marker")
 
-    def add_text_annotation(self, pos, text, color="black", item_id=None, font_family="Arial", font_size=12, stroke_opacity=100):
+    def add_text_annotation(self, pos, text, color="black", item_id=None, font_family="Arial", font_size=12, stroke_opacity=100,
+                            has_border=False, border_color="#ff0000", border_width=2, has_leader=False, leader_end_point=None):
         txt_item = self._add_text_item(text, pos.x(), pos.y(), color, font_family, font_size)
         if txt_item:
             txt_item.setOpacity(stroke_opacity / 100.0)
+            txt_item.set_border(has_border, border_color, border_width)
+            if leader_end_point:
+                txt_item.set_leader(has_leader, leader_end_point)
+            else:
+                txt_item.set_leader(has_leader, pos + QPointF(50, 50))
             if item_id:
                 txt_item.setData(0, item_id)
                 txt_item.setData(1, QPointF(0,0))
@@ -700,6 +706,16 @@ class PDFCanvas(QGraphicsView):
                     if "stroke_opacity" in attrs:
                         txt.setOpacity(attrs["stroke_opacity"] / 100.0)
 
+                    if isinstance(txt, CustomTextItem):
+                        has_b = attrs.get("has_border", txt.has_border)
+                        b_col = attrs.get("border_color", txt.border_color)
+                        b_wid = attrs.get("border_width", txt.border_width)
+                        txt.set_border(has_b, b_col, b_wid)
+                        
+                        has_l = attrs.get("has_leader", txt.has_leader)
+                        l_end = attrs.get("leader_end_point", txt.leader_end_point)
+                        txt.set_leader(has_l, l_end)
+
                 if "text" in attrs and attrs["text"].strip() and not text_items and not isinstance(item, QGraphicsTextItem):
                     color_str = item.pen().color().name() if hasattr(item, 'pen') else "#7c4dff"
                     ff = attrs.get("font_family", "Arial")
@@ -759,8 +775,12 @@ class PDFCanvas(QGraphicsView):
             return
             
         for i, pt in enumerate(points):
+            # Skip the first node (text box position itself) for CustomTextItem
+            if isinstance(target_item, CustomTextItem) and i == 0:
+                continue
             handle = VertexHandleItem(target_item, i, self)
-            handle.setPos(pt)
+            local_pt = target_item.mapFromScene(pt)
+            handle.setPos(local_pt)
             self.vertex_handles.append(handle)
             
         target_item.setFlag(QGraphicsItem.ItemIsMovable, False)
@@ -801,6 +821,11 @@ class PDFCanvas(QGraphicsView):
                 elem = path.elementAt(i)
                 pts.append(QPointF(elem.x, elem.y))
             return pts
+        elif isinstance(item, CustomTextItem):
+            if item.has_leader:
+                return [item.pos(), item.leader_end_point]
+            else:
+                return [item.pos()]
         return []
 
     def on_vertex_moved(self, item, index, new_pos):
@@ -835,6 +860,11 @@ class PDFCanvas(QGraphicsView):
             for child in item.childItems():
                 if isinstance(child, CustomTextItem):
                     child.setPos(mid.x(), mid.y())
+        elif isinstance(item, CustomTextItem):
+            if len(points) >= 1:
+                item.setPos(points[0])
+            if len(points) >= 2 and item.has_leader:
+                item.set_leader(True, points[1])
 
     def on_vertex_double_clicked(self, item, index):
         points = self._get_item_points(item)
