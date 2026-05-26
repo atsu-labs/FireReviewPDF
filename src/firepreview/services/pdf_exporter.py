@@ -222,6 +222,8 @@ def export_pdf_document(model, output_path: str) -> None:
                     )
 
             elif ann.type == "text":
+                if not ann.points:
+                    continue
                 pos = to_pdf_pt(ann.points[0])
                 page.insert_text(
                     pos,
@@ -242,7 +244,7 @@ def export_pdf_document(model, output_path: str) -> None:
                         b_color_value.green() / 255.0,
                         b_color_value.blue() / 255.0,
                     )
-                    b_width = getattr(ann, "border_width", 2)
+                    b_width = getattr(ann, "border_width", 2) * dpi_factor
 
                     # Calculate precise text bounding box
                     text_w = fitz.get_text_length(ann.text, fontsize=ann.font_size, fontname="helv")

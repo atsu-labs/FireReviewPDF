@@ -34,12 +34,9 @@ class CustomTextItem(QGraphicsTextItem):
             
         if self.has_leader:
             if not self.leader_line_item and self.scene():
-                self.leader_line_item = QGraphicsLineItem()
-                self.leader_line_item.setZValue(self.zValue() - 1)
-                self.leader_line_item.setOpacity(self.opacity())
-                self.leader_line_item.setEnabled(self.isEnabled())
-                self.leader_line_item.setVisible(self.isVisible())
-                self.scene().addItem(self.leader_line_item)
+                # Make QGraphicsLineItem a child of self (CustomTextItem)
+                self.leader_line_item = QGraphicsLineItem(self)
+                self.leader_line_item.setZValue(-1)
             
             self.update_leader_line()
         else:
@@ -56,28 +53,30 @@ class CustomTextItem(QGraphicsTextItem):
         margin = 4
         rect = self.boundingRect().adjusted(-margin, -margin, margin, margin)
         
-        # Check all 4 corners in scene coordinates
+        # Check all 4 corners in local coordinates
         corners = [
             rect.topLeft(),
             rect.topRight(),
             rect.bottomLeft(),
             rect.bottomRight()
         ]
-        corners_scene = [self.mapToScene(c) for c in corners]
-        end_pt = self.leader_end_point
         
-        # Choose the corner closest to the leader end point
-        best_pt = corners_scene[0]
+        # Map the scene-based leader end point to local coordinates
+        local_end_pt = self.mapFromScene(self.leader_end_point)
+        
+        # Choose the corner closest to the leader end point (in local coordinates)
+        best_pt = corners[0]
         min_dist = float('inf')
-        for pt in corners_scene:
-            dx = pt.x() - end_pt.x()
-            dy = pt.y() - end_pt.y()
+        for pt in corners:
+            dx = pt.x() - local_end_pt.x()
+            dy = pt.y() - local_end_pt.y()
             dist = dx * dx + dy * dy
             if dist < min_dist:
                 min_dist = dist
                 best_pt = pt
                 
-        self.leader_line_item.setLine(best_pt.x(), best_pt.y(), end_pt.x(), end_pt.y())
+        # Set line coordinates in local coordinates
+        self.leader_line_item.setLine(best_pt.x(), best_pt.y(), local_end_pt.x(), local_end_pt.y())
         
         pen = QPen(self.border_color, self.border_width)
         pen.setCosmetic(True)
@@ -115,20 +114,6 @@ class CustomTextItem(QGraphicsTextItem):
         self.setTextInteractionFlags(Qt.NoTextInteraction)
         self.editing_finished.emit(self.toPlainText())
 
-    def setOpacity(self, opacity):
-        super().setOpacity(opacity)
-        if self.leader_line_item:
-            self.leader_line_item.setOpacity(opacity)
-
-    def setEnabled(self, enabled):
-        super().setEnabled(enabled)
-        if self.leader_line_item:
-            self.leader_line_item.setEnabled(enabled)
-
-    def setVisible(self, visible):
-        super().setVisible(visible)
-        if self.leader_line_item:
-            self.leader_line_item.setVisible(visible)
 
 class VertexHandleItem(QGraphicsEllipseItem):
     def __init__(self, parent_item, index, canvas, size=8):

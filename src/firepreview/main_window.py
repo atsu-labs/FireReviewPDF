@@ -661,13 +661,17 @@ class MainWindow(QMainWindow):
                 
                 if "has_leader" in attrs:
                     if attrs["has_leader"] and not getattr(ann, "has_leader", False):
-                        if len(ann.points) < 2:
-                            from PySide6.QtCore import QPointF
+                        from PySide6.QtCore import QPointF
+                        if len(ann.points) == 0:
+                            ann.points = [QPointF(0, 0), QPointF(50, 50)]
+                        elif len(ann.points) == 1:
                             end_pt = ann.points[0] + QPointF(50, 50)
                             ann.points.append(end_pt)
-                        attrs["leader_end_point"] = ann.points[1]
-                    elif not attrs["has_leader"] and getattr(ann, "has_leader", False):
+                        
                         if len(ann.points) >= 2:
+                            attrs["leader_end_point"] = ann.points[1]
+                    elif not attrs["has_leader"] and getattr(ann, "has_leader", False):
+                        if len(ann.points) >= 1:
                             ann.points = [ann.points[0]]
                     ann.has_leader = attrs["has_leader"]
                     
