@@ -5,6 +5,7 @@ from .polygon_tool import PolygonTool
 from .circle_tool import CircleTool
 from .text_tool import TextTool
 from .calibration_tool import CalibrationTool
+from .marker_tool import MarkerTool
 
 __all__ = [
     "BaseCanvasTool",
@@ -14,4 +15,6 @@ __all__ = [
     "CircleTool",
     "TextTool",
     "CalibrationTool",
+    "MarkerTool",
 ]
+

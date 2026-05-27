@@ -55,6 +55,12 @@ class MainWindow(QMainWindow):
         self._start_marker_values = ["", "circle", "arrow"]
         self._end_marker_values = ["", "circle", "arrow"]
         self._center_marker_values = ["", "circle", "cross", "x"]
+        
+        # Marker defaults
+        self.current_marker_style = "square"
+        self.current_marker_color = "#ff1744"
+        self.current_marker_opacity = 70
+        self.continuous_marker = False
 
         self.setup_ui()
         self._setup_menus()
@@ -104,6 +110,10 @@ class MainWindow(QMainWindow):
         self.options_bar.end_marker_changed.connect(self._on_options_end_marker_changed)
         self.options_bar.center_marker_changed.connect(self._on_options_center_marker_changed)
         self.options_bar.shape_continuous_changed.connect(self._on_options_shape_continuous_changed)
+        self.options_bar.marker_style_changed.connect(self._on_options_marker_style_changed)
+        self.options_bar.marker_continuous_changed.connect(self._on_options_marker_continuous_changed)
+        self.options_bar.marker_opacity_changed.connect(self._on_options_marker_opacity_changed)
+        self.options_bar.marker_color_changed.connect(self._on_options_marker_color_changed)
         
         self.options_bar.font_changed.connect(self._on_options_font_changed)
         self.options_bar.font_size_changed.connect(self._on_options_font_size_changed)
@@ -131,6 +141,7 @@ class MainWindow(QMainWindow):
         self.canvas.polygon_complete.connect(self.on_polygon_complete)
         self.canvas.polyline_complete.connect(self.on_polyline_complete)
         self.canvas.circle_drag_complete.connect(self.on_circle_drag_complete)
+        self.canvas.marker_complete.connect(self.on_marker_complete)
         self.canvas.item_selected.connect(self.on_item_selected)
         self.canvas.selection_cleared.connect(self.on_selection_cleared)
         self.canvas.item_moved.connect(self.on_item_moved)
@@ -219,6 +230,9 @@ class MainWindow(QMainWindow):
         is_shape_tool = mode in [ToolMode.DRAW_LINE, ToolMode.POLYGON_AREA, ToolMode.DRAW_CIRCLE_DRAG]
         if mode == ToolMode.TEXT:
             self.canvas.set_text_defaults(self.current_text_font, self.current_text_size, self.current_text_color, self.options_bar.tool_continuous_check.isChecked())
+        elif mode == ToolMode.DRAW_MARKER:
+            self.canvas.set_shape_defaults(self.current_marker_color, 2, "")
+            self.canvas.set_shape_continuous(self.options_bar.tool_marker_continuous_check.isChecked())
         elif is_shape_tool:
             self._update_canvas_shape_defaults()
             self.canvas.set_shape_continuous(self.options_bar.tool_shape_continuous_check.isChecked())
@@ -230,6 +244,8 @@ class MainWindow(QMainWindow):
     def _on_options_shape_color_changed(self, color):
         self.current_shape_color = color
         self._update_canvas_shape_defaults()
+        if hasattr(self, "canvas") and self.canvas.editing_item_id:
+            self.canvas.update_item_properties(self.canvas.editing_item_id, {"color": color})
 
     def _on_options_fill_color_changed(self, color):
         self.current_fill_color = color
@@ -257,6 +273,27 @@ class MainWindow(QMainWindow):
 
     def _on_options_shape_continuous_changed(self, checked):
         self.canvas.set_shape_continuous(checked)
+
+    def _on_options_marker_style_changed(self, style):
+        self.current_marker_style = style
+        if self.canvas.editing_item_id:
+            self.canvas.update_item_properties(self.canvas.editing_item_id, {"marker_style": style})
+            self.update_object_panel()
+            self.update_marker_summary()
+
+    def _on_options_marker_continuous_changed(self, checked):
+        self.canvas.set_shape_continuous(checked)
+
+    def _on_options_marker_opacity_changed(self, value):
+        self.current_marker_opacity = value
+        if self.canvas.editing_item_id:
+            self.canvas.update_item_properties(self.canvas.editing_item_id, {"stroke_opacity": value})
+
+    def _on_options_marker_color_changed(self, color):
+        self.current_marker_color = color
+        self.canvas.set_shape_defaults(color, 2, "")
+        if hasattr(self, "canvas") and self.canvas.editing_item_id:
+            self.canvas.update_item_properties(self.canvas.editing_item_id, {"color": color})
 
     def _on_options_radius_changed(self, radius):
         pass
@@ -507,6 +544,7 @@ class MainWindow(QMainWindow):
                                            font_family=ann.font_family, font_size=ann.font_size,
                                            line_width=ann.line_width, stroke_opacity=ann.stroke_opacity,
                                            fill_opacity=ann.fill_opacity, fill_color=ann.fill_color)
+        self.update_object_panel()
 
     def on_polyline_complete(self, points):
         ann = self._add_to_model("polyline", points, real_value=0.0, text="")
@@ -519,6 +557,7 @@ class MainWindow(QMainWindow):
                                             line_width=ann.line_width,
                                             start_marker=ann.start_marker,
                                             end_marker=ann.end_marker)
+        self.update_object_panel()
 
     def on_circle_drag_complete(self, center, radius_px):
         current_scale_factor = self._get_current_scale_factor()
@@ -545,6 +584,26 @@ class MainWindow(QMainWindow):
                                           line_width=ann.line_width, stroke_opacity=ann.stroke_opacity,
                                           fill_opacity=ann.fill_opacity, fill_color=ann.fill_color,
                                           center_marker=ann.center_marker)
+        self.update_object_panel()
+
+    def on_marker_complete(self, pos):
+        ann = self._add_to_model("marker", [pos])
+        ann.color = self.current_marker_color
+        ann.marker_style = self.current_marker_style
+        ann.stroke_opacity = self.current_marker_opacity
+        
+        self.canvas.add_marker_annotation(pos, marker_style=ann.marker_style, color=ann.color,
+                                           stroke_opacity=ann.stroke_opacity, item_id=ann.id)
+                                           
+        if not self.options_bar.tool_marker_continuous_check.isChecked():
+            self.set_tool(ToolMode.SELECT)
+            
+        self.update_marker_summary()
+        self.update_object_panel()
+
+    def update_marker_summary(self):
+        if hasattr(self, "navigator") and hasattr(self, "model"):
+            self.navigator.update_marker_summary(self.model.annotations, self.current_page)
 
     def on_calculate_requested(self, item_id):
         if not self._is_current_page_calibrated():
@@ -595,6 +654,7 @@ class MainWindow(QMainWindow):
             ann.font_size = font_size
             ann.color = color
             self.canvas.add_text_annotation(pos, text, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, color=ann.color)
+            self.update_object_panel()
 
     def on_existing_text_edited(self, item_id, new_text):
         for ann in self.model.annotations:
@@ -617,7 +677,6 @@ class MainWindow(QMainWindow):
         ann.text = text
         ann.page_num = self.current_page
         self.model.annotations.append(ann)
-        self.update_object_panel()
         return ann
 
     def on_item_selected(self, item_id):
@@ -631,7 +690,8 @@ class MainWindow(QMainWindow):
                                               has_border=getattr(ann, "has_border", False),
                                               border_color=getattr(ann, "border_color", "#ff0000"),
                                               border_width=getattr(ann, "border_width", 2),
-                                              has_leader=getattr(ann, "has_leader", False))
+                                              has_leader=getattr(ann, "has_leader", False),
+                                              marker_style=getattr(ann, "marker_style", "square"))
                 self.navigator.set_selected_object(item_id)
                 break
 
@@ -643,7 +703,12 @@ class MainWindow(QMainWindow):
         for ann in self.model.annotations:
             if ann.id == item_id:
                 if "text" in attrs: ann.text = attrs["text"]
-                if "color" in attrs: ann.color = attrs["color"]
+                if "color" in attrs:
+                    ann.color = attrs["color"]
+                    if ann.type == "marker":
+                        self.current_marker_color = attrs["color"]
+                    else:
+                        self.current_shape_color = attrs["color"]
                 if "fill_color" in attrs: ann.fill_color = attrs["fill_color"]
                 if "font_family" in attrs: ann.font_family = attrs["font_family"]
                 if "font_size" in attrs: ann.font_size = attrs["font_size"]
@@ -653,6 +718,7 @@ class MainWindow(QMainWindow):
                 if "center_marker" in attrs: ann.center_marker = attrs["center_marker"]
                 if "start_marker" in attrs: ann.start_marker = attrs["start_marker"]
                 if "end_marker" in attrs: ann.end_marker = attrs["end_marker"]
+                if "marker_style" in attrs: ann.marker_style = attrs["marker_style"]
                 
                 # Border & Leader settings
                 if "has_border" in attrs: ann.has_border = attrs["has_border"]
@@ -681,8 +747,17 @@ class MainWindow(QMainWindow):
                     attrs["center_marker"] = ann.center_marker
                 if "color" in attrs:
                     attrs["fill_color"] = ann.fill_color
+                
+                # Dynamic update guards to prevent costly widget recreations during drag/sliders events
+                needs_list_update = any(k in attrs for k in ("text", "color", "marker_style"))
+                needs_summary_update = any(k in attrs for k in ("color", "marker_style"))
+
                 self.canvas.update_item_properties(item_id, attrs)
-                self.update_object_panel()
+                
+                if needs_list_update:
+                    self.update_object_panel()
+                if needs_summary_update:
+                    self.update_marker_summary()
                 break
 
     def on_item_moved(self, item_id, delta):
@@ -825,9 +900,12 @@ class MainWindow(QMainWindow):
                                                         border_width=getattr(ann, "border_width", 2),
                                                         has_leader=getattr(ann, "has_leader", False),
                                                         leader_end_point=leader_end)
+                    elif ann.type == "marker":
+                        self.canvas.add_marker_annotation(ann.points[0], marker_style=getattr(ann, "marker_style", "square"), color=ann.color, stroke_opacity=ann.stroke_opacity, item_id=ann.id)
             self._update_scale_status_label()
             self._update_pdf_size_label()
             self.update_object_panel()
+            self.update_marker_summary()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_O and event.modifiers() & Qt.ControlModifier:

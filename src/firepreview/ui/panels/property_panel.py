@@ -279,6 +279,61 @@ class PropertyPanel(QWidget):
         bl_layout.addWidget(self.bl_properties_widget)
         self.main_layout.addWidget(self.border_leader_container)
 
+        # --- Marker Annotation Section ---
+        self.marker_anno_container = QWidget()
+        ma_layout = QVBoxLayout(self.marker_anno_container)
+        ma_layout.setContentsMargins(0, 0, 0, 0)
+        ma_layout.addWidget(self._create_section_label("マーカー設定"))
+        
+        # 1. Type selection
+        type_layout = QHBoxLayout()
+        type_layout.addWidget(QLabel("種類:"))
+        self.anno_marker_style_combo = QComboBox()
+        self.anno_marker_style_combo.addItems(["四角形", "チェックマーク"])
+        self.anno_marker_style_combo.currentIndexChanged.connect(self._on_anno_marker_style_changed)
+        type_layout.addWidget(self.anno_marker_style_combo)
+        type_layout.addStretch()
+        ma_layout.addLayout(type_layout)
+        
+        # 2. 10 Colors Palette
+        ma_layout.addWidget(QLabel("カラー:"))
+        colors_layout = QHBoxLayout()
+        colors_layout.setContentsMargins(0, 0, 0, 0)
+        colors_layout.setSpacing(4)
+        
+        from PySide6.QtWidgets import QButtonGroup
+        self.anno_color_group = QButtonGroup(self)
+        self.anno_color_group.setExclusive(True)
+        self.anno_palette_colors = ["#ff1744", "#2979ff", "#00e676", "#ffd600", "#ff9100", "#f50057", "#d500f9", "#8d6e63", "#00e5ff", "#aeea00"]
+        self.anno_color_buttons = []
+        
+        for i, hex_color in enumerate(self.anno_palette_colors):
+            btn = QPushButton()
+            btn.setFixedSize(18, 18)
+            btn.setCheckable(True)
+            btn.setStyleSheet(f"QPushButton {{ background-color: {hex_color}; border-radius: 9px; border: 1px solid #555; }} "
+                              f"QPushButton:checked {{ border: 2px solid #ffffff; }}")
+            btn.clicked.connect(lambda checked, c=hex_color: self._on_anno_marker_color_changed(c))
+            colors_layout.addWidget(btn)
+            self.anno_color_group.addButton(btn)
+            self.anno_color_buttons.append(btn)
+            
+        ma_layout.addLayout(colors_layout)
+
+        # 3. Opacity Slider
+        ma_layout.addWidget(QLabel("不透明度:"))
+        opacity_layout = QHBoxLayout()
+        self.anno_marker_opacity_slider = QSlider(Qt.Horizontal)
+        self.anno_marker_opacity_slider.setRange(0, 100)
+        self.anno_marker_opacity_slider.setValue(70)
+        self.anno_marker_opacity_slider.valueChanged.connect(self._on_anno_marker_opacity_changed)
+        opacity_layout.addWidget(self.anno_marker_opacity_slider)
+        self.anno_marker_opacity_label = QLabel("70%")
+        opacity_layout.addWidget(self.anno_marker_opacity_label)
+        ma_layout.addLayout(opacity_layout)
+        
+        self.main_layout.addWidget(self.marker_anno_container)
+
         self.main_layout.addStretch()
         
         self.delete_btn = QPushButton("この要素を削除")
@@ -293,17 +348,18 @@ class PropertyPanel(QWidget):
         lbl.setStyleSheet("color: #888899; font-size: 11px; font-weight: bold; margin-top: 5px;")
         return lbl
 
-    def set_item_data(self, item_id, item_type, text, color_hex, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, fill_opacity=30, fill_color="", center_marker="", start_marker="", end_marker="", has_border=False, border_color="#ff0000", border_width=2, has_leader=False):
+    def set_item_data(self, item_id, item_type, text, color_hex, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, fill_opacity=30, fill_color="", center_marker="", start_marker="", end_marker="", has_border=False, border_color="#ff0000", border_width=2, has_leader=False, marker_style="square"):
         self._block_signals = True
         self.current_item_id = item_id
         self.current_item_type = item_type
         
-        type_names = {"line": "直線（計測）", "polyline": "直線", "polygon": "矩形", "circle": "円", "text": "テキスト"}
+        type_names = {"line": "直線（計測）", "polyline": "直線", "polygon": "矩形", "circle": "円", "text": "テキスト", "marker": "マーカー"}
         self.type_title.setText(type_names.get(item_type, "要素"))
         
         # Dynamic visibility
         is_shape = item_type in ["line", "polyline", "polygon", "circle"]
         is_text = item_type == "text"
+        is_marker = item_type == "marker"
         has_label = text != ""
         has_fill = item_type in ["polygon", "circle"]
         can_calc = item_type in ["polyline", "polygon", "circle"]
@@ -314,9 +370,12 @@ class PropertyPanel(QWidget):
         self.line_container.setVisible(is_shape)
         self.fill_container.setVisible(has_fill)
         self.calc_container.setVisible(can_calc)
-        self.text_container.setVisible(is_text or has_label)
-        self.node_edit_container.setVisible(is_node_editable)
+        self.text_container.setVisible((is_text or has_label) and not is_marker)
+        self.node_edit_container.setVisible(is_node_editable and not is_marker)
         self.border_leader_container.setVisible(is_text)
+        self.marker_anno_container.setVisible(is_marker)
+        self.align_container.setVisible(not is_marker)
+        self.appearance_container.setVisible(not is_marker)
 
         # Reset node edit button state for the new item
         self.node_edit_btn.blockSignals(True)
@@ -374,6 +433,26 @@ class PropertyPanel(QWidget):
             self.bl_color_hex_label.setText(border_color.upper())
             self.current_border_color = border_color
             self.bl_properties_widget.setVisible(has_border or has_leader)
+            
+        if is_marker:
+            self.anno_marker_style_combo.blockSignals(True)
+            self.anno_marker_style_combo.setCurrentIndex(0 if marker_style == "square" else 1)
+            self.anno_marker_style_combo.blockSignals(False)
+            
+            self.anno_color_group.blockSignals(True)
+            for btn in self.anno_color_buttons:
+                bg_c = btn.styleSheet().split("background-color:")[1].split(";")[0].strip()
+                if bg_c.lower() == color_hex.lower():
+                    btn.setChecked(True)
+                else:
+                    btn.setChecked(False)
+            self.anno_color_group.blockSignals(False)
+            self.current_color = color_hex
+            
+            self.anno_marker_opacity_slider.blockSignals(True)
+            self.anno_marker_opacity_slider.setValue(stroke_opacity)
+            self.anno_marker_opacity_label.setText(f"{stroke_opacity}%")
+            self.anno_marker_opacity_slider.blockSignals(False)
         
         self.setEnabled(True)
         self._block_signals = False
@@ -394,6 +473,7 @@ class PropertyPanel(QWidget):
         self.node_edit_btn.setText("📐 頂点を編集")
         self.node_edit_btn.blockSignals(False)
         self.marker_container.setVisible(False)
+        self.marker_anno_container.setVisible(False)
         self.setEnabled(False)
         self._block_signals = False
 
@@ -524,3 +604,23 @@ class PropertyPanel(QWidget):
             self.bl_color_hex_label.setText(hex_color.upper())
             self.current_border_color = hex_color
             self._on_border_leader_ui_changed()
+
+    def _on_anno_marker_style_changed(self, index):
+        if not self._block_signals and self.current_item_id:
+            style = "square" if index == 0 else "check"
+            self.attribute_changed.emit(self.current_item_id, {"marker_style": style})
+
+    def _on_anno_marker_color_changed(self, hex_color):
+        if not self._block_signals and self.current_item_id:
+            self.current_color = hex_color
+            for btn in self.anno_color_buttons:
+                bg_c = btn.styleSheet().split("background-color:")[1].split(";")[0].strip()
+                btn.setStyleSheet(f"QPushButton {{ background-color: {bg_c}; border-radius: 9px; border: 1px solid #555; }} "
+                                  f"QPushButton:checked {{ border: 2px solid #ffffff; }}")
+            self.attribute_changed.emit(self.current_item_id, {"color": hex_color})
+
+    def _on_anno_marker_opacity_changed(self, value):
+        self.anno_marker_opacity_label.setText(f"{value}%")
+        if not self._block_signals and self.current_item_id:
+            self.attribute_changed.emit(self.current_item_id, {"stroke_opacity": value})
+

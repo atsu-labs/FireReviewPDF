@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import QGraphicsTextItem, QGraphicsEllipseItem, QGraphicsItem, QGraphicsLineItem
 from PySide6.QtCore import Qt, Signal, QRectF, QPointF
-from PySide6.QtGui import QPen, QColor
+from PySide6.QtGui import QPen, QColor, QPainter, QPainterPath
 
 class CustomTextItem(QGraphicsTextItem):
     editing_finished = Signal(str)
@@ -156,3 +156,59 @@ class VertexHandleItem(QGraphicsEllipseItem):
             event.accept()
             return
         super().mouseDoubleClickEvent(event)
+
+
+class MarkerItem(QGraphicsItem):
+    def __init__(self, marker_style="square", color="#7c4dff", opacity=100, parent=None):
+        super().__init__(parent)
+        self.marker_style = marker_style  # "square" or "check"
+        self.color = QColor(color)
+        self.opacity = opacity
+        
+        self.setFlag(QGraphicsItem.ItemIsSelectable, True)
+        self.setFlag(QGraphicsItem.ItemIsMovable, True)
+        self.setZValue(50)  # High Z-value to sit on top of annotations
+
+    def boundingRect(self):
+        return QRectF(-14, -14, 28, 28)
+
+    def paint(self, painter, option, widget=None):
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Apply opacity
+        c = QColor(self.color)
+        c.setAlpha(round(self.opacity / 100.0 * 255))
+        
+        if self.marker_style == "square":
+            # 1. White border/glow for contrast
+            painter.setPen(QPen(QColor("#ffffff"), 2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+            painter.setBrush(c)
+            painter.drawRoundedRect(QRectF(-10, -10, 20, 20), 3, 3)
+            
+            # 2. Inside solid line border
+            painter.setPen(QPen(c, 2))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(QRectF(-10, -10, 20, 20), 3, 3)
+            
+        elif self.marker_style == "check":
+            # Round background disk for visibility
+            bg_color = QColor("#ffffff")
+            bg_color.setAlpha(220)
+            painter.setPen(QPen(c, 1.5))
+            painter.setBrush(bg_color)
+            painter.drawEllipse(QRectF(-11, -11, 22, 22))
+            
+            # Checkmark path
+            path = QPainterPath()
+            path.moveTo(-6, 0)
+            path.lineTo(-1.5, 4.5)
+            path.lineTo(6, -3)
+            
+            pen = QPen(c, 3, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawPath(path)
+            
+        painter.restore()
+

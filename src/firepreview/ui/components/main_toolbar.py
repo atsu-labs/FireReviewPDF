@@ -24,6 +24,7 @@ class MainToolBar(QFrame):
             ('fa5s.square', "矩形", ToolMode.POLYGON_AREA),
             ('fa5s.circle', "円", ToolMode.DRAW_CIRCLE_DRAG),
             ('fa5s.font', "テキスト", ToolMode.TEXT),
+            ('fa5s.map-marker-alt', "マーカー", ToolMode.DRAW_MARKER),
         ]
 
         for icon_name, tip, mode in tools:
