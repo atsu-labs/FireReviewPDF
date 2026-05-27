@@ -130,7 +130,9 @@ def export_pdf_document(model, output_path: str) -> None:
                     stroke_opacity=stroke_opacity,
                 )
                 if ann.text:
-                    mid = (p1 + p2) / 2
+                    offset = getattr(ann, "label_offset", [0.0, 0.0])
+                    offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor)
+                    mid = (p1 + p2) / 2 + offset_pt
                     page.insert_text(
                         mid,
                         ann.text,
@@ -156,7 +158,11 @@ def export_pdf_document(model, output_path: str) -> None:
                     if ann.end_marker:
                         draw_endpoint_marker(page, pts[-1], pts[-2], ann.end_marker)
                 if ann.text and pts:
-                    mid = pts[len(pts) // 2]
+                    offset = getattr(ann, "label_offset", [0.0, 0.0])
+                    offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor)
+                    avg_x = sum(pt.x for pt in pts) / len(pts)
+                    avg_y = sum(pt.y for pt in pts) / len(pts)
+                    mid = fitz.Point(avg_x, avg_y) + offset_pt
                     page.insert_text(
                         mid,
                         ann.text,
@@ -178,8 +184,10 @@ def export_pdf_document(model, output_path: str) -> None:
                     fill_opacity=fill_opacity if _pdf_fill else None,
                 )
                 if ann.text:
-                    avg_x = sum(point.x for point in pts) / len(pts)
-                    avg_y = sum(point.y for point in pts) / len(pts)
+                    offset = getattr(ann, "label_offset", [0.0, 0.0])
+                    offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor)
+                    avg_x = sum(point.x for point in pts) / len(pts) + offset_pt.x
+                    avg_y = sum(point.y for point in pts) / len(pts) + offset_pt.y
                     page.insert_text(
                         (avg_x, avg_y),
                         ann.text,
@@ -212,8 +220,10 @@ def export_pdf_document(model, output_path: str) -> None:
                 if ann.center_marker:
                     draw_center_marker(page, center, ann.center_marker)
                 if ann.text:
+                    offset = getattr(ann, "label_offset", [0.0, 0.0])
+                    offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor)
                     page.insert_text(
-                        (center.x, center.y - radius - 5),
+                        (center.x + offset_pt.x, center.y - radius - 5 + offset_pt.y),
                         ann.text,
                         color=color,
                         fontsize=ann.font_size,
