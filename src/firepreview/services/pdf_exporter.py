@@ -267,6 +267,7 @@ def export_pdf_document(model, output_path: str) -> None:
                         color=color,
                         width=2.5 * dpi_factor,
                         stroke_opacity=stroke_opacity,
+                        closePath=False,
                     )
 
             elif ann.type == "text":

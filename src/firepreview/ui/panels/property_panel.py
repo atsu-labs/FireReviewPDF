@@ -440,9 +440,8 @@ class PropertyPanel(QWidget):
             self.anno_marker_style_combo.blockSignals(False)
             
             self.anno_color_group.blockSignals(True)
-            for btn in self.anno_color_buttons:
-                bg_c = btn.styleSheet().split("background-color:")[1].split(";")[0].strip()
-                if bg_c.lower() == color_hex.lower():
+            for btn, hex_color in zip(self.anno_color_buttons, self.anno_palette_colors):
+                if hex_color.lower() == color_hex.lower():
                     btn.setChecked(True)
                 else:
                     btn.setChecked(False)
@@ -613,9 +612,8 @@ class PropertyPanel(QWidget):
     def _on_anno_marker_color_changed(self, hex_color):
         if not self._block_signals and self.current_item_id:
             self.current_color = hex_color
-            for btn in self.anno_color_buttons:
-                bg_c = btn.styleSheet().split("background-color:")[1].split(";")[0].strip()
-                btn.setStyleSheet(f"QPushButton {{ background-color: {bg_c}; border-radius: 9px; border: 1px solid #555; }} "
+            for btn, c in zip(self.anno_color_buttons, self.anno_palette_colors):
+                btn.setStyleSheet(f"QPushButton {{ background-color: {c}; border-radius: 9px; border: 1px solid #555; }} "
                                   f"QPushButton:checked {{ border: 2px solid #ffffff; }}")
             self.attribute_changed.emit(self.current_item_id, {"color": hex_color})
 

@@ -380,9 +380,8 @@ class ToolOptionsBar(QFrame):
     def _on_marker_palette_clicked(self, hex_color):
         self.current_marker_color = hex_color
         # パレットの選択状態を視覚的に強調するため、丸ボタンの境界線をすべて更新
-        for btn in self.color_buttons:
-            bg_c = btn.styleSheet().split("background-color:")[1].split(";")[0].strip()
-            btn.setStyleSheet(f"QPushButton {{ background-color: {bg_c}; border-radius: 9px; border: 1px solid #555; }} "
+        for btn, c in zip(self.color_buttons, self.palette_colors):
+            btn.setStyleSheet(f"QPushButton {{ background-color: {c}; border-radius: 9px; border: 1px solid #555; }} "
                               f"QPushButton:checked {{ border: 2px solid #ffffff; }}")
         self.marker_color_changed.emit(hex_color)
 

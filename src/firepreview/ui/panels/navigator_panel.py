@@ -233,7 +233,7 @@ class NavigatorPanel(QWidget):
         for ann in annotations:
             if ann.type == 'marker' and ann.page_num == current_page:
                 style = getattr(ann, 'marker_style', 'square')
-                color = ann.color.lower()
+                color = (ann.color or "#7c4dff").lower()
                 key = (style, color)
                 marker_counts[key] = marker_counts.get(key, 0) + 1
                 total_markers += 1
@@ -528,7 +528,8 @@ class ObjectItemRow(QFrame):
                 "#ff9100": "橙", "#f50057": "桃", "#d500f9": "紫", "#8d6e63": "茶", 
                 "#00e5ff": "水色", "#aeea00": "黄緑", "#7c4dff": "紫"
             }
-            c_name = palette_color_names.get(ann.color.lower(), ann.color.upper())
+            color_str = ann.color or "#7c4dff"
+            c_name = palette_color_names.get(color_str.lower(), color_str.upper())
             return f"マーカー ({style_name} - {c_name})"
         elif ann.type == 'text':
             content = ann.text.strip()
