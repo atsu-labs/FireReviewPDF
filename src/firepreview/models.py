@@ -117,6 +117,7 @@ class Annotation:
         self.border_width = 2
         self.has_leader = False
         self.page_num = 0
+        self.marker_style = "square"  # For marker type: "square" or "check"
 
     def to_dict(self):
         from PySide6.QtCore import QPointF
@@ -147,7 +148,8 @@ class Annotation:
             "border_color": self.border_color,
             "border_width": self.border_width,
             "has_leader": self.has_leader,
-            "page_num": self.page_num
+            "page_num": self.page_num,
+            "marker_style": self.marker_style
         }
 
     @classmethod
@@ -175,4 +177,5 @@ class Annotation:
         ann.border_width = data.get("border_width", 2)
         ann.has_leader = data.get("has_leader", False)
         ann.page_num = data.get("page_num", 0)
+        ann.marker_style = data.get("marker_style", "square")
         return ann

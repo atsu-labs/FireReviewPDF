@@ -57,14 +57,22 @@ class NavigatorPanel(QWidget):
         self.obj_tab_btn.setStyleSheet(
             "QPushButton { background-color: #2a2a3d; color: #888899; border-radius: 4px; padding: 5px; border: none; }"
         )
+
+        self.summary_tab_btn = QPushButton("集計")
+        self.summary_tab_btn.setCheckable(True)
+        self.summary_tab_btn.setStyleSheet(
+            "QPushButton { background-color: #2a2a3d; color: #888899; border-radius: 4px; padding: 5px; border: none; }"
+        )
         
         tab_layout.addWidget(self.page_tab_btn)
         tab_layout.addWidget(self.obj_tab_btn)
+        tab_layout.addWidget(self.summary_tab_btn)
         layout.addLayout(tab_layout)
         
         # Connect tab buttons
         self.page_tab_btn.clicked.connect(self.show_page_tab)
         self.obj_tab_btn.clicked.connect(self.show_obj_tab)
+        self.summary_tab_btn.clicked.connect(self.show_summary_tab)
 
         # Stacked Widget for Page thumbnails vs Object list
         self.stacked_widget = QStackedWidget()
@@ -133,6 +141,38 @@ class NavigatorPanel(QWidget):
         
         self.stacked_widget.addWidget(obj_widget)
 
+        # --- TAB 3: Summary Area ---
+        summary_widget = QWidget()
+        summary_layout = QVBoxLayout(summary_widget)
+        summary_layout.setContentsMargins(0, 0, 0, 0)
+        summary_layout.setSpacing(0)
+        
+        # Summary Header
+        sum_header = QHBoxLayout()
+        sum_header.setContentsMargins(10, 10, 10, 5)
+        sum_label = QLabel("集計（ページ内）")
+        sum_label.setStyleSheet("color: #888899; font-size: 10px; font-weight: bold;")
+        self.sum_count_label = QLabel("0")
+        self.sum_count_label.setStyleSheet("color: #888899; font-size: 10px;")
+        sum_header.addWidget(sum_label)
+        sum_header.addStretch()
+        sum_header.addWidget(self.sum_count_label)
+        summary_layout.addLayout(sum_header)
+        
+        # Scroll Area
+        self.sum_scroll = QScrollArea()
+        self.sum_scroll.setWidgetResizable(True)
+        self.sum_scroll.setFrameShape(QFrame.NoFrame)
+        self.sum_scroll_content = QWidget()
+        self.sum_layout = QVBoxLayout(self.sum_scroll_content)
+        self.sum_layout.setAlignment(Qt.AlignTop)
+        self.sum_layout.setContentsMargins(10, 5, 10, 5)
+        self.sum_layout.setSpacing(8)
+        self.sum_scroll.setWidget(self.sum_scroll_content)
+        summary_layout.addWidget(self.sum_scroll)
+        
+        self.stacked_widget.addWidget(summary_widget)
+
     def show_page_tab(self):
         self.page_tab_btn.setChecked(True)
         self.page_tab_btn.setStyleSheet(
@@ -140,6 +180,10 @@ class NavigatorPanel(QWidget):
         )
         self.obj_tab_btn.setChecked(False)
         self.obj_tab_btn.setStyleSheet(
+            "QPushButton { background-color: #2a2a3d; color: #888899; border-radius: 4px; padding: 5px; border: none; }"
+        )
+        self.summary_tab_btn.setChecked(False)
+        self.summary_tab_btn.setStyleSheet(
             "QPushButton { background-color: #2a2a3d; color: #888899; border-radius: 4px; padding: 5px; border: none; }"
         )
         self.stacked_widget.setCurrentIndex(0)
@@ -153,7 +197,101 @@ class NavigatorPanel(QWidget):
         self.obj_tab_btn.setStyleSheet(
             "QPushButton { background-color: #7c4dff; color: white; border-radius: 4px; padding: 5px; font-weight: bold; border: none; }"
         )
+        self.summary_tab_btn.setChecked(False)
+        self.summary_tab_btn.setStyleSheet(
+            "QPushButton { background-color: #2a2a3d; color: #888899; border-radius: 4px; padding: 5px; border: none; }"
+        )
         self.stacked_widget.setCurrentIndex(1)
+
+    def show_summary_tab(self):
+        self.page_tab_btn.setChecked(False)
+        self.page_tab_btn.setStyleSheet(
+            "QPushButton { background-color: #2a2a3d; color: #888899; border-radius: 4px; padding: 5px; border: none; }"
+        )
+        self.obj_tab_btn.setChecked(False)
+        self.obj_tab_btn.setStyleSheet(
+            "QPushButton { background-color: #2a2a3d; color: #888899; border-radius: 4px; padding: 5px; border: none; }"
+        )
+        self.summary_tab_btn.setChecked(True)
+        self.summary_tab_btn.setStyleSheet(
+            "QPushButton { background-color: #7c4dff; color: white; border-radius: 4px; padding: 5px; font-weight: bold; border: none; }"
+        )
+        self.stacked_widget.setCurrentIndex(2)
+
+    def update_marker_summary(self, annotations, current_page):
+        # 1. Clear existing summary items
+        for i in reversed(range(self.sum_layout.count())):
+            widget = self.sum_layout.itemAt(i).widget()
+            if widget:
+                widget.setParent(None)
+                widget.deleteLater()
+                
+        # 2. Count markers by type and color (only for current_page)
+        marker_counts = {} # {(marker_style, color): count}
+        total_markers = 0
+        
+        for ann in annotations:
+            if ann.type == 'marker' and ann.page_num == current_page:
+                style = getattr(ann, 'marker_style', 'square')
+                color = (ann.color or "#7c4dff").lower()
+                key = (style, color)
+                marker_counts[key] = marker_counts.get(key, 0) + 1
+                total_markers += 1
+                
+        self.sum_count_label.setText(str(total_markers))
+        
+        if total_markers == 0:
+            empty_lbl = QLabel("このページにマーカーは\n配置されていません。")
+            empty_lbl.setAlignment(Qt.AlignCenter)
+            empty_lbl.setStyleSheet("color: #888899; font-size: 12px; margin-top: 50px; line-height: 1.5;")
+            self.sum_layout.addWidget(empty_lbl)
+            return
+            
+        # 3. Categorize and render
+        styles_ja = {"square": "四角形マーカー", "check": "チェックマーク"}
+        palette_color_names = {
+            "#ff1744": "赤", "#2979ff": "青", "#00e676": "緑", "#ffd600": "黄", 
+            "#ff9100": "橙", "#f50057": "桃", "#d500f9": "紫", "#8d6e63": "茶", 
+            "#00e5ff": "水色", "#aeea00": "黄緑", "#7c4dff": "紫"
+        }
+        
+        for style_key in ["square", "check"]:
+            style_markers = {k: v for k, v in marker_counts.items() if k[0] == style_key}
+            if not style_markers:
+                continue
+                
+            # Section header
+            sec_header = QLabel(styles_ja[style_key])
+            sec_header.setStyleSheet("color: #7c4dff; font-weight: bold; font-size: 11px; margin-top: 10px; border-bottom: 1px solid #334;")
+            self.sum_layout.addWidget(sec_header)
+            
+            # Sort by count (descending)
+            for (st, col), count in sorted(style_markers.items(), key=lambda x: x[1], reverse=True):
+                row = QFrame()
+                row.setStyleSheet("background-color: #2a2a3d; border-radius: 4px; padding: 4px;")
+                row_layout = QHBoxLayout(row)
+                row_layout.setContentsMargins(6, 4, 6, 4)
+                
+                # Color indicator
+                color_dot = QFrame()
+                color_dot.setFixedSize(12, 12)
+                color_dot.setStyleSheet(f"background-color: {col}; border-radius: 6px;")
+                row_layout.addWidget(color_dot)
+                
+                # Color name / Hex
+                c_name = palette_color_names.get(col.lower(), col.upper())
+                lbl_text = QLabel(f"{c_name}")
+                lbl_text.setStyleSheet("color: #ffffff; font-size: 12px;")
+                row_layout.addWidget(lbl_text)
+                
+                row_layout.addStretch()
+                
+                # Count label
+                lbl_count = QLabel(f"{count} 個")
+                lbl_count.setStyleSheet("color: #00e676; font-weight: bold; font-size: 12px;")
+                row_layout.addWidget(lbl_count)
+                
+                self.sum_layout.addWidget(row)
 
     def set_page_count(self, count):
         label = self.findChild(QLabel, "pageCountLabel")
@@ -368,6 +506,8 @@ class ObjectItemRow(QFrame):
             return qta.icon('fa5s.circle', color=color)
         elif type_str == 'text':
             return qta.icon('fa5s.font', color=color)
+        elif type_str == 'marker':
+            return qta.icon('fa5s.map-marker-alt', color=color)
         return qta.icon('fa5s.question', color=color)
 
     def get_display_text(self, ann):
@@ -376,10 +516,22 @@ class ObjectItemRow(QFrame):
             'polyline': '直線',
             'polygon': '多角形',
             'circle': '円',
-            'text': 'テキスト'
+            'text': 'テキスト',
+            'marker': 'マーカー'
         }.get(ann.type, 'オブジェクト')
         
-        if ann.type == 'text':
+        if ann.type == 'marker':
+            styles_ja = {"square": "四角形", "check": "チェック"}
+            style_name = styles_ja.get(getattr(ann, 'marker_style', 'square'), "マーカー")
+            palette_color_names = {
+                "#ff1744": "赤", "#2979ff": "青", "#00e676": "緑", "#ffd600": "黄", 
+                "#ff9100": "橙", "#f50057": "桃", "#d500f9": "紫", "#8d6e63": "茶", 
+                "#00e5ff": "水色", "#aeea00": "黄緑", "#7c4dff": "紫"
+            }
+            color_str = ann.color or "#7c4dff"
+            c_name = palette_color_names.get(color_str.lower(), color_str.upper())
+            return f"マーカー ({style_name} - {c_name})"
+        elif ann.type == 'text':
             content = ann.text.strip()
             if len(content) > 10:
                 content = content[:10] + "..."

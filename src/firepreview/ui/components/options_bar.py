@@ -21,6 +21,11 @@ class ToolOptionsBar(QFrame):
     font_size_changed = Signal(int)
     text_color_changed = Signal(str)
     text_continuous_changed = Signal(bool)
+    marker_style_changed = Signal(str)
+    marker_continuous_changed = Signal(bool)
+    marker_opacity_changed = Signal(int)
+    marker_color_changed = Signal(str)
+
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -35,6 +40,7 @@ class ToolOptionsBar(QFrame):
         self.current_text_font = "Arial"
         self.current_text_size = 12
         self.current_text_color = "#ff0000"
+        self.current_marker_color = "#ff1744"
         self.unit = "mm"
 
         self._start_marker_values = ["", "circle", "arrow"]
@@ -185,6 +191,62 @@ class ToolOptionsBar(QFrame):
         o_layout.addWidget(self.text_options_widget)
         self.text_options_widget.hide()
         
+        # --- Marker tool options ---
+        self.marker_options_widget = QWidget()
+        marker_layout = QHBoxLayout(self.marker_options_widget)
+        marker_layout.setContentsMargins(0, 0, 0, 0)
+        
+        marker_layout.addWidget(QLabel("種類:"))
+        self.tool_marker_style_combo = QComboBox()
+        self.tool_marker_style_combo.addItems(["四角形", "チェック"])
+        self.tool_marker_style_combo.currentIndexChanged.connect(self._on_marker_style_combo_changed)
+        marker_layout.addWidget(self.tool_marker_style_combo)
+        
+        marker_layout.addWidget(QLabel("色:"))
+        self.marker_colors_widget = QWidget()
+        colors_layout = QHBoxLayout(self.marker_colors_widget)
+        colors_layout.setContentsMargins(0, 0, 0, 0)
+        colors_layout.setSpacing(4)
+        
+        from PySide6.QtWidgets import QButtonGroup
+        self.color_group = QButtonGroup(self)
+        self.color_group.setExclusive(True)
+        self.palette_colors = ["#ff1744", "#2979ff", "#00e676", "#ffd600", "#ff9100", "#f50057", "#d500f9", "#8d6e63", "#00e5ff", "#aeea00"]
+        self.color_buttons = []
+        
+        for i, hex_color in enumerate(self.palette_colors):
+            btn = QPushButton()
+            btn.setFixedSize(18, 18)
+            btn.setCheckable(True)
+            if hex_color.lower() == self.current_marker_color.lower():
+                btn.setChecked(True)
+            btn.setStyleSheet(f"QPushButton {{ background-color: {hex_color}; border-radius: 9px; border: 1px solid #555; }} "
+                              f"QPushButton:checked {{ border: 2px solid #ffffff; }}")
+            btn.clicked.connect(lambda checked, c=hex_color: self._on_marker_palette_clicked(c))
+            colors_layout.addWidget(btn)
+            self.color_group.addButton(btn)
+            self.color_buttons.append(btn)
+            
+        marker_layout.addWidget(self.marker_colors_widget)
+
+        marker_layout.addWidget(QLabel("不透明度:"))
+        self.tool_marker_opacity_spin = QSpinBox()
+        self.tool_marker_opacity_spin.setRange(0, 100)
+        self.tool_marker_opacity_spin.setValue(70)
+        self.tool_marker_opacity_spin.setSuffix("%")
+        self.tool_marker_opacity_spin.setFixedWidth(60)
+        self.tool_marker_opacity_spin.valueChanged.connect(self._on_marker_opacity_changed)
+        marker_layout.addWidget(self.tool_marker_opacity_spin)
+        
+        self.tool_marker_continuous_check = QCheckBox("連続作成")
+        self.tool_marker_continuous_check.setChecked(False)
+        self.tool_marker_continuous_check.setStyleSheet("color: white;")
+        self.tool_marker_continuous_check.toggled.connect(self.marker_continuous_changed.emit)
+        marker_layout.addWidget(self.tool_marker_continuous_check)
+
+        o_layout.addWidget(self.marker_options_widget)
+        self.marker_options_widget.hide()
+        
         o_layout.addStretch()
 
     # --- UI updates when tool switches ---
@@ -198,10 +260,17 @@ class ToolOptionsBar(QFrame):
         if mode == ToolMode.TEXT:
             self.default_opt_label.hide()
             self.shape_options_widget.hide()
+            self.marker_options_widget.hide()
             self.text_options_widget.show()
+        elif mode == ToolMode.DRAW_MARKER:
+            self.default_opt_label.hide()
+            self.shape_options_widget.hide()
+            self.text_options_widget.hide()
+            self.marker_options_widget.show()
         elif is_shape_tool:
             self.default_opt_label.hide()
             self.text_options_widget.hide()
+            self.marker_options_widget.hide()
             self.tool_fill_container.setVisible(has_fill)
             self.tool_radius_container.setVisible(has_radius)
             self.tool_line_marker_container.setVisible(has_line_markers)
@@ -211,6 +280,7 @@ class ToolOptionsBar(QFrame):
             self.default_opt_label.show()
             self.shape_options_widget.hide()
             self.text_options_widget.hide()
+            self.marker_options_widget.hide()
 
     def apply_unit_change(self, new_unit, old_unit):
         self.unit = new_unit
@@ -302,3 +372,19 @@ class ToolOptionsBar(QFrame):
             self.current_text_color = color.name()
             self.tool_color_preview.setStyleSheet(f"background-color: {self.current_text_color}; border-radius: 4px;")
             self.text_color_changed.emit(self.current_text_color)
+
+    def _on_marker_style_combo_changed(self, index):
+        style = "square" if index == 0 else "check"
+        self.marker_style_changed.emit(style)
+
+    def _on_marker_palette_clicked(self, hex_color):
+        self.current_marker_color = hex_color
+        # パレットの選択状態を視覚的に強調するため、丸ボタンの境界線をすべて更新
+        for btn, c in zip(self.color_buttons, self.palette_colors):
+            btn.setStyleSheet(f"QPushButton {{ background-color: {c}; border-radius: 9px; border: 1px solid #555; }} "
+                              f"QPushButton:checked {{ border: 2px solid #ffffff; }}")
+        self.marker_color_changed.emit(hex_color)
+
+    def _on_marker_opacity_changed(self, value):
+        self.marker_opacity_changed.emit(value)
+

@@ -221,6 +221,55 @@ def export_pdf_document(model, output_path: str) -> None:
                         fill_opacity=stroke_opacity,
                     )
 
+            elif ann.type == "marker":
+                if not ann.points:
+                    continue
+                pos = to_pdf_pt(ann.points[0])
+                size = 24 * dpi_factor
+                half = size / 2
+                marker_style = getattr(ann, "marker_style", "square")
+                
+                if marker_style == "square":
+                    rect = fitz.Rect(pos.x - half, pos.y - half, pos.x + half, pos.y + half)
+                    # 1. White border glow
+                    page.draw_rect(
+                        rect,
+                        color=(1.0, 1.0, 1.0),
+                        fill=color,
+                        width=2 * dpi_factor,
+                        stroke_opacity=stroke_opacity,
+                        fill_opacity=stroke_opacity,
+                    )
+                    # 2. Main color border
+                    page.draw_rect(
+                        rect,
+                        color=color,
+                        width=1.5 * dpi_factor,
+                        stroke_opacity=stroke_opacity,
+                    )
+                elif marker_style == "check":
+                    # 1. White background disk
+                    page.draw_circle(
+                        pos,
+                        half,
+                        color=color,
+                        fill=(1.0, 1.0, 1.0),
+                        width=1.5 * dpi_factor,
+                        stroke_opacity=stroke_opacity,
+                        fill_opacity=stroke_opacity,
+                    )
+                    # 2. Checkmark path
+                    p_start = fitz.Point(pos.x - 6 * dpi_factor, pos.y)
+                    p_mid = fitz.Point(pos.x - 1.5 * dpi_factor, pos.y + 4.5 * dpi_factor)
+                    p_end = fitz.Point(pos.x + 6 * dpi_factor, pos.y - 3 * dpi_factor)
+                    page.draw_polyline(
+                        [p_start, p_mid, p_end],
+                        color=color,
+                        width=2.5 * dpi_factor,
+                        stroke_opacity=stroke_opacity,
+                        closePath=False,
+                    )
+
             elif ann.type == "text":
                 if not ann.points:
                     continue

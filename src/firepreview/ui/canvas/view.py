@@ -14,6 +14,8 @@ class PDFCanvas(QGraphicsView):
     polygon_complete = Signal(list) # list of QPointF
     polyline_complete = Signal(list)  # list of QPointF for polyline tool
     circle_drag_complete = Signal(QPointF, float)  # center, radius_px
+    marker_complete = Signal(QPointF)
+
     
     # Selection/Editing signals
     item_selected = Signal(str) # id
@@ -83,14 +85,15 @@ class PDFCanvas(QGraphicsView):
         self._original_accepted_buttons = {}
 
         # Instantiate modular drawing tools
-        from .tools import SelectTool, DrawLineTool, PolygonTool, CircleTool, TextTool, CalibrationTool
+        from .tools import SelectTool, DrawLineTool, PolygonTool, CircleTool, TextTool, CalibrationTool, MarkerTool
         self.tools = {
             ToolMode.SELECT: SelectTool(self),
             ToolMode.DRAW_LINE: DrawLineTool(self),
             ToolMode.POLYGON_AREA: PolygonTool(self),
             ToolMode.DRAW_CIRCLE_DRAG: CircleTool(self),
             ToolMode.TEXT: TextTool(self),
-            ToolMode.CALIBRATE: CalibrationTool(self)
+            ToolMode.CALIBRATE: CalibrationTool(self),
+            ToolMode.DRAW_MARKER: MarkerTool(self)
         }
 
     def _get_active_tool(self):
@@ -246,7 +249,13 @@ class PDFCanvas(QGraphicsView):
             painter.save()
             painter.setPen(QPen(QColor(255, 255, 255), 1, Qt.DashLine))
             painter.setBrush(Qt.NoBrush)
-            br = item.sceneBoundingRect()
+            
+            # Map item's local bounding rect via sceneTransform() to accurately handle ItemIgnoresTransformations
+            transform = item.sceneTransform()
+            local_rect = item.boundingRect()
+            scene_poly = transform.map(QPolygonF(local_rect))
+            br = scene_poly.boundingRect()
+            
             painter.drawRect(br.adjusted(-2, -2, 2, 2))
             
             painter.setBrush(QColor(124, 77, 255))
@@ -597,6 +606,16 @@ class PDFCanvas(QGraphicsView):
                 txt_item.setData(1, QPointF(0,0))
                 self.annotation_items[item_id] = txt_item
 
+    def add_marker_annotation(self, pos, marker_style="square", color="#7c4dff", stroke_opacity=100, item_id=None):
+        from .items import MarkerItem
+        item = MarkerItem(marker_style, color, stroke_opacity)
+        item.setPos(pos)
+        if item_id:
+            item.setData(0, item_id)
+            item.setData(1, QPointF(0, 0))
+            self.annotation_items[item_id] = item
+        self.scene.addItem(item)
+
     def _add_text_item(self, text, x, y, color, font_family="Arial", font_size=12):
         if not text: return None
         text_item = CustomTextItem(text)
@@ -622,6 +641,19 @@ class PDFCanvas(QGraphicsView):
     def update_item_properties(self, item_id, attrs):
         for item in self.scene.items():
             if item.data(0) == item_id:
+                from .items import MarkerItem
+                if isinstance(item, MarkerItem):
+                    if "color" in attrs:
+                        item.color = QColor(attrs["color"])
+                    if "marker_style" in attrs:
+                        item.marker_style = attrs["marker_style"]
+                    if "stroke_opacity" in attrs:
+                        item.opacity = attrs["stroke_opacity"]
+                    item.update()
+                    self.scene.update()
+                    self.viewport().update()
+                    break
+
                 if "color" in attrs or "line_width" in attrs or "stroke_opacity" in attrs:
                     if isinstance(item, (QGraphicsLineItem, QGraphicsEllipseItem, QGraphicsPolygonItem, QGraphicsPathItem)):
                         pen = item.pen()
