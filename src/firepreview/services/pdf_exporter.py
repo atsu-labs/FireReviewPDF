@@ -16,17 +16,18 @@ def export_pdf_document(model, output_path: str) -> None:
         registered_page_fonts = {}
         
         # Windows system font file and registration name mapping
+        windir = os.environ.get('windir', 'C:/Windows')
         FONT_MAP = {
-            "ms gothic": ("C:/Windows/Fonts/msgothic.ttc", "msgothic"),
-            "ｍｓ ゴシック": ("C:/Windows/Fonts/msgothic.ttc", "msgothic"),
-            "msgothic": ("C:/Windows/Fonts/msgothic.ttc", "msgothic"),
+            "ms gothic": (os.path.join(windir, "Fonts", "msgothic.ttc"), "msgothic"),
+            "ｍｓ ゴシック": (os.path.join(windir, "Fonts", "msgothic.ttc"), "msgothic"),
+            "msgothic": (os.path.join(windir, "Fonts", "msgothic.ttc"), "msgothic"),
             
-            "meiryo": ("C:/Windows/Fonts/meiryo.ttc", "meiryo"),
-            "メイリオ": ("C:/Windows/Fonts/meiryo.ttc", "meiryo"),
+            "meiryo": (os.path.join(windir, "Fonts", "meiryo.ttc"), "meiryo"),
+            "メイリオ": (os.path.join(windir, "Fonts", "meiryo.ttc"), "meiryo"),
             
-            "yu gothic": ("C:/Windows/Fonts/yugothm.ttc", "yugothic"),
-            "游ゴシック": ("C:/Windows/Fonts/yugothm.ttc", "yugothic"),
-            "yugothic": ("C:/Windows/Fonts/yugothm.ttc", "yugothic"),
+            "yu gothic": (os.path.join(windir, "Fonts", "yugothm.ttc"), "yugothic"),
+            "游ゴシック": (os.path.join(windir, "Fonts", "yugothm.ttc"), "yugothic"),
+            "yugothic": (os.path.join(windir, "Fonts", "yugothm.ttc"), "yugothic"),
         }
 
         def get_or_register_font(page_obj, page_idx, family_name):
@@ -37,7 +38,7 @@ def export_pdf_document(model, output_path: str) -> None:
             
             # 1. Yu Gothic / Yu Mincho / 游ゴシック (游)
             if "yu" in family_lower or "游" in family_lower or "yugoth" in family_lower:
-                font_path, pdf_name = "C:/Windows/Fonts/yugothm.ttc", "yugothic"
+                font_path, pdf_name = os.path.join(windir, "Fonts", "yugothm.ttc"), "yugothic"
                 if pdf_name in registered_page_fonts[page_idx]:
                     return pdf_name
                 if os.path.exists(font_path):
@@ -50,7 +51,7 @@ def export_pdf_document(model, output_path: str) -> None:
 
             # 2. Meiryo / Meiryo UI / メイリオ
             if "meiryo" in family_lower or "メイリオ" in family_lower:
-                font_path, pdf_name = "C:/Windows/Fonts/meiryo.ttc", "meiryo"
+                font_path, pdf_name = os.path.join(windir, "Fonts", "meiryo.ttc"), "meiryo"
                 if pdf_name in registered_page_fonts[page_idx]:
                     return pdf_name
                 if os.path.exists(font_path):
@@ -63,7 +64,7 @@ def export_pdf_document(model, output_path: str) -> None:
 
             # 3. MS Gothic / MS UI Gothic / MS PGothic / ゴシック
             if "gothic" in family_lower or "ゴシック" in family_lower or "msgoth" in family_lower:
-                font_path, pdf_name = "C:/Windows/Fonts/msgothic.ttc", "msgothic"
+                font_path, pdf_name = os.path.join(windir, "Fonts", "msgothic.ttc"), "msgothic"
                 if pdf_name in registered_page_fonts[page_idx]:
                     return pdf_name
                 if os.path.exists(font_path):
@@ -89,9 +90,9 @@ def export_pdf_document(model, output_path: str) -> None:
 
             # 5. Fallback - Japanese priority font (Meiryo first, msgothic second) to avoid CJK rendering crash
             for path, name in [
-                ("C:/Windows/Fonts/meiryo.ttc", "meiryo"),
-                ("C:/Windows/Fonts/msgothic.ttc", "msgothic"),
-                ("C:/Windows/Fonts/yugothm.ttc", "yugothic")
+                (os.path.join(windir, "Fonts", "meiryo.ttc"), "meiryo"),
+                (os.path.join(windir, "Fonts", "msgothic.ttc"), "msgothic"),
+                (os.path.join(windir, "Fonts", "yugothm.ttc"), "yugothic")
             ]:
                 if os.path.exists(path):
                     if name in registered_page_fonts[page_idx]:

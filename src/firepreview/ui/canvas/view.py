@@ -727,13 +727,14 @@ class PDFCanvas(QGraphicsView):
                     continue
                 from .items import MarkerItem, LegendItem
                 if isinstance(item, LegendItem):
+                    if "font_size" in attrs:
+                        item.prepareGeometryChange()
                     if "font_family" in attrs:
                         item.font_family = attrs["font_family"]
                     if "font_size" in attrs:
                         item.font_size = attrs["font_size"]
                     if "color" in attrs:
                         item.color = attrs["color"]
-                    item.prepareGeometryChange()
                     item.update()
                     self.scene.update()
                     self.viewport().update()
