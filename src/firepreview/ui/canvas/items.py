@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import QGraphicsTextItem, QGraphicsEllipseItem, QGraphicsItem, QGraphicsLineItem
 from PySide6.QtCore import Qt, Signal, QRectF, QPointF
-from PySide6.QtGui import QPen, QColor, QPainter, QPainterPath
+from PySide6.QtGui import QPen, QColor, QPainter, QPainterPath, QFont
 
 class CustomTextItem(QGraphicsTextItem):
     editing_finished = Signal(str)
@@ -211,4 +211,129 @@ class MarkerItem(QGraphicsItem):
             painter.drawPath(path)
             
         painter.restore()
+
+
+class LegendItem(QGraphicsItem):
+    def __init__(self, canvas, parent=None):
+        super().__init__(parent)
+        self.canvas = canvas
+        self.marker_counts = {}  # {(style, color): count}
+        self.color_names = {}  # {color_hex: name}
+        
+        self.setFlag(QGraphicsItem.ItemIsSelectable, True)
+        self.setFlag(QGraphicsItem.ItemIsMovable, True)
+        self.setZValue(40)  # High Z-value (sits below handles/markers, above normal annotations)
+
+    def update_data(self, marker_counts, color_names):
+        self.prepareGeometryChange()
+        self.marker_counts = marker_counts
+        self.color_names = color_names
+        self.update()
+
+    def get_items_to_draw(self):
+        return sorted(self.marker_counts.items(), key=lambda x: x[1], reverse=True)
+
+    def boundingRect(self):
+        items = self.get_items_to_draw()
+        h = 30 + max(1, len(items)) * 24 + 10
+        return QRectF(0, 0, 180, h)
+
+    def paint(self, painter, option, widget=None):
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        items = self.get_items_to_draw()
+        rect = self.boundingRect()
+        
+        # 1. Glassmorphism Background: semi-transparent dark gray
+        bg_color = QColor("#1e1e2d")
+        bg_color.setAlpha(220)  # semi-transparent
+        
+        # Draw background border and fill
+        if self.isSelected():
+            border_pen = QPen(QColor("#7c4dff"), 2)
+        else:
+            border_pen = QPen(QColor("#3d3d5c"), 1.5)
+            
+        border_pen.setCosmetic(True)
+        painter.setPen(border_pen)
+        painter.setBrush(bg_color)
+        painter.drawRoundedRect(rect, 8, 8)
+        
+        # 2. Draw Title: "凡例"
+        painter.setPen(QColor("#7c4dff"))
+        font_title = painter.font()
+        font_title.setPointSize(11)
+        font_title.setBold(True)
+        painter.setFont(font_title)
+        painter.drawText(QRectF(15, 5, 150, 20), Qt.AlignLeft | Qt.AlignVCenter, "凡例")
+        
+        # Draw a thin separator line below title
+        painter.setPen(QPen(QColor("#3d3d5c"), 1))
+        painter.drawLine(15, 26, 165, 26)
+        
+        # 3. Draw Items
+        font_item = painter.font()
+        font_item.setPointSize(9)
+        font_item.setBold(False)
+        painter.setFont(font_item)
+        
+        y_offset = 30
+        
+        if not items:
+            painter.setPen(QColor("#888899"))
+            painter.drawText(QRectF(15, y_offset, 150, 20), Qt.AlignLeft | Qt.AlignVCenter, "マーカーなし")
+        else:
+            default_color_names = {
+                "#ff1744": "赤", "#2979ff": "青", "#00e676": "緑", "#ffd600": "黄", 
+                "#ff9100": "橙", "#f50057": "桃", "#d500f9": "紫", "#8d6e63": "茶", 
+                "#00e5ff": "水色", "#aeea00": "黄緑", "#7c4dff": "紫"
+            }
+            
+            for (style, col), count in items:
+                # A. Draw marker icon
+                painter.save()
+                painter.translate(22, y_offset + 10)
+                c = QColor(col)
+                
+                if style == "square":
+                    painter.setPen(QPen(QColor("#ffffff"), 1.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+                    painter.setBrush(c)
+                    painter.drawRoundedRect(QRectF(-6, -6, 12, 12), 2, 2)
+                elif style == "check":
+                    bg_disk = QColor("#ffffff")
+                    bg_disk.setAlpha(220)
+                    painter.setPen(QPen(c, 1))
+                    painter.setBrush(bg_disk)
+                    painter.drawEllipse(QRectF(-7, -7, 14, 14))
+                    
+                    path = QPainterPath()
+                    path.moveTo(-4, 0)
+                    path.lineTo(-1, 3)
+                    path.lineTo(4, -2)
+                    pen = QPen(c, 2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+                    painter.setPen(pen)
+                    painter.setBrush(Qt.NoBrush)
+                    painter.drawPath(path)
+                    
+                painter.restore()
+                
+                # B. Color name (customized name if exists in color_names, else fallback)
+                c_name = self.color_names.get(col.lower(), default_color_names.get(col.lower(), col.upper()))
+                painter.setPen(QColor("#ffffff"))
+                metrics = painter.fontMetrics()
+                elided_name = metrics.elidedText(c_name, Qt.ElideRight, 95)
+                painter.drawText(QRectF(38, y_offset, 95, 20), Qt.AlignLeft | Qt.AlignVCenter, elided_name)
+                
+                # C. Count
+                painter.setPen(QColor("#00e676"))
+                font_count = painter.font()
+                font_count.setBold(True)
+                painter.setFont(font_count)
+                painter.drawText(QRectF(135, y_offset, 30, 20), Qt.AlignRight | Qt.AlignVCenter, f"{count}")
+                
+                y_offset += 24
+                
+        painter.restore()
+
 

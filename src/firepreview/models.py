@@ -6,6 +6,7 @@ class DrawingModel:
         self.scale_factor = 1.0  # mm per pixel
         self.is_calibrated = False
         self.page_calibrations = {}  # {page_num: scale_factor}
+        self.page_color_names = {}  # {page_num: {color_hex: name}}
         self.annotations = [] # List of annotation objects
         self.pdf_path = ""
         self.unit = 'm'  # 表示単位: 'm' または 'mm'
@@ -76,6 +77,7 @@ class DrawingModel:
             "scale_factor": self.scale_factor,
             "is_calibrated": self.is_calibrated,
             "page_calibrations": self.page_calibrations,
+            "page_color_names": {str(k): v for k, v in self.page_color_names.items()},
             "pdf_path": self.pdf_path,
             "unit": self.unit,
             "annotations": [a.to_dict() for a in self.annotations]
@@ -88,6 +90,8 @@ class DrawingModel:
         model.is_calibrated = data.get("is_calibrated", False)
         raw_page_calibrations = data.get("page_calibrations", {})
         model.page_calibrations = {int(k): float(v) for k, v in raw_page_calibrations.items()}
+        raw_page_color_names = data.get("page_color_names", {})
+        model.page_color_names = {int(k): v for k, v in raw_page_color_names.items()}
         model.pdf_path = data.get("pdf_path", "")
         model.unit = data.get("unit", "m")
         for a_data in data.get("annotations", []):
