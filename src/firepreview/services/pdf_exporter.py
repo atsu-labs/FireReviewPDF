@@ -354,7 +354,156 @@ def export_pdf_document(model, output_path: str) -> None:
                             stroke_opacity=stroke_opacity
                         )
 
+            elif ann.type == "legend":
+                if not ann.points:
+                    continue
+                pos = to_pdf_pt(ann.points[0])
+                
+                # 1. Count markers on the current page
+                marker_counts = {}
+                for other in model.annotations:
+                    if other.page_num == ann.page_num and other.type == 'marker':
+                        style = getattr(other, 'marker_style', 'square')
+                        color_hex = (other.color or "#7c4dff").lower()
+                        key = (style, color_hex)
+                        marker_counts[key] = marker_counts.get(key, 0) + 1
+                        
+                items = sorted(marker_counts.items(), key=lambda x: x[1], reverse=True)
+                
+                # Fetch custom color names for current page
+                page_names = model.page_color_names.get(ann.page_num, {})
+                
+                # 2. Dimensions in PDF points
+                w = 200 * dpi_factor
+                row_h = 30 * dpi_factor
+                title_h = 32 * dpi_factor
+                h = title_h + max(1, len(items)) * row_h + 10 * dpi_factor
+                
+                rect = fitz.Rect(pos.x, pos.y, pos.x + w, pos.y + h)
+                
+                # 3. Draw Background Card
+                page.draw_rect(
+                    rect,
+                    color=(204/255.0, 204/255.0, 204/255.0),
+                    fill=(245/255.0, 246/255.0, 248/255.0),
+                    width=1.2 * dpi_factor,
+                    stroke_opacity=1.0,
+                    fill_opacity=0.95,
+                )
+                
+                # 4. Draw Title: "凡例" (Brand deep purple: #7c4dff)
+                title_pos = fitz.Point(pos.x + 15 * dpi_factor, pos.y + 18 * dpi_factor)
+                page.insert_text(
+                    title_pos,
+                    "凡例",
+                    color=(124/255.0, 77/255.0, 255/255.0),
+                    fontsize=10 * dpi_factor * 2,  # scale to match standard pt
+                    fontname="cjk",
+                    fill_opacity=1.0,
+                )
+                
+                # Separator Line
+                page.draw_line(
+                    fitz.Point(pos.x + 15 * dpi_factor, pos.y + 26 * dpi_factor),
+                    fitz.Point(pos.x + (200 - 15) * dpi_factor, pos.y + 26 * dpi_factor),
+                    color=(220/255.0, 221/255.0, 225/255.0),
+                    width=1 * dpi_factor,
+                    stroke_opacity=1.0,
+                )
+                
+                # 5. Loop and draw items
+                y_offset = pos.y + 32 * dpi_factor
+                default_color_names = {
+                    "#ff1744": "赤", "#2979ff": "青", "#00e676": "緑", "#ffd600": "黄", 
+                    "#ff9100": "橙", "#f50057": "桃", "#d500f9": "紫", "#8d6e63": "茶", 
+                    "#00e5ff": "水色", "#aeea00": "黄緑", "#7c4dff": "紫"
+                }
+                
+                for (style, col), count in items:
+                    # A. Draw marker icon
+                    c_val = QColor(col)
+                    c_rgb = (c_val.red() / 255.0, c_val.green() / 255.0, c_val.blue() / 255.0)
+                    icon_center = fitz.Point(pos.x + 25 * dpi_factor, y_offset + 12 * dpi_factor)
+                    half_sz = 11 * dpi_factor
+                    
+                    if style == "square":
+                        square_half = 10 * dpi_factor
+                        rect_icon = fitz.Rect(
+                            icon_center.x - square_half,
+                            icon_center.y - square_half,
+                            icon_center.x + square_half,
+                            icon_center.y + square_half
+                        )
+                        # White border glow
+                        page.draw_rect(
+                            rect_icon,
+                            color=(1.0, 1.0, 1.0),
+                            fill=c_rgb,
+                            width=2 * dpi_factor,
+                            stroke_opacity=1.0,
+                            fill_opacity=1.0,
+                        )
+                        # Main color border
+                        page.draw_rect(
+                            rect_icon,
+                            color=c_rgb,
+                            width=1.5 * dpi_factor,
+                            stroke_opacity=1.0,
+                        )
+                    elif style == "check":
+                        # White background disk
+                        page.draw_circle(
+                            icon_center,
+                            half_sz,
+                            color=c_rgb,
+                            fill=(1.0, 1.0, 1.0),
+                            width=1.5 * dpi_factor,
+                            stroke_opacity=1.0,
+                            fill_opacity=1.0,
+                        )
+                        # Checkmark path
+                        p_start = fitz.Point(icon_center.x - 6 * dpi_factor, icon_center.y)
+                        p_mid = fitz.Point(icon_center.x - 1.5 * dpi_factor, icon_center.y + 4.5 * dpi_factor)
+                        p_end = fitz.Point(icon_center.x + 6 * dpi_factor, icon_center.y - 3 * dpi_factor)
+                        page.draw_polyline(
+                            [p_start, p_mid, p_end],
+                            color=c_rgb,
+                            width=2.5 * dpi_factor,
+                            stroke_opacity=1.0,
+                            closePath=False,
+                        )
+                        
+                    # B. Color name (Japanese supported with cjk font!)
+                    c_name = page_names.get(col.lower(), default_color_names.get(col.lower(), col.upper()))
+                    if len(c_name) > 12:
+                        c_name = c_name[:10] + "..."
+                        
+                    text_pos = fitz.Point(pos.x + 48 * dpi_factor, y_offset + 18 * dpi_factor)
+                    page.insert_text(
+                        text_pos,
+                        c_name,
+                        color=(42/255.0, 42/255.0, 61/255.0),
+                        fontsize=8 * dpi_factor * 2,
+                        fontname="cjk",
+                        fill_opacity=1.0,
+                    )
+                    
+                    # C. Count
+                    count_text = str(count)
+                    count_pos = fitz.Point(pos.x + 155 * dpi_factor, y_offset + 18 * dpi_factor)
+                    page.insert_text(
+                        count_pos,
+                        count_text,
+                        color=(46/255.0, 125/255.0, 50/255.0),
+                        fontsize=8 * dpi_factor * 2,
+                        fontname="helv",
+                        fill_opacity=1.0,
+                    )
+                    
+                    y_offset += 30 * dpi_factor
+
         export_doc.save(output_path)
+
     finally:
         if export_doc is not None:
             export_doc.close()
