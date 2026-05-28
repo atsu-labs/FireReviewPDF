@@ -10,11 +10,34 @@ def export_pdf_document(model, output_path: str) -> None:
 
     try:
         export_doc = fitz.open(model.pdf_path)
+        registered_pages = {}  # {page_num: font_name}
+        
         for ann in model.annotations:
             if ann.page_num >= len(export_doc):
                 continue
 
             page = export_doc[ann.page_num]
+            
+            # Register CJK Japanese font on this page if not done yet
+            if ann.page_num not in registered_pages:
+                import os
+                f_name = "helv"
+                font_options = [
+                    ("C:/Windows/Fonts/msgothic.ttc", "msgothic"),
+                    ("C:/Windows/Fonts/meiryo.ttc", "meiryo"),
+                    ("C:/Windows/Fonts/yugothm.ttc", "yugothic"),
+                ]
+                for path, name in font_options:
+                    if os.path.exists(path):
+                        try:
+                            page.insert_font(fontname=name, fontfile=path)
+                            f_name = name
+                            break
+                        except Exception:
+                            pass
+                registered_pages[ann.page_num] = f_name
+                
+            page_font = registered_pages[ann.page_num]
             color_value = QColor(ann.color)
             color = (
                 color_value.red() / 255.0,
@@ -138,7 +161,7 @@ def export_pdf_document(model, output_path: str) -> None:
                         ann.text,
                         color=color,
                         fontsize=ann.font_size,
-                        fontname="helv",
+                        fontname=page_font,
                         fill_opacity=stroke_opacity,
                     )
 
@@ -168,7 +191,7 @@ def export_pdf_document(model, output_path: str) -> None:
                         ann.text,
                         color=color,
                         fontsize=ann.font_size,
-                        fontname="helv",
+                        fontname=page_font,
                         fill_opacity=stroke_opacity,
                     )
 
@@ -193,7 +216,7 @@ def export_pdf_document(model, output_path: str) -> None:
                         ann.text,
                         color=color,
                         fontsize=ann.font_size,
-                        fontname="helv",
+                        fontname=page_font,
                         fill_opacity=stroke_opacity,
                     )
 
@@ -227,7 +250,7 @@ def export_pdf_document(model, output_path: str) -> None:
                         ann.text,
                         color=color,
                         fontsize=ann.font_size,
-                        fontname="helv",
+                        fontname=page_font,
                         fill_opacity=stroke_opacity,
                     )
 
@@ -289,7 +312,7 @@ def export_pdf_document(model, output_path: str) -> None:
                     ann.text,
                     color=color,
                     fontsize=ann.font_size,
-                    fontname="helv",
+                    fontname=page_font,
                     fill_opacity=stroke_opacity,
                 )
 
@@ -306,7 +329,7 @@ def export_pdf_document(model, output_path: str) -> None:
                     b_width = getattr(ann, "border_width", 2) * dpi_factor
 
                     # Calculate precise text bounding box
-                    text_w = fitz.get_text_length(ann.text, fontsize=ann.font_size, fontname="helv")
+                    text_w = fitz.get_text_length(ann.text, fontsize=ann.font_size, fontname=page_font)
                     text_h = ann.font_size
                     margin = 4 * dpi_factor
 
@@ -395,10 +418,10 @@ def export_pdf_document(model, output_path: str) -> None:
                 title_pos = fitz.Point(pos.x + 15 * dpi_factor, pos.y + 18 * dpi_factor)
                 page.insert_text(
                     title_pos,
-                    "凡例",
+                    "凡例" if page_font != "helv" else "Legend",
                     color=(124/255.0, 77/255.0, 255/255.0),
                     fontsize=10 * dpi_factor * 2,  # scale to match standard pt
-                    fontname="cjk",
+                    fontname=page_font,
                     fill_opacity=1.0,
                 )
                 
@@ -473,8 +496,18 @@ def export_pdf_document(model, output_path: str) -> None:
                             closePath=False,
                         )
                         
-                    # B. Color name (Japanese supported with cjk font!)
+                    # B. Color name (Japanese supported with page_font CJK)
                     c_name = page_names.get(col.lower(), default_color_names.get(col.lower(), col.upper()))
+                    
+                    # Fallback to English translation if no CJK font exists to prevent crashes
+                    if page_font == "helv":
+                        c_name_en = {
+                            "赤": "Red", "青": "Blue", "緑": "Green", "黄": "Yellow", 
+                            "橙": "Orange", "桃": "Pink", "紫": "Purple", "茶": "Brown", 
+                            "水色": "LightBlue", "黄緑": "LightGreen"
+                        }.get(c_name, c_name)
+                        c_name = "".join([char for char in c_name_en if ord(char) < 128])
+                        
                     if len(c_name) > 12:
                         c_name = c_name[:10] + "..."
                         
@@ -484,7 +517,7 @@ def export_pdf_document(model, output_path: str) -> None:
                         c_name,
                         color=(42/255.0, 42/255.0, 61/255.0),
                         fontsize=8 * dpi_factor * 2,
-                        fontname="cjk",
+                        fontname=page_font,
                         fill_opacity=1.0,
                     )
                     
@@ -496,7 +529,7 @@ def export_pdf_document(model, output_path: str) -> None:
                         count_text,
                         color=(46/255.0, 125/255.0, 50/255.0),
                         fontsize=8 * dpi_factor * 2,
-                        fontname="helv",
+                        fontname=page_font,
                         fill_opacity=1.0,
                     )
                     
