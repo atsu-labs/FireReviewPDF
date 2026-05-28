@@ -797,7 +797,7 @@ class MainWindow(QMainWindow):
     def on_label_moved(self, item_id, delta):
         for ann in self.model.annotations:
             if ann.id == item_id:
-                offset = getattr(ann, "label_offset", [0.0, 0.0])
+                offset = getattr(ann, "label_offset", None) or [0.0, 0.0]
                 ann.label_offset = [offset[0] + delta.x(), offset[1] + delta.y()]
                 break
 
