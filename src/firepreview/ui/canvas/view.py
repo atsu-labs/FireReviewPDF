@@ -680,6 +680,8 @@ class PDFCanvas(QGraphicsView):
         text_item.setAcceptHoverEvents(True)
         text_item.setDefaultTextColor(QColor(color))
         
+        if font_size <= 0:
+            font_size = 12
         font = QFont(font_family, font_size)
         text_item.setFont(font)
         
@@ -789,7 +791,9 @@ class PDFCanvas(QGraphicsView):
                     if "font_family" in attrs:
                         font.setFamily(attrs["font_family"])
                     if "font_size" in attrs:
-                        font.setPointSize(attrs["font_size"])
+                        fs = attrs["font_size"]
+                        if fs > 0:
+                            font.setPointSize(fs)
                     txt.setFont(font)
 
                     if "text" in attrs:
@@ -813,6 +817,8 @@ class PDFCanvas(QGraphicsView):
                     color_str = item.pen().color().name() if hasattr(item, 'pen') else "#7c4dff"
                     ff = attrs.get("font_family", "Arial")
                     fs = attrs.get("font_size", 12)
+                    if fs <= 0:
+                        fs = 12
                     if isinstance(item, QGraphicsEllipseItem):
                         r = item.rect()
                         tx, ty = r.center().x(), r.top() - 15
