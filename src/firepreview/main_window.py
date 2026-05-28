@@ -145,6 +145,7 @@ class MainWindow(QMainWindow):
         self.canvas.item_selected.connect(self.on_item_selected)
         self.canvas.selection_cleared.connect(self.on_selection_cleared)
         self.canvas.item_moved.connect(self.on_item_moved)
+        self.canvas.label_moved.connect(self.on_label_moved)
         self.canvas.text_editing_finished.connect(self.on_text_editing_finished)
         self.canvas.request_tool_change.connect(self.on_request_tool_change)
         self.canvas.existing_text_edited.connect(self.on_existing_text_edited)
@@ -343,6 +344,33 @@ class MainWindow(QMainWindow):
     def _update_canvas_shape_defaults(self):
         self.canvas.set_shape_defaults(self.current_shape_color, self.current_line_width, self.current_fill_color)
 
+    def _calculate_annotation_values(self, ann, sf):
+        if ann.type in ("line", "polyline") and len(ann.points) >= 2:
+            total = sum(
+                math.sqrt((ann.points[i+1].x() - ann.points[i].x())**2 +
+                          (ann.points[i+1].y() - ann.points[i].y())**2)
+                * sf
+                for i in range(len(ann.points) - 1)
+            )
+            ann.real_value = total
+            ann.text = self._format_distance(total)
+        elif ann.type == "polygon" and len(ann.points) >= 3:
+            area_mm2 = self.model.calculate_real_area(ann.points, sf)
+            ann.real_value = area_mm2
+            ann.text = self._format_area(area_mm2)
+        elif ann.type == "circle":
+            radius_px = ann.radius_px if ann.radius_px > 0 else (ann.real_value / sf if ann.real_value > 0 else 0)
+            radius_mm = radius_px * sf
+            ann.real_value = radius_mm
+            ann.text = self._format_radius(radius_mm)
+
+    def _recalculate_all_annotations(self):
+        for ann in self.model.annotations:
+            sf = self._get_scale_factor_for_page(ann.page_num)
+            if sf <= 0:
+                continue
+            self._calculate_annotation_values(ann, sf)
+
     # --- 単位フォーマットヘルパー ---
     def _format_distance(self, value_mm):
         if self.model.unit == 'm':
@@ -483,6 +511,7 @@ class MainWindow(QMainWindow):
         self.set_tool(ToolMode.CALIBRATE, None)
 
     def _on_pref_settings_updated(self):
+        self._recalculate_all_annotations()
         self._update_scale_status_label()
         self.update_page_view()
 
@@ -524,6 +553,7 @@ class MainWindow(QMainWindow):
             total_pages = self.pdf_handler.get_page_count() if self.pdf_handler else 1
             
             if self.model.set_calibration(p1, p2, dist_mm, self.current_page, all_pages=all_pages, total_pages=total_pages):
+                self._recalculate_all_annotations()
                 QMessageBox.information(self, "完了", "キャリブレーションが完了しました。")
                 self._update_scale_status_label()
                 self.update_page_view()
@@ -614,24 +644,7 @@ class MainWindow(QMainWindow):
             return
         for ann in self.model.annotations:
             if ann.id == item_id:
-                if ann.type == "polyline" and len(ann.points) >= 2:
-                    total = sum(
-                        math.sqrt((ann.points[i+1].x() - ann.points[i].x())**2 +
-                                  (ann.points[i+1].y() - ann.points[i].y())**2)
-                        * current_scale_factor
-                        for i in range(len(ann.points) - 1)
-                    )
-                    ann.real_value = total
-                    ann.text = self._format_distance(total)
-                elif ann.type == "polygon" and len(ann.points) >= 3:
-                    area_mm2 = self.model.calculate_real_area(ann.points, current_scale_factor)
-                    ann.real_value = area_mm2
-                    ann.text = self._format_area(area_mm2)
-                elif ann.type == "circle":
-                    radius_px = ann.radius_px if ann.radius_px > 0 else (ann.real_value / current_scale_factor if ann.real_value > 0 else 0)
-                    radius_mm = radius_px * current_scale_factor
-                    ann.real_value = radius_mm
-                    ann.text = self._format_radius(radius_mm)
+                self._calculate_annotation_values(ann, current_scale_factor)
                 self.canvas.update_item_properties(item_id, {"text": ann.text})
                 self.prop_panel.set_item_data(ann.id, ann.type, ann.text, ann.color,
                                               ann.font_family, ann.font_size, ann.line_width,
@@ -781,6 +794,13 @@ class MainWindow(QMainWindow):
                     self.canvas.update_item_properties(item_id, attrs)
                 break
 
+    def on_label_moved(self, item_id, delta):
+        for ann in self.model.annotations:
+            if ann.id == item_id:
+                offset = getattr(ann, "label_offset", None) or [0.0, 0.0]
+                ann.label_offset = [offset[0] + delta.x(), offset[1] + delta.y()]
+                break
+
     def on_node_edit_toggled(self, item_id, active):
         if active:
             self.canvas.start_node_editing(item_id)
@@ -878,11 +898,11 @@ class MainWindow(QMainWindow):
             for ann in self.model.annotations:
                 if ann.page_num == self.current_page:
                     if ann.type == "line":
-                        self.canvas.add_line_annotation(ann.points[0], ann.points[1], text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity)
+                        self.canvas.add_line_annotation(ann.points[0], ann.points[1], text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity, label_offset=getattr(ann, "label_offset", [0.0, 0.0]))
                     elif ann.type == "polyline":
-                        self.canvas.add_polyline_annotation(ann.points, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity, start_marker=ann.start_marker, end_marker=ann.end_marker)
+                        self.canvas.add_polyline_annotation(ann.points, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity, start_marker=ann.start_marker, end_marker=ann.end_marker, label_offset=getattr(ann, "label_offset", [0.0, 0.0]))
                     elif ann.type == "polygon":
-                        self.canvas.add_polygon_annotation(ann.points, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity, fill_color=ann.fill_color)
+                        self.canvas.add_polygon_annotation(ann.points, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity, fill_color=ann.fill_color, label_offset=getattr(ann, "label_offset", [0.0, 0.0]))
                     elif ann.type == "circle":
                         current_scale_factor = self._get_current_scale_factor()
                         if ann.radius_px > 0:
@@ -891,7 +911,7 @@ class MainWindow(QMainWindow):
                             radius_px = ann.real_value / current_scale_factor
                         else:
                             radius_px = 0
-                        self.canvas.add_circle_annotation(ann.points[0], radius_px, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity, fill_color=ann.fill_color, center_marker=ann.center_marker)
+                        self.canvas.add_circle_annotation(ann.points[0], radius_px, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity, fill_color=ann.fill_color, center_marker=ann.center_marker, label_offset=getattr(ann, "label_offset", [0.0, 0.0]))
                     elif ann.type == "text":
                         leader_end = ann.points[1] if len(ann.points) >= 2 else None
                         self.canvas.add_text_annotation(ann.points[0], ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, stroke_opacity=ann.stroke_opacity,

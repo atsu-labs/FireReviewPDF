@@ -2,7 +2,7 @@ import math
 from PySide6.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, 
                                  QGraphicsLineItem, QGraphicsTextItem, QGraphicsEllipseItem, 
                                  QGraphicsPolygonItem, QGraphicsPathItem, QMenu, QGraphicsItem)
-from PySide6.QtCore import Qt, Signal, QPointF, QRectF
+from PySide6.QtCore import Qt, Signal, QPointF, QRectF, QEvent
 from PySide6.QtGui import QPainter, QPen, QColor, QPolygonF, QAction, QFont, QPainterPath
 
 from .items import CustomTextItem, VertexHandleItem
@@ -21,6 +21,7 @@ class PDFCanvas(QGraphicsView):
     item_selected = Signal(str) # id
     selection_cleared = Signal()
     item_moved = Signal(str, QPointF) # id, delta
+    label_moved = Signal(str, QPointF) # id, delta
     request_delete = Signal(str) # id
     request_tool_change = Signal(int) # next_mode
     zoom_changed = Signal(float)  # 現在のキャンバス拡大率（1.0 = 等倍）
@@ -76,6 +77,7 @@ class PDFCanvas(QGraphicsView):
         # 頂点編集用の状態管理
         self.editing_node_item_id = None
         self.vertex_handles = []
+        self.editing_label_item_id = None
 
         # 個別オブジェクト移動・編集モード用の状態管理
         self.active_edit_mode = False
@@ -95,6 +97,9 @@ class PDFCanvas(QGraphicsView):
             ToolMode.CALIBRATE: CalibrationTool(self),
             ToolMode.DRAW_MARKER: MarkerTool(self)
         }
+        
+        self.hover_connection_line = None
+        self.scene.installEventFilter(self)
 
     def _get_active_tool(self):
         return self.tools.get(self.tool_mode)
@@ -116,6 +121,9 @@ class PDFCanvas(QGraphicsView):
     def set_tool_mode(self, mode):
         if self.tool_mode == ToolMode.SELECT and mode != ToolMode.SELECT:
             self.end_node_editing()
+            self.end_label_editing()
+        elif mode != ToolMode.SELECT:
+            self.end_label_editing()
         self.tool_mode = mode
         self.temp_points = []
         self._clear_temp_items()
@@ -195,8 +203,13 @@ class PDFCanvas(QGraphicsView):
         for item in self.scene.items():
             if item == self.background_item: continue
             if item.data(0):
-                item.setFlag(QGraphicsItem.ItemIsSelectable, interactive)
-                item.setFlag(QGraphicsItem.ItemIsMovable, interactive)
+                if item.data(3) == "label":
+                    is_editing = (self.editing_label_item_id == item.data(0))
+                    item.setFlag(QGraphicsItem.ItemIsSelectable, interactive and is_editing)
+                    item.setFlag(QGraphicsItem.ItemIsMovable, interactive and is_editing)
+                else:
+                    item.setFlag(QGraphicsItem.ItemIsSelectable, interactive)
+                    item.setFlag(QGraphicsItem.ItemIsMovable, interactive)
 
     def _clear_temp_items(self):
         def _safe_remove(item):
@@ -362,18 +375,24 @@ class PDFCanvas(QGraphicsView):
         super().mouseDoubleClickEvent(event)
 
     def keyPressEvent(self, event):
-        if self.tool_mode == ToolMode.SELECT and self.editing_node_item_id:
-            if event.key() in [Qt.Key_Delete, Qt.Key_Backspace]:
-                selected = self.scene.selectedItems()
-                for sel in selected:
-                    if isinstance(sel, VertexHandleItem):
-                        self.on_vertex_double_clicked(sel.parent_item, sel.index)
-                        event.accept()
-                        return
-            elif event.key() == Qt.Key_Escape:
-                self.end_node_editing()
-                event.accept()
-                return
+        if self.tool_mode == ToolMode.SELECT:
+            if self.editing_node_item_id:
+                if event.key() in [Qt.Key_Delete, Qt.Key_Backspace]:
+                    selected = self.scene.selectedItems()
+                    for sel in selected:
+                        if isinstance(sel, VertexHandleItem):
+                            self.on_vertex_double_clicked(sel.parent_item, sel.index)
+                            event.accept()
+                            return
+                elif event.key() == Qt.Key_Escape:
+                    self.end_node_editing()
+                    event.accept()
+                    return
+            elif self.editing_label_item_id:
+                if event.key() == Qt.Key_Escape:
+                    self.end_label_editing()
+                    event.accept()
+                    return
         super().keyPressEvent(event)
 
     def _start_inline_text_editing(self, pos):
@@ -412,8 +431,9 @@ class PDFCanvas(QGraphicsView):
 
     # === Annotation rendering API methods ===
 
-    def add_line_annotation(self, p1, p2, text="", color="red", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100):
+    def add_line_annotation(self, p1, p2, text="", color="red", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, label_offset=None):
         line = QGraphicsLineItem(p1.x(), p1.y(), p2.x(), p2.y())
+        line.setAcceptHoverEvents(True)
         stroke_c = QColor(color)
         stroke_c.setAlpha(round(stroke_opacity / 100.0 * 255))
         pen = QPen(stroke_c, line_width)
@@ -424,14 +444,23 @@ class PDFCanvas(QGraphicsView):
             line.setData(1, QPointF(0,0))
         self.scene.addItem(line)
         
-        txt_item = self._add_text_item(text, (p1.x() + p2.x()) / 2, (p1.y() + p2.y()) / 2, color, font_family, font_size)
+        offset = QPointF(label_offset[0], label_offset[1]) if label_offset else QPointF(0, 0)
+        ref_pos = QPointF((p1.x() + p2.x()) / 2, (p1.y() + p2.y()) / 2)
+        txt_item = self._add_text_item(text, ref_pos.x() + offset.x(), ref_pos.y() + offset.y(), color, font_family, font_size)
         if txt_item:
             txt_item.setParentItem(line)
+            txt_item.label_offset = offset
+            txt_item.setData(0, item_id)
+            txt_item.setData(3, "label")
+            interactive = (self.tool_mode == ToolMode.SELECT)
+            is_editing = (self.editing_label_item_id == item_id)
+            txt_item.setFlag(QGraphicsItem.ItemIsSelectable, interactive and is_editing)
+            txt_item.setFlag(QGraphicsItem.ItemIsMovable, interactive and is_editing)
             
         if item_id:
             self.annotation_items[item_id] = line
 
-    def add_polyline_annotation(self, points, text="", color="#7c4dff", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, start_marker="", end_marker=""):
+    def add_polyline_annotation(self, points, text="", color="#7c4dff", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, start_marker="", end_marker="", label_offset=None):
         if not points:
             return
         path = QPainterPath()
@@ -439,6 +468,7 @@ class PDFCanvas(QGraphicsView):
         for pt in points[1:]:
             path.lineTo(pt)
         item = QGraphicsPathItem(path)
+        item.setAcceptHoverEvents(True)
         stroke_c = QColor(color)
         stroke_c.setAlpha(round(stroke_opacity / 100.0 * 255))
         pen = QPen(stroke_c, line_width)
@@ -457,17 +487,27 @@ class PDFCanvas(QGraphicsView):
                 self._draw_endpoint_marker(item, points[-1], points[-2], end_marker, color)
 
         if text:
-            mid_idx = len(points) // 2
-            mid = points[mid_idx]
-            txt_item = self._add_text_item(text, mid.x(), mid.y(), color, font_family, font_size)
+            offset = QPointF(label_offset[0], label_offset[1]) if label_offset else QPointF(0, 0)
+            avg_x = sum(p.x() for p in points) / len(points)
+            avg_y = sum(p.y() for p in points) / len(points)
+            ref_pos = QPointF(avg_x, avg_y)
+            txt_item = self._add_text_item(text, ref_pos.x() + offset.x(), ref_pos.y() + offset.y(), color, font_family, font_size)
             if txt_item:
                 txt_item.setParentItem(item)
+                txt_item.label_offset = offset
+                txt_item.setData(0, item_id)
+                txt_item.setData(3, "label")
+                interactive = (self.tool_mode == ToolMode.SELECT)
+                is_editing = (self.editing_label_item_id == item_id)
+                txt_item.setFlag(QGraphicsItem.ItemIsSelectable, interactive and is_editing)
+                txt_item.setFlag(QGraphicsItem.ItemIsMovable, interactive and is_editing)
                 
         if item_id:
             self.annotation_items[item_id] = item
 
-    def add_polygon_annotation(self, points, text="", color="blue", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, fill_opacity=30, fill_color=""):
+    def add_polygon_annotation(self, points, text="", color="blue", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, fill_opacity=30, fill_color="", label_offset=None):
         poly = QGraphicsPolygonItem(QPolygonF(points))
+        poly.setAcceptHoverEvents(True)
         stroke_c = QColor(color)
         stroke_c.setAlpha(round(stroke_opacity / 100.0 * 255))
         pen = QPen(stroke_c, line_width)
@@ -484,17 +524,26 @@ class PDFCanvas(QGraphicsView):
             poly.setData(1, QPointF(0,0))
         self.scene.addItem(poly)
         
+        offset = QPointF(label_offset[0], label_offset[1]) if label_offset else QPointF(0, 0)
         avg_x = sum(p.x() for p in points) / len(points)
         avg_y = sum(p.y() for p in points) / len(points)
-        txt_item = self._add_text_item(text, avg_x, avg_y, color, font_family, font_size)
+        txt_item = self._add_text_item(text, avg_x + offset.x(), avg_y + offset.y(), color, font_family, font_size)
         if txt_item:
             txt_item.setParentItem(poly)
+            txt_item.label_offset = offset
+            txt_item.setData(0, item_id)
+            txt_item.setData(3, "label")
+            interactive = (self.tool_mode == ToolMode.SELECT)
+            is_editing = (self.editing_label_item_id == item_id)
+            txt_item.setFlag(QGraphicsItem.ItemIsSelectable, interactive and is_editing)
+            txt_item.setFlag(QGraphicsItem.ItemIsMovable, interactive and is_editing)
             
         if item_id:
             self.annotation_items[item_id] = poly
 
-    def add_circle_annotation(self, center, radius_px, text="", color="green", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, fill_opacity=30, fill_color="", center_marker=""):
+    def add_circle_annotation(self, center, radius_px, text="", color="green", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, fill_opacity=30, fill_color="", center_marker="", label_offset=None):
         circle = QGraphicsEllipseItem(center.x() - radius_px, center.y() - radius_px, radius_px * 2, radius_px * 2)
+        circle.setAcceptHoverEvents(True)
         stroke_c = QColor(color)
         stroke_c.setAlpha(round(stroke_opacity / 100.0 * 255))
         pen = QPen(stroke_c, line_width)
@@ -515,9 +564,18 @@ class PDFCanvas(QGraphicsView):
             cx, cy = center.x(), center.y()
             self._draw_center_marker(circle, cx, cy, center_marker, color)
         
-        txt_item = self._add_text_item(text, center.x(), center.y() - radius_px - 10, color, font_family, font_size)
+        offset = QPointF(label_offset[0], label_offset[1]) if label_offset else QPointF(0, 0)
+        ref_pos = QPointF(center.x(), center.y() - radius_px - 10)
+        txt_item = self._add_text_item(text, ref_pos.x() + offset.x(), ref_pos.y() + offset.y(), color, font_family, font_size)
         if txt_item:
             txt_item.setParentItem(circle)
+            txt_item.label_offset = offset
+            txt_item.setData(0, item_id)
+            txt_item.setData(3, "label")
+            interactive = (self.tool_mode == ToolMode.SELECT)
+            is_editing = (self.editing_label_item_id == item_id)
+            txt_item.setFlag(QGraphicsItem.ItemIsSelectable, interactive and is_editing)
+            txt_item.setFlag(QGraphicsItem.ItemIsMovable, interactive and is_editing)
             
         if item_id:
             self.annotation_items[item_id] = circle
@@ -619,8 +677,11 @@ class PDFCanvas(QGraphicsView):
     def _add_text_item(self, text, x, y, color, font_family="Arial", font_size=12):
         if not text: return None
         text_item = CustomTextItem(text)
+        text_item.setAcceptHoverEvents(True)
         text_item.setDefaultTextColor(QColor(color))
         
+        if font_size <= 0:
+            font_size = 12
         font = QFont(font_family, font_size)
         text_item.setFont(font)
         
@@ -641,6 +702,8 @@ class PDFCanvas(QGraphicsView):
     def update_item_properties(self, item_id, attrs):
         for item in self.scene.items():
             if item.data(0) == item_id:
+                if item.parentItem() and item.parentItem().data(0) == item_id:
+                    continue
                 from .items import MarkerItem
                 if isinstance(item, MarkerItem):
                     if "color" in attrs:
@@ -728,7 +791,9 @@ class PDFCanvas(QGraphicsView):
                     if "font_family" in attrs:
                         font.setFamily(attrs["font_family"])
                     if "font_size" in attrs:
-                        font.setPointSize(attrs["font_size"])
+                        fs = attrs["font_size"]
+                        if fs > 0:
+                            font.setPointSize(fs)
                     txt.setFont(font)
 
                     if "text" in attrs:
@@ -752,6 +817,8 @@ class PDFCanvas(QGraphicsView):
                     color_str = item.pen().color().name() if hasattr(item, 'pen') else "#7c4dff"
                     ff = attrs.get("font_family", "Arial")
                     fs = attrs.get("font_size", 12)
+                    if fs <= 0:
+                        fs = 12
                     if isinstance(item, QGraphicsEllipseItem):
                         r = item.rect()
                         tx, ty = r.center().x(), r.top() - 15
@@ -769,6 +836,13 @@ class PDFCanvas(QGraphicsView):
                     txt_new = self._add_text_item(attrs["text"], tx, ty, color_str, ff, fs)
                     if txt_new:
                         txt_new.setParentItem(item)
+                        txt_new.label_offset = QPointF(0, 0)
+                        txt_new.setData(0, item_id)
+                        txt_new.setData(3, "label")
+                        interactive = (self.tool_mode == ToolMode.SELECT)
+                        is_editing = (self.editing_label_item_id == item_id)
+                        txt_new.setFlag(QGraphicsItem.ItemIsSelectable, interactive and is_editing)
+                        txt_new.setFlag(QGraphicsItem.ItemIsMovable, interactive and is_editing)
                 
                 self.scene.update()
                 self.viewport().update()
@@ -797,6 +871,8 @@ class PDFCanvas(QGraphicsView):
         target_item = None
         for item in self.scene.items():
             if item.data(0) == item_id:
+                if item.parentItem() and item.parentItem().data(0) == item_id:
+                    continue
                 target_item = item
                 break
         if not target_item:
@@ -834,10 +910,52 @@ class PDFCanvas(QGraphicsView):
         
         for item in self.scene.items():
             if item.data(0) == ended_id:
+                if item.parentItem() and item.parentItem().data(0) == ended_id:
+                    continue
                 if self.tool_mode == ToolMode.SELECT:
                     item.setFlag(QGraphicsItem.ItemIsMovable, True)
                 break
         self.node_edit_ended.emit(ended_id)
+        self.viewport().update()
+
+    def start_label_editing(self, item_id):
+        self.end_label_editing()
+        self.end_node_editing()
+        self.editing_label_item_id = item_id
+        
+        self.scene.clearSelection()
+        self._set_items_interactive(False)
+        
+        target_label = None
+        for item in self.scene.items():
+            if item.data(0) == item_id:
+                if isinstance(item, CustomTextItem) and item.data(3) == "label":
+                    target_label = item
+                    break
+        
+        if target_label:
+            target_label.setFlag(QGraphicsItem.ItemIsSelectable, True)
+            target_label.setFlag(QGraphicsItem.ItemIsMovable, True)
+            target_label.setSelected(True)
+            target_label.set_border(True, "#7c4dff", 2)
+            
+        self.viewport().update()
+
+    def end_label_editing(self):
+        if not self.editing_label_item_id:
+            return
+        ended_id = self.editing_label_item_id
+        self.editing_label_item_id = None
+        
+        for item in self.scene.items():
+            if item.data(0) == ended_id:
+                if isinstance(item, CustomTextItem) and item.data(3) == "label":
+                    item.set_border(False)
+                    item.setSelected(False)
+                    break
+                    
+        interactive = (self.tool_mode == ToolMode.SELECT)
+        self._set_items_interactive(interactive)
         self.viewport().update()
 
     def _get_item_points(self, item):
@@ -871,27 +989,33 @@ class PDFCanvas(QGraphicsView):
         if isinstance(item, QGraphicsLineItem):
             if len(points) >= 2:
                 item.setLine(points[0].x(), points[0].y(), points[1].x(), points[1].y())
+                ref_pos = QPointF((points[0].x() + points[1].x()) / 2, (points[0].y() + points[1].y()) / 2)
                 for child in item.childItems():
-                    if isinstance(child, CustomTextItem):
-                        child.setPos((points[0].x() + points[1].x()) / 2, (points[0].y() + points[1].y()) / 2)
+                    if isinstance(child, CustomTextItem) and child.data(3) == "label":
+                        offset = getattr(child, "label_offset", QPointF(0, 0))
+                        child.setPos(ref_pos + offset)
         elif isinstance(item, QGraphicsPolygonItem):
             item.setPolygon(QPolygonF(points))
             avg_x = sum(p.x() for p in points) / len(points)
             avg_y = sum(p.y() for p in points) / len(points)
+            ref_pos = QPointF(avg_x, avg_y)
             for child in item.childItems():
-                if isinstance(child, CustomTextItem):
-                    child.setPos(avg_x, avg_y)
+                if isinstance(child, CustomTextItem) and child.data(3) == "label":
+                    offset = getattr(child, "label_offset", QPointF(0, 0))
+                    child.setPos(ref_pos + offset)
         elif isinstance(item, QGraphicsPathItem):
             path = QPainterPath()
             path.moveTo(points[0])
             for pt in points[1:]:
                 path.lineTo(pt)
             item.setPath(path)
-            mid_idx = len(points) // 2
-            mid = points[mid_idx]
+            avg_x = sum(p.x() for p in points) / len(points)
+            avg_y = sum(p.y() for p in points) / len(points)
+            ref_pos = QPointF(avg_x, avg_y)
             for child in item.childItems():
-                if isinstance(child, CustomTextItem):
-                    child.setPos(mid.x(), mid.y())
+                if isinstance(child, CustomTextItem) and child.data(3) == "label":
+                    offset = getattr(child, "label_offset", QPointF(0, 0))
+                    child.setPos(ref_pos + offset)
         elif isinstance(item, CustomTextItem):
             if len(points) >= 1:
                 item.setPos(points[0])
@@ -917,6 +1041,11 @@ class PDFCanvas(QGraphicsView):
         edit_action = QAction("📐 頂点を編集", self)
         edit_action.triggered.connect(lambda: self.start_node_editing(item_id))
         menu.addAction(edit_action)
+        
+        label_action = QAction("🏷️ ラベル位置を調整", self)
+        label_action.triggered.connect(lambda: self.start_label_editing(item_id))
+        menu.addAction(label_action)
+        
         delete_action = QAction("❌ 削除", self)
         delete_action.triggered.connect(lambda: self.request_delete.emit(item_id))
         menu.addAction(delete_action)
@@ -985,3 +1114,92 @@ class PDFCanvas(QGraphicsView):
                 best_proj = proj
                 
         return best_idx, best_proj, best_dist
+
+    def eventFilter(self, watched, event):
+        if self.hover_connection_line is not None:
+            try:
+                self.hover_connection_line.scene()
+            except RuntimeError:
+                self.hover_connection_line = None
+        if watched == self.scene:
+            if event.type() in (QEvent.GraphicsSceneHoverEnter, QEvent.GraphicsSceneHoverMove):
+                pos = event.scenePos()
+                item = self.scene.itemAt(pos, self.transform())
+                
+                shape_item = None
+                label_item = None
+                
+                if item and item != self.background_item:
+                    if isinstance(item, CustomTextItem) and item.data(3) == "label":
+                        label_item = item
+                        shape_item = item.parentItem()
+                    elif item.data(0):
+                        shape_item = item
+                        for child in item.childItems():
+                            if isinstance(child, CustomTextItem) and child.data(3) == "label":
+                                label_item = child
+                                break
+                                
+                if shape_item and label_item:
+                    ref_pos = self._get_shape_ref_pos(shape_item)
+                    if ref_pos is not None:
+                        offset = getattr(label_item, "label_offset", QPointF(0, 0))
+                        if offset.x() != 0 or offset.y() != 0:
+                            ref_scene_pos = shape_item.mapToScene(ref_pos)
+                            label_br = label_item.boundingRect()
+                            label_scene_center = label_item.mapToScene(label_br.center())
+                            
+                            if not self.hover_connection_line:
+                                self.hover_connection_line = QGraphicsLineItem()
+                                pen = QPen(label_item.defaultTextColor(), 1.25, Qt.DashLine)
+                                pen.setCosmetic(True)
+                                self.hover_connection_line.setPen(pen)
+                                self.hover_connection_line.setZValue(10)
+                                self.scene.addItem(self.hover_connection_line)
+                            
+                            self.hover_connection_line.setLine(
+                                label_scene_center.x(), label_scene_center.y(),
+                                ref_scene_pos.x(), ref_scene_pos.y()
+                            )
+                            self.hover_connection_line.setVisible(True)
+                            return super().eventFilter(watched, event)
+                            
+                if self.hover_connection_line:
+                    self.hover_connection_line.setVisible(False)
+                    
+            elif event.type() == QEvent.GraphicsSceneHoverLeave:
+                if self.hover_connection_line:
+                    self.hover_connection_line.setVisible(False)
+                    
+        return super().eventFilter(watched, event)
+
+    def _get_shape_ref_pos(self, item):
+        if isinstance(item, QGraphicsLineItem):
+            line = item.line()
+            return QPointF((line.x1() + line.x2()) / 2, (line.y1() + line.y2()) / 2)
+        elif isinstance(item, QGraphicsPolygonItem):
+            poly = item.polygon()
+            if poly.isEmpty():
+                return None
+            avg_x = sum(p.x() for p in poly) / len(poly)
+            avg_y = sum(p.y() for p in poly) / len(poly)
+            return QPointF(avg_x, avg_y)
+        elif isinstance(item, QGraphicsPathItem):
+            path = item.path()
+            n = path.elementCount()
+            if n == 0:
+                return None
+            pts = []
+            for i in range(n):
+                elem = path.elementAt(i)
+                pts.append(QPointF(elem.x, elem.y))
+            avg_x = sum(p.x() for p in pts) / len(pts)
+            avg_y = sum(p.y() for p in pts) / len(pts)
+            return QPointF(avg_x, avg_y)
+        elif isinstance(item, QGraphicsEllipseItem):
+            r = item.rect()
+            cx = r.center().x()
+            cy = r.center().y()
+            radius = r.width() / 2
+            return QPointF(cx, cy - radius - 10)
+        return None

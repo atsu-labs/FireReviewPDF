@@ -1,7 +1,7 @@
 from PySide6.QtCore import Qt, QPointF
-from PySide6.QtWidgets import QGraphicsLineItem, QGraphicsPathItem, QGraphicsPolygonItem, QGraphicsItem
+from PySide6.QtWidgets import QGraphicsLineItem, QGraphicsPathItem, QGraphicsPolygonItem, QGraphicsItem, QGraphicsEllipseItem
 from .base_tool import BaseCanvasTool
-from ..items import VertexHandleItem
+from ..items import VertexHandleItem, CustomTextItem
 
 class SelectTool(BaseCanvasTool):
     def mouse_press(self, event, scene):
@@ -32,7 +32,7 @@ class SelectTool(BaseCanvasTool):
                 while item and not item.data(0) and item.parentItem():
                     item = item.parentItem()
                 if item and item != self.canvas.background_item and item.data(0):
-                    if isinstance(item, (QGraphicsLineItem, QGraphicsPathItem, QGraphicsPolygonItem)):
+                    if isinstance(item, (QGraphicsLineItem, QGraphicsPathItem, QGraphicsPolygonItem, QGraphicsEllipseItem)):
                         self.canvas._show_object_context_menu(event.globalPosition().toPoint(), item.data(0))
                         event.accept()
                         return True
@@ -40,6 +40,19 @@ class SelectTool(BaseCanvasTool):
         elif event.button() == Qt.LeftButton:
             item = scene.itemAt(pos, self.canvas.transform())
             
+            # If editing label and clicked outside, finish label editing
+            if self.canvas.editing_label_item_id:
+                clicked_target = item
+                is_label_target = False
+                while clicked_target:
+                    if clicked_target.data(3) == "label" and clicked_target.data(0) == self.canvas.editing_label_item_id:
+                        is_label_target = True
+                        break
+                    clicked_target = clicked_target.parentItem()
+                if not is_label_target:
+                    self.canvas.end_label_editing()
+                    item = scene.itemAt(pos, self.canvas.transform())
+
             # If editing nodes and clicked outside, finish node editing
             if self.canvas.editing_node_item_id:
                 clicked_target = item
@@ -62,8 +75,14 @@ class SelectTool(BaseCanvasTool):
                                     
                 if not is_edit_target:
                     self.canvas.end_node_editing()
-                    item = None
+                    item = scene.itemAt(pos, self.canvas.transform())
             
+            # If the clicked item is a label, check if we are in label editing state
+            if item and isinstance(item, CustomTextItem) and item.data(3) == "label":
+                if self.canvas.editing_label_item_id != item.data(0):
+                    # Redirect to parent shape in normal select mode!
+                    item = item.parentItem()
+
             # Select item directly if hit
             while item and not item.data(0) and item.parentItem():
                 item = item.parentItem()
@@ -93,17 +112,22 @@ class SelectTool(BaseCanvasTool):
                 if item_id and last_pos is not None:
                     delta = item.pos() - last_pos
                     if not delta.isNull():
-                        if isinstance(item, (QGraphicsLineItem, QGraphicsPathItem, QGraphicsPolygonItem)):
-                            points = self.canvas._get_item_points(item)
-                            if points:
-                                moved_points = [p + delta for p in points]
-                                self.canvas._update_item_geometry(item, moved_points)
-                            item.setPos(0, 0)
-                            item.setData(1, QPointF(0, 0))
-                        else:
+                        if isinstance(item, CustomTextItem) and item.data(3) == "label":
+                            item.label_offset = getattr(item, "label_offset", QPointF(0, 0)) + delta
                             item.setData(1, item.pos())
-                        
-                        self.canvas.item_moved.emit(item_id, delta)
+                            self.canvas.label_moved.emit(item_id, delta)
+                        else:
+                            if isinstance(item, (QGraphicsLineItem, QGraphicsPathItem, QGraphicsPolygonItem)):
+                                points = self.canvas._get_item_points(item)
+                                if points:
+                                    moved_points = [p + delta for p in points]
+                                    item.setPos(0, 0)
+                                    self.canvas._update_item_geometry(item, moved_points)
+                                item.setData(1, QPointF(0, 0))
+                            else:
+                                item.setData(1, item.pos())
+                            
+                            self.canvas.item_moved.emit(item_id, delta)
             
             scene.update()
             self.canvas.viewport().update()

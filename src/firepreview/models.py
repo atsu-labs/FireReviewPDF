@@ -118,6 +118,7 @@ class Annotation:
         self.has_leader = False
         self.page_num = 0
         self.marker_style = "square"  # For marker type: "square" or "check"
+        self.label_offset = [0.0, 0.0]  # [dx, dy] label offset in pixels from default position
 
     def to_dict(self):
         from PySide6.QtCore import QPointF
@@ -149,7 +150,8 @@ class Annotation:
             "border_width": self.border_width,
             "has_leader": self.has_leader,
             "page_num": self.page_num,
-            "marker_style": self.marker_style
+            "marker_style": self.marker_style,
+            "label_offset": self.label_offset
         }
 
     @classmethod
@@ -178,4 +180,5 @@ class Annotation:
         ann.has_leader = data.get("has_leader", False)
         ann.page_num = data.get("page_num", 0)
         ann.marker_style = data.get("marker_style", "square")
+        ann.label_offset = data.get("label_offset", [0.0, 0.0])
         return ann
