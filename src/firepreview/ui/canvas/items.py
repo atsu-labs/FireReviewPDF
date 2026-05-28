@@ -220,6 +220,10 @@ class LegendItem(QGraphicsItem):
         self.marker_counts = {}  # {(style, color): count}
         self.color_names = {}  # {color_hex: name}
         
+        self.font_family = "Arial"
+        self.font_size = 12
+        self.color = "#7c4dff"
+        
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
         self.setFlag(QGraphicsItem.ItemIsMovable, True)
         self.setZValue(40)  # High Z-value (sits below handles/markers, above normal annotations)
@@ -235,8 +239,12 @@ class LegendItem(QGraphicsItem):
 
     def boundingRect(self):
         items = self.get_items_to_draw()
-        h = 32 + max(1, len(items)) * 30 + 10
-        return QRectF(0, 0, 200, h)
+        font_size = getattr(self, "font_size", 12)
+        row_h = max(20, int(font_size * 2.5))
+        title_h = max(24, int(font_size * 2.6))
+        w = max(150, int(font_size * 16.6))
+        h = title_h + max(1, len(items)) * row_h + 10
+        return QRectF(0, 0, w, h)
 
     def paint(self, painter, option, widget=None):
         painter.save()
@@ -245,44 +253,49 @@ class LegendItem(QGraphicsItem):
         items = self.get_items_to_draw()
         rect = self.boundingRect()
         
+        font_size = getattr(self, "font_size", 12)
+        scale = font_size / 12.0
+        
+        row_h = max(20, int(font_size * 2.5))
+        title_h = max(24, int(font_size * 2.6))
+        w = max(150, int(font_size * 16.6))
+        
         # 1. Glassmorphism Light Background: semi-transparent off-white/light gray
         bg_color = QColor("#f5f6f8")
         bg_color.setAlpha(240)  # semi-transparent
         
         # Draw background border and fill
         if self.isSelected():
-            border_pen = QPen(QColor("#7c4dff"), 2)
+            border_pen = QPen(QColor(self.color), 2)
         else:
             border_pen = QPen(QColor("#cccccc"), 1.2)
             
         border_pen.setCosmetic(True)
         painter.setPen(border_pen)
         painter.setBrush(bg_color)
-        painter.drawRoundedRect(rect, 8, 8)
+        painter.drawRoundedRect(rect, 8 * scale, 8 * scale)
         
-        # 2. Draw Title: "凡例" (Brand purple accent)
-        painter.setPen(QColor("#7c4dff"))
-        font_title = painter.font()
-        font_title.setPointSize(11)
-        font_title.setBold(True)
+        # 2. Draw Title: "凡例" (Brand purple accent / selected color)
+        painter.setPen(QColor(self.color))
+        font_title = QFont(self.font_family, max(6, int(font_size * 0.9)), QFont.Bold)
         painter.setFont(font_title)
-        painter.drawText(QRectF(15, 5, 150, 20), Qt.AlignLeft | Qt.AlignVCenter, "凡例")
+        
+        title_y = (title_h - max(10, int(font_size * 1.5))) / 2.0
+        painter.drawText(QRectF(15 * scale, title_y, 150 * scale, max(15, int(font_size * 1.8))), Qt.AlignLeft | Qt.AlignVCenter, "凡例")
         
         # Draw a thin light gray separator line below title
         painter.setPen(QPen(QColor("#dcdde1"), 1))
-        painter.drawLine(15, 26, 185, 26)
+        painter.drawLine(15 * scale, title_h - 4 * scale, w - 15 * scale, title_h - 4 * scale)
         
         # 3. Draw Items
-        font_item = painter.font()
-        font_item.setPointSize(9)
-        font_item.setBold(False)
+        font_item = QFont(self.font_family, max(5, int(font_size * 0.75)))
         painter.setFont(font_item)
         
-        y_offset = 32
+        y_offset = title_h
         
         if not items:
             painter.setPen(QColor("#888899"))
-            painter.drawText(QRectF(15, y_offset, 150, 20), Qt.AlignLeft | Qt.AlignVCenter, "マーカーなし")
+            painter.drawText(QRectF(15 * scale, y_offset, 150 * scale, row_h), Qt.AlignLeft | Qt.AlignVCenter, "マーカーなし")
         else:
             default_color_names = {
                 "#ff1744": "赤", "#2979ff": "青", "#00e676": "緑", "#ffd600": "黄", 
@@ -293,32 +306,34 @@ class LegendItem(QGraphicsItem):
             for (style, col), count in items:
                 # A. Draw marker icon (at exactly the same size as actual canvas markers)
                 painter.save()
-                # Center of the 30px row vertically, x=25 horizontally
-                painter.translate(25, y_offset + 12)
+                # Center of the row vertically, x=25 * scale horizontally
+                painter.translate(25 * scale, y_offset + row_h / 2.0)
                 c = QColor(col)
                 
                 if style == "square":
-                    painter.setPen(QPen(QColor("#ffffff"), 2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+                    ms = 20 * scale
+                    painter.setPen(QPen(QColor("#ffffff"), 2 * scale, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
                     painter.setBrush(c)
-                    painter.drawRoundedRect(QRectF(-10, -10, 20, 20), 3, 3)
+                    painter.drawRoundedRect(QRectF(-ms/2, -ms/2, ms, ms), 3 * scale, 3 * scale)
                     
                     # Inside solid border
-                    painter.setPen(QPen(c, 2))
+                    painter.setPen(QPen(c, 2 * scale))
                     painter.setBrush(Qt.NoBrush)
-                    painter.drawRoundedRect(QRectF(-10, -10, 20, 20), 3, 3)
+                    painter.drawRoundedRect(QRectF(-ms/2, -ms/2, ms, ms), 3 * scale, 3 * scale)
                     
                 elif style == "check":
                     bg_disk = QColor("#ffffff")
                     bg_disk.setAlpha(220)
-                    painter.setPen(QPen(c, 1.5))
+                    painter.setPen(QPen(c, 1.5 * scale))
                     painter.setBrush(bg_disk)
-                    painter.drawEllipse(QRectF(-11, -11, 22, 22))
+                    ms = 22 * scale
+                    painter.drawEllipse(QRectF(-ms/2, -ms/2, ms, ms))
                     
                     path = QPainterPath()
-                    path.moveTo(-6, 0)
-                    path.lineTo(-1.5, 4.5)
-                    path.lineTo(6, -3)
-                    pen = QPen(c, 3, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+                    path.moveTo(-6 * scale, 0)
+                    path.lineTo(-1.5 * scale, 4.5 * scale)
+                    path.lineTo(6 * scale, -3 * scale)
+                    pen = QPen(c, 3 * scale, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
                     painter.setPen(pen)
                     painter.setBrush(Qt.NoBrush)
                     painter.drawPath(path)
@@ -329,19 +344,20 @@ class LegendItem(QGraphicsItem):
                 c_name = self.color_names.get(col.lower(), default_color_names.get(col.lower(), col.upper()))
                 painter.setPen(QColor("#2a2a3d"))
                 metrics = painter.fontMetrics()
-                elided_name = metrics.elidedText(c_name, Qt.ElideRight, 115)
-                # Centered vertically in the 30px row
-                painter.drawText(QRectF(48, y_offset + 2, 115, 20), Qt.AlignLeft | Qt.AlignVCenter, elided_name)
+                elided_name = metrics.elidedText(c_name, Qt.ElideRight, int(115 * scale))
+                # Centered vertically in the row
+                painter.drawText(QRectF(48 * scale, y_offset + 2 * scale, 115 * scale, row_h - 4 * scale), Qt.AlignLeft | Qt.AlignVCenter, elided_name)
                 
                 # C. Count
                 painter.setPen(QColor("#2e7d32"))
-                font_count = painter.font()
-                font_count.setBold(True)
+                font_count = QFont(self.font_family, max(5, int(font_size * 0.75)), QFont.Bold)
                 painter.setFont(font_count)
-                painter.drawText(QRectF(155, y_offset + 2, 30, 20), Qt.AlignRight | Qt.AlignVCenter, f"{count}")
+                painter.drawText(QRectF(w - 45 * scale, y_offset + 2 * scale, 30 * scale, row_h - 4 * scale), Qt.AlignRight | Qt.AlignVCenter, f"{count}")
                 
-                y_offset += 30
-
+                # Restore original font for name in next iteration
+                painter.setFont(font_item)
+                
+                y_offset += row_h
                 
         painter.restore()
 

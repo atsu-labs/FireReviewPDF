@@ -676,9 +676,12 @@ class PDFCanvas(QGraphicsView):
             self.annotation_items[item_id] = item
         self.scene.addItem(item)
 
-    def add_legend_annotation(self, pos, item_id=None):
+    def add_legend_annotation(self, pos, item_id=None, font_family="Arial", font_size=12, color="#7c4dff"):
         from .items import LegendItem
         item = LegendItem(self)
+        item.font_family = font_family
+        item.font_size = font_size
+        item.color = color
         item.setPos(pos)
         if item_id:
             item.setData(0, item_id)
@@ -722,7 +725,20 @@ class PDFCanvas(QGraphicsView):
             if item.data(0) == item_id:
                 if item.parentItem() and item.parentItem().data(0) == item_id:
                     continue
-                from .items import MarkerItem
+                from .items import MarkerItem, LegendItem
+                if isinstance(item, LegendItem):
+                    if "font_family" in attrs:
+                        item.font_family = attrs["font_family"]
+                    if "font_size" in attrs:
+                        item.font_size = attrs["font_size"]
+                    if "color" in attrs:
+                        item.color = attrs["color"]
+                    item.prepareGeometryChange()
+                    item.update()
+                    self.scene.update()
+                    self.viewport().update()
+                    break
+
                 if isinstance(item, MarkerItem):
                     if "color" in attrs:
                         item.color = QColor(attrs["color"])

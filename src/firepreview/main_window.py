@@ -635,7 +635,14 @@ class MainWindow(QMainWindow):
 
     def on_legend_complete(self, pos):
         ann = self._add_to_model("legend", [pos])
-        self.canvas.add_legend_annotation(pos, item_id=ann.id)
+        ann.font_family = self.current_text_font
+        ann.font_size = self.current_text_size
+        ann.color = self.current_text_color
+        
+        self.canvas.add_legend_annotation(pos, item_id=ann.id,
+                                           font_family=ann.font_family,
+                                           font_size=ann.font_size,
+                                           color=ann.color)
         
         self.set_tool(ToolMode.SELECT)
         
@@ -987,7 +994,10 @@ class MainWindow(QMainWindow):
                     elif ann.type == "marker":
                         self.canvas.add_marker_annotation(ann.points[0], marker_style=getattr(ann, "marker_style", "square"), color=ann.color, stroke_opacity=ann.stroke_opacity, item_id=ann.id)
                     elif ann.type == "legend":
-                        self.canvas.add_legend_annotation(ann.points[0], item_id=ann.id)
+                        self.canvas.add_legend_annotation(ann.points[0], item_id=ann.id,
+                                                           font_family=getattr(ann, "font_family", "Arial"),
+                                                           font_size=getattr(ann, "font_size", 12),
+                                                           color=getattr(ann, "color", "#7c4dff"))
             self._update_scale_status_label()
             self._update_pdf_size_label()
             self.update_object_panel()

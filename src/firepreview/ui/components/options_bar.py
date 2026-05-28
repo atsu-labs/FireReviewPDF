@@ -257,10 +257,11 @@ class ToolOptionsBar(QFrame):
         has_line_markers = mode == ToolMode.DRAW_LINE
         has_circle_marker = mode == ToolMode.DRAW_CIRCLE_DRAG
 
-        if mode == ToolMode.TEXT:
+        if mode in [ToolMode.TEXT, ToolMode.DRAW_LEGEND]:
             self.default_opt_label.hide()
             self.shape_options_widget.hide()
             self.marker_options_widget.hide()
+            self.tool_continuous_check.setVisible(mode == ToolMode.TEXT)
             self.text_options_widget.show()
         elif mode == ToolMode.DRAW_MARKER:
             self.default_opt_label.hide()
