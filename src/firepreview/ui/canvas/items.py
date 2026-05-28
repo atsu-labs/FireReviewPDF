@@ -235,8 +235,8 @@ class LegendItem(QGraphicsItem):
 
     def boundingRect(self):
         items = self.get_items_to_draw()
-        h = 30 + max(1, len(items)) * 24 + 10
-        return QRectF(0, 0, 180, h)
+        h = 32 + max(1, len(items)) * 30 + 10
+        return QRectF(0, 0, 200, h)
 
     def paint(self, painter, option, widget=None):
         painter.save()
@@ -270,7 +270,7 @@ class LegendItem(QGraphicsItem):
         
         # Draw a thin light gray separator line below title
         painter.setPen(QPen(QColor("#dcdde1"), 1))
-        painter.drawLine(15, 26, 165, 26)
+        painter.drawLine(15, 26, 185, 26)
         
         # 3. Draw Items
         font_item = painter.font()
@@ -278,7 +278,7 @@ class LegendItem(QGraphicsItem):
         font_item.setBold(False)
         painter.setFont(font_item)
         
-        y_offset = 30
+        y_offset = 32
         
         if not items:
             painter.setPen(QColor("#888899"))
@@ -291,48 +291,57 @@ class LegendItem(QGraphicsItem):
             }
             
             for (style, col), count in items:
-                # A. Draw marker icon
+                # A. Draw marker icon (at exactly the same size as actual canvas markers)
                 painter.save()
-                painter.translate(22, y_offset + 10)
+                # Center of the 30px row vertically, x=25 horizontally
+                painter.translate(25, y_offset + 12)
                 c = QColor(col)
                 
                 if style == "square":
-                    painter.setPen(QPen(QColor("#ffffff"), 1.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+                    painter.setPen(QPen(QColor("#ffffff"), 2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
                     painter.setBrush(c)
-                    painter.drawRoundedRect(QRectF(-6, -6, 12, 12), 2, 2)
+                    painter.drawRoundedRect(QRectF(-10, -10, 20, 20), 3, 3)
+                    
+                    # Inside solid border
+                    painter.setPen(QPen(c, 2))
+                    painter.setBrush(Qt.NoBrush)
+                    painter.drawRoundedRect(QRectF(-10, -10, 20, 20), 3, 3)
+                    
                 elif style == "check":
                     bg_disk = QColor("#ffffff")
                     bg_disk.setAlpha(220)
-                    painter.setPen(QPen(c, 1))
+                    painter.setPen(QPen(c, 1.5))
                     painter.setBrush(bg_disk)
-                    painter.drawEllipse(QRectF(-7, -7, 14, 14))
+                    painter.drawEllipse(QRectF(-11, -11, 22, 22))
                     
                     path = QPainterPath()
-                    path.moveTo(-4, 0)
-                    path.lineTo(-1, 3)
-                    path.lineTo(4, -2)
-                    pen = QPen(c, 2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+                    path.moveTo(-6, 0)
+                    path.lineTo(-1.5, 4.5)
+                    path.lineTo(6, -3)
+                    pen = QPen(c, 3, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
                     painter.setPen(pen)
                     painter.setBrush(Qt.NoBrush)
                     painter.drawPath(path)
                     
                 painter.restore()
                 
-                # B. Color name (customized name if exists in color_names, else fallback) - Dark Gray text for contrast
+                # B. Color name (Elided to fit the wider column)
                 c_name = self.color_names.get(col.lower(), default_color_names.get(col.lower(), col.upper()))
                 painter.setPen(QColor("#2a2a3d"))
                 metrics = painter.fontMetrics()
-                elided_name = metrics.elidedText(c_name, Qt.ElideRight, 95)
-                painter.drawText(QRectF(38, y_offset, 95, 20), Qt.AlignLeft | Qt.AlignVCenter, elided_name)
+                elided_name = metrics.elidedText(c_name, Qt.ElideRight, 115)
+                # Centered vertically in the 30px row
+                painter.drawText(QRectF(48, y_offset + 2, 115, 20), Qt.AlignLeft | Qt.AlignVCenter, elided_name)
                 
-                # C. Count (Vibrant deep green for light background contrast)
+                # C. Count
                 painter.setPen(QColor("#2e7d32"))
                 font_count = painter.font()
                 font_count.setBold(True)
                 painter.setFont(font_count)
-                painter.drawText(QRectF(135, y_offset, 30, 20), Qt.AlignRight | Qt.AlignVCenter, f"{count}")
+                painter.drawText(QRectF(155, y_offset + 2, 30, 20), Qt.AlignRight | Qt.AlignVCenter, f"{count}")
                 
-                y_offset += 24
+                y_offset += 30
+
                 
         painter.restore()
 
