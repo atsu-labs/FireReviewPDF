@@ -647,11 +647,27 @@ class MainWindow(QMainWindow):
             self.model.page_color_names = {}
         if page_num not in self.model.page_color_names:
             self.model.page_color_names[page_num] = {}
-        self.model.page_color_names[page_num][color_hex.lower()] = new_name
+            
+        color_key = color_hex.lower()
+        old_name = self.model.page_color_names[page_num].get(color_key, "")
+        if old_name == new_name:
+            return
+            
+        self.model.page_color_names[page_num][color_key] = new_name
         
-        self.update_marker_summary()
+        # Update canvas legends
+        if hasattr(self, "canvas"):
+            marker_counts = {}
+            for ann in self.model.annotations:
+                if ann.page_num == self.current_page and ann.type == 'marker':
+                    style = getattr(ann, 'marker_style', 'square')
+                    color = (ann.color or "#7c4dff").lower()
+                    key = (style, color)
+                    marker_counts[key] = marker_counts.get(key, 0) + 1
+            
+            self.canvas.update_legends(marker_counts, self.model.page_color_names[page_num])
+            
         self.update_object_panel()
-        self.update_page_view()
 
     def update_marker_summary(self):
         if hasattr(self, "navigator") and hasattr(self, "model"):
