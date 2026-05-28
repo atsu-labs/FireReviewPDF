@@ -245,22 +245,22 @@ class LegendItem(QGraphicsItem):
         items = self.get_items_to_draw()
         rect = self.boundingRect()
         
-        # 1. Glassmorphism Background: semi-transparent dark gray
-        bg_color = QColor("#1e1e2d")
-        bg_color.setAlpha(220)  # semi-transparent
+        # 1. Glassmorphism Light Background: semi-transparent off-white/light gray
+        bg_color = QColor("#f5f6f8")
+        bg_color.setAlpha(240)  # semi-transparent
         
         # Draw background border and fill
         if self.isSelected():
             border_pen = QPen(QColor("#7c4dff"), 2)
         else:
-            border_pen = QPen(QColor("#3d3d5c"), 1.5)
+            border_pen = QPen(QColor("#cccccc"), 1.2)
             
         border_pen.setCosmetic(True)
         painter.setPen(border_pen)
         painter.setBrush(bg_color)
         painter.drawRoundedRect(rect, 8, 8)
         
-        # 2. Draw Title: "凡例"
+        # 2. Draw Title: "凡例" (Brand purple accent)
         painter.setPen(QColor("#7c4dff"))
         font_title = painter.font()
         font_title.setPointSize(11)
@@ -268,8 +268,8 @@ class LegendItem(QGraphicsItem):
         painter.setFont(font_title)
         painter.drawText(QRectF(15, 5, 150, 20), Qt.AlignLeft | Qt.AlignVCenter, "凡例")
         
-        # Draw a thin separator line below title
-        painter.setPen(QPen(QColor("#3d3d5c"), 1))
+        # Draw a thin light gray separator line below title
+        painter.setPen(QPen(QColor("#dcdde1"), 1))
         painter.drawLine(15, 26, 165, 26)
         
         # 3. Draw Items
@@ -318,15 +318,15 @@ class LegendItem(QGraphicsItem):
                     
                 painter.restore()
                 
-                # B. Color name (customized name if exists in color_names, else fallback)
+                # B. Color name (customized name if exists in color_names, else fallback) - Dark Gray text for contrast
                 c_name = self.color_names.get(col.lower(), default_color_names.get(col.lower(), col.upper()))
-                painter.setPen(QColor("#ffffff"))
+                painter.setPen(QColor("#2a2a3d"))
                 metrics = painter.fontMetrics()
                 elided_name = metrics.elidedText(c_name, Qt.ElideRight, 95)
                 painter.drawText(QRectF(38, y_offset, 95, 20), Qt.AlignLeft | Qt.AlignVCenter, elided_name)
                 
-                # C. Count
-                painter.setPen(QColor("#00e676"))
+                # C. Count (Vibrant deep green for light background contrast)
+                painter.setPen(QColor("#2e7d32"))
                 font_count = painter.font()
                 font_count.setBold(True)
                 painter.setFont(font_count)
@@ -335,5 +335,6 @@ class LegendItem(QGraphicsItem):
                 y_offset += 24
                 
         painter.restore()
+
 
 
