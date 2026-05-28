@@ -1110,6 +1110,11 @@ class PDFCanvas(QGraphicsView):
         return best_idx, best_proj, best_dist
 
     def eventFilter(self, watched, event):
+        if self.hover_connection_line is not None:
+            try:
+                self.hover_connection_line.scene()
+            except RuntimeError:
+                self.hover_connection_line = None
         if watched == self.scene:
             if event.type() in (QEvent.GraphicsSceneHoverEnter, QEvent.GraphicsSceneHoverMove):
                 pos = event.scenePos()

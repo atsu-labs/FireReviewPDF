@@ -344,30 +344,32 @@ class MainWindow(QMainWindow):
     def _update_canvas_shape_defaults(self):
         self.canvas.set_shape_defaults(self.current_shape_color, self.current_line_width, self.current_fill_color)
 
+    def _calculate_annotation_values(self, ann, sf):
+        if ann.type in ("line", "polyline") and len(ann.points) >= 2:
+            total = sum(
+                math.sqrt((ann.points[i+1].x() - ann.points[i].x())**2 +
+                          (ann.points[i+1].y() - ann.points[i].y())**2)
+                * sf
+                for i in range(len(ann.points) - 1)
+            )
+            ann.real_value = total
+            ann.text = self._format_distance(total)
+        elif ann.type == "polygon" and len(ann.points) >= 3:
+            area_mm2 = self.model.calculate_real_area(ann.points, sf)
+            ann.real_value = area_mm2
+            ann.text = self._format_area(area_mm2)
+        elif ann.type == "circle":
+            radius_px = ann.radius_px if ann.radius_px > 0 else (ann.real_value / sf if ann.real_value > 0 else 0)
+            radius_mm = radius_px * sf
+            ann.real_value = radius_mm
+            ann.text = self._format_radius(radius_mm)
+
     def _recalculate_all_annotations(self):
         for ann in self.model.annotations:
             sf = self._get_scale_factor_for_page(ann.page_num)
             if sf <= 0:
                 continue
-                
-            if ann.type in ("line", "polyline") and len(ann.points) >= 2:
-                total = sum(
-                    math.sqrt((ann.points[i+1].x() - ann.points[i].x())**2 +
-                              (ann.points[i+1].y() - ann.points[i].y())**2)
-                    * sf
-                    for i in range(len(ann.points) - 1)
-                )
-                ann.real_value = total
-                ann.text = self._format_distance(total)
-            elif ann.type == "polygon" and len(ann.points) >= 3:
-                area_mm2 = self.model.calculate_real_area(ann.points, sf)
-                ann.real_value = area_mm2
-                ann.text = self._format_area(area_mm2)
-            elif ann.type == "circle":
-                radius_px = ann.radius_px if ann.radius_px > 0 else (ann.real_value / sf if ann.real_value > 0 else 0)
-                radius_mm = radius_px * sf
-                ann.real_value = radius_mm
-                ann.text = self._format_radius(radius_mm)
+            self._calculate_annotation_values(ann, sf)
 
     # --- 単位フォーマットヘルパー ---
     def _format_distance(self, value_mm):
@@ -642,24 +644,7 @@ class MainWindow(QMainWindow):
             return
         for ann in self.model.annotations:
             if ann.id == item_id:
-                if ann.type == "polyline" and len(ann.points) >= 2:
-                    total = sum(
-                        math.sqrt((ann.points[i+1].x() - ann.points[i].x())**2 +
-                                  (ann.points[i+1].y() - ann.points[i].y())**2)
-                        * current_scale_factor
-                        for i in range(len(ann.points) - 1)
-                    )
-                    ann.real_value = total
-                    ann.text = self._format_distance(total)
-                elif ann.type == "polygon" and len(ann.points) >= 3:
-                    area_mm2 = self.model.calculate_real_area(ann.points, current_scale_factor)
-                    ann.real_value = area_mm2
-                    ann.text = self._format_area(area_mm2)
-                elif ann.type == "circle":
-                    radius_px = ann.radius_px if ann.radius_px > 0 else (ann.real_value / current_scale_factor if ann.real_value > 0 else 0)
-                    radius_mm = radius_px * current_scale_factor
-                    ann.real_value = radius_mm
-                    ann.text = self._format_radius(radius_mm)
+                self._calculate_annotation_values(ann, current_scale_factor)
                 self.canvas.update_item_properties(item_id, {"text": ann.text})
                 self.prop_panel.set_item_data(ann.id, ann.type, ann.text, ann.color,
                                               ann.font_family, ann.font_size, ann.line_width,
