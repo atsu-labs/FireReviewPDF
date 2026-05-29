@@ -517,6 +517,8 @@ class ObjectItemRow(QFrame):
             return qta.icon('fa5s.square', color=color)
         elif type_str == 'circle':
             return qta.icon('fa5s.circle', color=color)
+        elif type_str == 'arc':
+            return qta.icon('fa5s.circle-notch', color=color)
         elif type_str == 'text':
             return qta.icon('fa5s.font', color=color)
         elif type_str == 'marker':
@@ -529,6 +531,7 @@ class ObjectItemRow(QFrame):
             'polyline': '直線',
             'polygon': '多角形',
             'circle': '円',
+            'arc': '円弧',
             'text': 'テキスト',
             'marker': 'マーカー'
         }.get(ann.type, 'オブジェクト')

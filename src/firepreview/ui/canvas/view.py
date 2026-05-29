@@ -14,6 +14,7 @@ class PDFCanvas(QGraphicsView):
     polygon_complete = Signal(list) # list of QPointF
     polyline_complete = Signal(list)  # list of QPointF for polyline tool
     circle_drag_complete = Signal(QPointF, float)  # center, radius_px
+    arc_drag_complete = Signal(QPointF, float, float)  # center, radius_px, drag_angle
     marker_complete = Signal(QPointF)
     legend_complete = Signal(QPointF)
 
@@ -56,7 +57,10 @@ class PDFCanvas(QGraphicsView):
         self.temp_line = None
         self.temp_poly = None
         self.temp_circle = None
+        self.temp_arc = None
         self.drag_start = None  # For DRAW_CIRCLE_DRAG
+        self.current_arc_span = 30.0
+        self.current_arc_show_radial_line = False
         
         # Shape default properties (used by drawing tools)
         self.current_shape_color = "#7c4dff"
@@ -88,12 +92,13 @@ class PDFCanvas(QGraphicsView):
         self._original_accepted_buttons = {}
 
         # Instantiate modular drawing tools
-        from .tools import SelectTool, DrawLineTool, PolygonTool, CircleTool, TextTool, CalibrationTool, MarkerTool, LegendTool
+        from .tools import SelectTool, DrawLineTool, PolygonTool, CircleTool, TextTool, CalibrationTool, MarkerTool, LegendTool, ArcTool
         self.tools = {
             ToolMode.SELECT: SelectTool(self),
             ToolMode.DRAW_LINE: DrawLineTool(self),
             ToolMode.POLYGON_AREA: PolygonTool(self),
             ToolMode.DRAW_CIRCLE_DRAG: CircleTool(self),
+            ToolMode.DRAW_ARC: ArcTool(self),
             ToolMode.TEXT: TextTool(self),
             ToolMode.CALIBRATE: CalibrationTool(self),
             ToolMode.DRAW_MARKER: MarkerTool(self),
@@ -225,12 +230,14 @@ class PDFCanvas(QGraphicsView):
         self.temp_line = _safe_remove(self.temp_line)
         self.temp_poly = _safe_remove(self.temp_poly)
         self.temp_circle = _safe_remove(self.temp_circle)
+        self.temp_arc = _safe_remove(self.temp_arc)
         self.drag_start = None
 
     def set_page_image(self, pixmap):
         self.temp_line = None
         self.temp_poly = None
         self.temp_circle = None
+        self.temp_arc = None
         self.annotation_items.clear()
         self.scene.clear()
         self.background_item = QGraphicsPixmapItem(pixmap)
@@ -582,6 +589,64 @@ class PDFCanvas(QGraphicsView):
         if item_id:
             self.annotation_items[item_id] = circle
 
+    def add_arc_annotation(self, center, radius_px, drag_angle, arc_span, text="", color="green", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, center_marker="", show_radial_line=False, label_offset=None):
+        path = QPainterPath()
+        rect = QRectF(center.x() - radius_px, center.y() - radius_px, radius_px * 2, radius_px * 2)
+        start_angle = -drag_angle - arc_span / 2.0
+        path.arcMoveTo(rect, start_angle)
+        path.arcTo(rect, start_angle, arc_span)
+        
+        if show_radial_line:
+            path.moveTo(center)
+            mid_rad = math.radians(drag_angle)
+            mid_pt = QPointF(center.x() + radius_px * math.cos(mid_rad),
+                             center.y() + radius_px * math.sin(mid_rad))
+            path.lineTo(mid_pt)
+            
+        item = QGraphicsPathItem(path)
+        item.setAcceptHoverEvents(True)
+        stroke_c = QColor(color)
+        stroke_c.setAlpha(round(stroke_opacity / 100.0 * 255))
+        pen = QPen(stroke_c, line_width)
+        pen.setCosmetic(True)
+        item.setPen(pen)
+        item.setBrush(Qt.NoBrush)
+        
+        if item_id:
+            item.setData(0, item_id)
+            item.setData(1, QPointF(0, 0))
+            item.setData(4, "arc")
+            item.setData(5, center)
+            item.setData(6, radius_px)
+            item.setData(7, drag_angle)
+            item.setData(8, arc_span)
+            item.setData(9, show_radial_line)
+            item.setData(10, center_marker)
+            
+        self.scene.addItem(item)
+        
+        if center_marker:
+            cx, cy = center.x(), center.y()
+            self._draw_center_marker(item, cx, cy, center_marker, color)
+            
+        offset = QPointF(label_offset[0], label_offset[1]) if label_offset else QPointF(0, 0)
+        mid_rad = math.radians(drag_angle)
+        ref_pos = QPointF(center.x() + (radius_px + 10) * math.cos(mid_rad),
+                          center.y() + (radius_px + 10) * math.sin(mid_rad))
+        txt_item = self._add_text_item(text, ref_pos.x() + offset.x(), ref_pos.y() + offset.y(), color, font_family, font_size)
+        if txt_item:
+            txt_item.setParentItem(item)
+            txt_item.label_offset = offset
+            txt_item.setData(0, item_id)
+            txt_item.setData(3, "label")
+            interactive = (self.tool_mode == ToolMode.SELECT)
+            is_editing = (self.editing_label_item_id == item_id)
+            txt_item.setFlag(QGraphicsItem.ItemIsSelectable, interactive and is_editing)
+            txt_item.setFlag(QGraphicsItem.ItemIsMovable, interactive and is_editing)
+                
+        if item_id:
+            self.annotation_items[item_id] = item
+
     def _draw_center_marker(self, parent, cx, cy, marker_type, color, size=10):
         if marker_type == "circle":
             s = size / 2
@@ -590,6 +655,7 @@ class PDFCanvas(QGraphicsView):
             pen.setCosmetic(True)
             item.setPen(pen)
             item.setBrush(QColor(color))
+            item.setData(2, "marker")
         elif marker_type == "cross":
             s = size / 2
             path = QPainterPath()
@@ -601,6 +667,7 @@ class PDFCanvas(QGraphicsView):
             pen = QPen(QColor(color), 2)
             pen.setCosmetic(True)
             item.setPen(pen)
+            item.setData(2, "marker")
         elif marker_type == "x":
             s = size / 2
             path = QPainterPath()
@@ -612,9 +679,9 @@ class PDFCanvas(QGraphicsView):
             pen = QPen(QColor(color), 2)
             pen.setCosmetic(True)
             item.setPen(pen)
+            item.setData(2, "marker")
         else:
             return
-        item.setData(2, "marker")
 
     def _draw_endpoint_marker(self, parent, point, neighbor, marker_type, color, size=10):
         px, py = point.x(), point.y()
@@ -726,6 +793,53 @@ class PDFCanvas(QGraphicsView):
                 if item.parentItem() and item.parentItem().data(0) == item_id:
                     continue
                 from .items import MarkerItem, LegendItem
+                
+                # Arc specific geometry update
+                if item.data(4) == "arc" and isinstance(item, QGraphicsPathItem):
+                    center = item.data(5)
+                    radius_px = item.data(6)
+                    drag_angle = item.data(7)
+                    arc_span = item.data(8)
+                    show_radial_line = item.data(9)
+                    center_marker = item.data(10) or ""
+                    
+                    if "drag_angle" in attrs:
+                        drag_angle = attrs["drag_angle"]
+                        item.setData(7, drag_angle)
+                    if "arc_span" in attrs:
+                        arc_span = attrs["arc_span"]
+                        item.setData(8, arc_span)
+                    if "show_radial_line" in attrs:
+                        show_radial_line = attrs["show_radial_line"]
+                        item.setData(9, show_radial_line)
+                    if "center_marker" in attrs:
+                        center_marker = attrs["center_marker"]
+                        item.setData(10, center_marker)
+                        
+                    path = QPainterPath()
+                    rect = QRectF(center.x() - radius_px, center.y() - radius_px, radius_px * 2, radius_px * 2)
+                    start_angle = -drag_angle - arc_span / 2.0
+                    path.arcMoveTo(rect, start_angle)
+                    path.arcTo(rect, start_angle, arc_span)
+                    
+                    if show_radial_line:
+                        path.moveTo(center)
+                        mid_rad = math.radians(drag_angle)
+                        mid_pt = QPointF(center.x() + radius_px * math.cos(mid_rad),
+                                         center.y() + radius_px * math.sin(mid_rad))
+                        path.lineTo(mid_pt)
+                        
+                    item.setPath(path)
+                    
+                    # Update label position
+                    for child in item.childItems():
+                        if child.data(3) == "label":
+                            offset = getattr(child, "label_offset", QPointF(0, 0))
+                            mid_rad = math.radians(drag_angle)
+                            ref_pos = QPointF(center.x() + (radius_px + 10) * math.cos(mid_rad),
+                                              center.y() + (radius_px + 10) * math.sin(mid_rad))
+                            child.setPos(ref_pos + offset)
+                
                 if isinstance(item, LegendItem):
                     if "font_size" in attrs:
                         item.prepareGeometryChange()
@@ -806,7 +920,10 @@ class PDFCanvas(QGraphicsView):
                         r = item.rect()
                         cx, cy = r.center().x(), r.center().y()
                         self._draw_center_marker(item, cx, cy, attrs["center_marker"], color_str)
-                    elif isinstance(item, QGraphicsPathItem):
+                    elif isinstance(item, QGraphicsPathItem) and item.data(4) == "arc" and "center_marker" in attrs:
+                        center = item.data(5)
+                        self._draw_center_marker(item, center.x(), center.y(), attrs["center_marker"], color_str)
+                    elif isinstance(item, QGraphicsPathItem) and item.data(4) != "arc":
                         path = item.path()
                         n = path.elementCount()
                         if n >= 2:
@@ -1000,6 +1117,8 @@ class PDFCanvas(QGraphicsView):
         elif isinstance(item, QGraphicsPolygonItem):
             return [p for p in item.polygon()]
         elif isinstance(item, QGraphicsPathItem):
+            if item.data(4) == "arc":
+                return []
             path = item.path()
             pts = []
             for i in range(path.elementCount()):

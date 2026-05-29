@@ -7,6 +7,7 @@ from .text_tool import TextTool
 from .calibration_tool import CalibrationTool
 from .marker_tool import MarkerTool
 from .legend_tool import LegendTool
+from .arc_tool import ArcTool
 
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "CalibrationTool",
     "MarkerTool",
     "LegendTool",
+    "ArcTool",
 ]
 

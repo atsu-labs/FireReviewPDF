@@ -175,6 +175,34 @@ class PropertyPanel(QWidget):
         line_layout.addWidget(self.line_width_spin)
         self.main_layout.addWidget(self.line_container)
 
+        # --- Arc Settings Section (For Arc) ---
+        self.arc_container = QWidget()
+        arc_layout = QVBoxLayout(self.arc_container)
+        arc_layout.setContentsMargins(0, 0, 0, 0)
+        arc_layout.addWidget(self._create_section_label("円弧の設定"))
+        
+        self.arc_radial_line_check = QCheckBox("中心からの距離を線で表示")
+        self.arc_radial_line_check.stateChanged.connect(self._on_arc_ui_changed)
+        arc_layout.addWidget(self.arc_radial_line_check)
+        
+        span_layout = QHBoxLayout()
+        span_layout.addWidget(QLabel("円弧の角度:"))
+        self.arc_span_slider = QSlider(Qt.Horizontal)
+        self.arc_span_slider.setRange(1, 360)
+        self.arc_span_slider.setValue(30)
+        self.arc_span_slider.valueChanged.connect(self._on_arc_span_slider_changed)
+        span_layout.addWidget(self.arc_span_slider)
+        
+        self.arc_span_spin = QSpinBox()
+        self.arc_span_spin.setRange(1, 360)
+        self.arc_span_spin.setValue(30)
+        self.arc_span_spin.setSuffix("°")
+        self.arc_span_spin.valueChanged.connect(self._on_arc_span_spin_changed)
+        span_layout.addWidget(self.arc_span_spin)
+        arc_layout.addLayout(span_layout)
+        
+        self.main_layout.addWidget(self.arc_container)
+
         # --- Calculate Section (For Shapes that can compute real values) ---
         self.calc_container = QWidget()
         calc_layout = QVBoxLayout(self.calc_container)
@@ -348,27 +376,29 @@ class PropertyPanel(QWidget):
         lbl.setStyleSheet("color: #888899; font-size: 11px; font-weight: bold; margin-top: 5px;")
         return lbl
 
-    def set_item_data(self, item_id, item_type, text, color_hex, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, fill_opacity=30, fill_color="", center_marker="", start_marker="", end_marker="", has_border=False, border_color="#ff0000", border_width=2, has_leader=False, marker_style="square"):
+    def set_item_data(self, item_id, item_type, text, color_hex, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, fill_opacity=30, fill_color="", center_marker="", start_marker="", end_marker="", has_border=False, border_color="#ff0000", border_width=2, has_leader=False, marker_style="square", arc_span=30.0, show_radial_line=False):
         self._block_signals = True
         self.current_item_id = item_id
         self.current_item_type = item_type
         
-        type_names = {"line": "直線（計測）", "polyline": "直線", "polygon": "矩形", "circle": "円", "text": "テキスト", "marker": "マーカー"}
+        type_names = {"line": "直線（計測）", "polyline": "直線", "polygon": "矩形", "circle": "円", "text": "テキスト", "marker": "マーカー", "arc": "円弧"}
         self.type_title.setText(type_names.get(item_type, "要素"))
         
         # Dynamic visibility
-        is_shape = item_type in ["line", "polyline", "polygon", "circle"]
+        is_shape = item_type in ["line", "polyline", "polygon", "circle", "arc"]
         is_text = item_type == "text"
         is_marker = item_type == "marker"
+        is_arc = item_type == "arc"
         has_label = text != ""
         has_fill = item_type in ["polygon", "circle"]
-        can_calc = item_type in ["polyline", "polygon", "circle"]
+        can_calc = item_type in ["polyline", "polygon", "circle", "arc"]
         has_line_markers = item_type == "polyline"
-        has_circle_marker = item_type == "circle"
+        has_circle_marker = item_type in ["circle", "arc"]
         is_node_editable = item_type in ["line", "polyline", "polygon"] or (item_type == "text" and has_leader)
         
         self.line_container.setVisible(is_shape)
         self.fill_container.setVisible(has_fill)
+        self.arc_container.setVisible(is_arc)
         self.calc_container.setVisible(can_calc)
         self.text_container.setVisible((is_text or has_label) and not is_marker)
         self.node_edit_container.setVisible(is_node_editable and not is_marker)
@@ -376,13 +406,13 @@ class PropertyPanel(QWidget):
         self.marker_anno_container.setVisible(is_marker)
         self.align_container.setVisible(not is_marker)
         self.appearance_container.setVisible(not is_marker)
-
+ 
         # Reset node edit button state for the new item
         self.node_edit_btn.blockSignals(True)
         self.node_edit_btn.setChecked(False)
         self.node_edit_btn.setText("📐 頂点を編集")
         self.node_edit_btn.blockSignals(False)
-
+ 
         self.line_marker_container.setVisible(has_line_markers)
         self.circle_marker_container.setVisible(has_circle_marker)
         self.marker_container.setVisible(has_line_markers or has_circle_marker)
@@ -412,10 +442,10 @@ class PropertyPanel(QWidget):
         else:
             self.fill_color_preview.setStyleSheet("background-color: transparent; border: 1px solid #3d3d5c; border-radius: 4px;")
             self.fill_color_hex_label.setText("なし")
-
+ 
         self.fill_opacity_slider.setValue(fill_opacity)
         self.fill_opacity_label.setText(f"{fill_opacity}%")
-
+ 
         # Markers
         sm_idx = self._start_marker_values.index(start_marker) if start_marker in self._start_marker_values else 0
         self.start_marker_combo.setCurrentIndex(sm_idx)
@@ -424,6 +454,11 @@ class PropertyPanel(QWidget):
         cm_idx = self._center_marker_values.index(center_marker) if center_marker in self._center_marker_values else 0
         self.center_marker_combo.setCurrentIndex(cm_idx)
         
+        if is_arc:
+            self.arc_radial_line_check.setChecked(show_radial_line)
+            self.arc_span_slider.setValue(round(arc_span))
+            self.arc_span_spin.setValue(round(arc_span))
+            
         # Border & Leader UI Values
         if is_text:
             self.has_border_check.setChecked(has_border)
@@ -464,6 +499,7 @@ class PropertyPanel(QWidget):
         self.text_edit.setPlainText("")
         self.color_preview.setStyleSheet("background-color: transparent; border: 1px solid #3d3d5c;")
         self.fill_container.setVisible(False)
+        self.arc_container.setVisible(False)
         self.calc_container.setVisible(False)
         self.node_edit_container.setVisible(False)
         self.border_leader_container.setVisible(False)
@@ -621,4 +657,27 @@ class PropertyPanel(QWidget):
         self.anno_marker_opacity_label.setText(f"{value}%")
         if not self._block_signals and self.current_item_id:
             self.attribute_changed.emit(self.current_item_id, {"stroke_opacity": value})
+
+    def _on_arc_ui_changed(self):
+        if not self._block_signals and self.current_item_id:
+            show_radial = self.arc_radial_line_check.isChecked()
+            self.attribute_changed.emit(self.current_item_id, {
+                "show_radial_line": show_radial
+            })
+            
+    def _on_arc_span_slider_changed(self, val):
+        if not self._block_signals:
+            self._block_signals = True
+            self.arc_span_spin.setValue(val)
+            self._block_signals = False
+            if self.current_item_id:
+                self.attribute_changed.emit(self.current_item_id, {"arc_span": float(val)})
+                
+    def _on_arc_span_spin_changed(self, val):
+        if not self._block_signals:
+            self._block_signals = True
+            self.arc_span_slider.setValue(val)
+            self._block_signals = False
+            if self.current_item_id:
+                self.attribute_changed.emit(self.current_item_id, {"arc_span": float(val)})
 

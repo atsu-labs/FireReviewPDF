@@ -23,6 +23,7 @@ class MainToolBar(QFrame):
             ('fa5s.pencil-alt', "直線（折れ線）", ToolMode.DRAW_LINE),
             ('fa5s.square', "矩形", ToolMode.POLYGON_AREA),
             ('fa5s.circle', "円", ToolMode.DRAW_CIRCLE_DRAG),
+            ('fa5s.circle-notch', "円弧", ToolMode.DRAW_ARC),
             ('fa5s.font', "テキスト", ToolMode.TEXT),
             ('fa5s.map-marker-alt', "マーカー", ToolMode.DRAW_MARKER),
             ('fa5s.list-alt', "凡例", ToolMode.DRAW_LEGEND),

@@ -123,6 +123,11 @@ class SelectTool(BaseCanvasTool):
                                     moved_points = [p + delta for p in points]
                                     item.setPos(0, 0)
                                     self.canvas._update_item_geometry(item, moved_points)
+                                if item.data(4) == "arc":
+                                    center = item.data(5)
+                                    item.setData(5, center + delta)
+                                    item.setPos(0, 0)
+                                    self.canvas.update_item_properties(item_id, {"center_marker": item.data(10) or ""})
                                 item.setData(1, QPointF(0, 0))
                             else:
                                 item.setData(1, item.pos())

@@ -331,6 +331,72 @@ def export_pdf_document(model, output_path: str) -> None:
                         fill_opacity=stroke_opacity,
                     )
 
+            elif ann.type == "arc":
+                center = to_pdf_pt(ann.points[0])
+                page_scale_factor = model.get_scale_factor(ann.page_num)
+                if getattr(ann, "radius_px", 0.0) > 0:
+                    radius = ann.radius_px * dpi_factor
+                elif ann.real_value > 0 and page_scale_factor > 0:
+                    radius = (ann.real_value / page_scale_factor) * dpi_factor
+                else:
+                    radius = 0
+                
+                if radius > 0:
+                    drag_angle = getattr(ann, "drag_angle", 0.0)
+                    arc_span = getattr(ann, "arc_span", 30.0)
+                    
+                    start_angle_deg = drag_angle - arc_span / 2.0
+                    end_angle_deg = drag_angle + arc_span / 2.0
+                    
+                    num_segments = max(10, int(arc_span / 5.0))
+                    segment_points = []
+                    for step in range(num_segments + 1):
+                        deg = start_angle_deg + (end_angle_deg - start_angle_deg) * step / num_segments
+                        rad = math.radians(deg)
+                        px = center.x + radius * math.cos(rad)
+                        py = center.y + radius * math.sin(rad)
+                        segment_points.append(fitz.Point(px, py))
+                    
+                    for i in range(len(segment_points) - 1):
+                        page.draw_line(
+                            segment_points[i],
+                            segment_points[i + 1],
+                            color=color,
+                            width=ann.line_width,
+                            stroke_opacity=stroke_opacity,
+                        )
+                        
+                    if getattr(ann, "show_radial_line", False):
+                        mid_rad = math.radians(drag_angle)
+                        mid_pt = fitz.Point(center.x + radius * math.cos(mid_rad),
+                                            center.y + radius * math.sin(mid_rad))
+                        page.draw_line(
+                            center,
+                            mid_pt,
+                            color=color,
+                            width=ann.line_width,
+                            stroke_opacity=stroke_opacity,
+                        )
+                
+                if ann.center_marker:
+                    draw_center_marker(page, center, ann.center_marker)
+                    
+                if ann.text:
+                    offset = getattr(ann, "label_offset", None) or [0.0, 0.0]
+                    offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor)
+                    mid_rad = math.radians(drag_angle)
+                    label_radius = radius + 10 * dpi_factor
+                    ref_pos = fitz.Point(center.x + label_radius * math.cos(mid_rad),
+                                         center.y + label_radius * math.sin(mid_rad))
+                    page.insert_text(
+                        ref_pos + offset_pt,
+                        ann.text,
+                        color=color,
+                        fontsize=ann.font_size,
+                        fontname=page_font,
+                        fill_opacity=stroke_opacity,
+                    )
+
             elif ann.type == "marker":
                 if not ann.points:
                     continue
