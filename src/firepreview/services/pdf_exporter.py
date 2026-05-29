@@ -265,11 +265,13 @@ def export_pdf_document(model, output_path: str) -> None:
                     offset = getattr(ann, "label_offset", None) or [0.0, 0.0]
                     offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor)
                     mid = (p1 + p2) / 2 + offset_pt
+                    fontsize = ann.font_size * dpi_factor
+                    dy = 4 * dpi_factor + fontsize * 0.85
                     page.insert_text(
-                        mid,
+                        fitz.Point(mid.x, mid.y + dy),
                         ann.text,
                         color=color,
-                        fontsize=ann.font_size,
+                        fontsize=fontsize,
                         fontname=page_font,
                         fill_opacity=stroke_opacity,
                     )
@@ -295,11 +297,13 @@ def export_pdf_document(model, output_path: str) -> None:
                     avg_x = sum(pt.x for pt in pts) / len(pts)
                     avg_y = sum(pt.y for pt in pts) / len(pts)
                     mid = fitz.Point(avg_x, avg_y) + offset_pt
+                    fontsize = ann.font_size * dpi_factor
+                    dy = 4 * dpi_factor + fontsize * 0.85
                     page.insert_text(
-                        mid,
+                        fitz.Point(mid.x, mid.y + dy),
                         ann.text,
                         color=color,
-                        fontsize=ann.font_size,
+                        fontsize=fontsize,
                         fontname=page_font,
                         fill_opacity=stroke_opacity,
                     )
@@ -320,11 +324,13 @@ def export_pdf_document(model, output_path: str) -> None:
                     offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor)
                     avg_x = sum(point.x for point in pts) / len(pts) + offset_pt.x
                     avg_y = sum(point.y for point in pts) / len(pts) + offset_pt.y
+                    fontsize = ann.font_size * dpi_factor
+                    dy = 4 * dpi_factor + fontsize * 0.85
                     page.insert_text(
-                        (avg_x, avg_y),
+                        (avg_x, avg_y + dy),
                         ann.text,
                         color=color,
-                        fontsize=ann.font_size,
+                        fontsize=fontsize,
                         fontname=page_font,
                         fill_opacity=stroke_opacity,
                     )
@@ -354,11 +360,13 @@ def export_pdf_document(model, output_path: str) -> None:
                 if ann.text:
                     offset = getattr(ann, "label_offset", None) or [0.0, 0.0]
                     offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor)
+                    fontsize = ann.font_size * dpi_factor
+                    dy = 4 * dpi_factor + fontsize * 0.85
                     page.insert_text(
-                        (center.x + offset_pt.x, center.y - radius - 5 + offset_pt.y),
+                        (center.x + offset_pt.x, center.y - radius - 5 + offset_pt.y + dy),
                         ann.text,
                         color=color,
-                        fontsize=ann.font_size,
+                        fontsize=fontsize,
                         fontname=page_font,
                         fill_opacity=stroke_opacity,
                     )
@@ -420,11 +428,13 @@ def export_pdf_document(model, output_path: str) -> None:
                     label_radius = radius + 10 * dpi_factor
                     ref_pos = fitz.Point(center.x + label_radius * math.cos(mid_rad),
                                          center.y + label_radius * math.sin(mid_rad))
+                    fontsize = ann.font_size * dpi_factor
+                    dy = 4 * dpi_factor + fontsize * 0.85
                     page.insert_text(
-                        ref_pos + offset_pt,
+                        ref_pos + offset_pt + fitz.Point(0, dy),
                         ann.text,
                         color=color,
-                        fontsize=ann.font_size,
+                        fontsize=fontsize,
                         fontname=page_font,
                         fill_opacity=stroke_opacity,
                     )
@@ -482,11 +492,13 @@ def export_pdf_document(model, output_path: str) -> None:
                 if not ann.points:
                     continue
                 pos = to_pdf_pt(ann.points[0])
+                fontsize = ann.font_size * dpi_factor
+                dy = 4 * dpi_factor + fontsize * 0.85
                 page.insert_text(
-                    pos,
+                    fitz.Point(pos.x, pos.y + dy),
                     ann.text,
                     color=color,
-                    fontsize=ann.font_size,
+                    fontsize=fontsize,
                     fontname=page_font,
                     fill_opacity=stroke_opacity,
                 )
@@ -504,16 +516,16 @@ def export_pdf_document(model, output_path: str) -> None:
                     b_width = getattr(ann, "border_width", 2) * dpi_factor
 
                     # Calculate precise text bounding box
-                    text_w = fitz.get_text_length(ann.text, fontsize=ann.font_size, fontname=page_font)
-                    text_h = ann.font_size
+                    text_w = fitz.get_text_length(ann.text, fontsize=fontsize, fontname=page_font)
+                    text_h = fontsize
                     margin = 4 * dpi_factor
 
-                    # Define the border rectangle (insert_text starts at bottom-left)
+                    # Define the border rectangle matching Qt's QGraphicsTextItem bounds (top-left is pos)
                     rect = fitz.Rect(
                         pos.x - margin,
-                        pos.y - text_h - margin,
+                        pos.y - margin,
                         pos.x + text_w + margin,
-                        pos.y + margin
+                        pos.y + text_h + margin
                     )
 
                     if has_border:
@@ -597,7 +609,7 @@ def export_pdf_document(model, output_path: str) -> None:
                 t_color = QColor(ann.color or "#7c4dff")
                 t_rgb = (t_color.red() / 255.0, t_color.green() / 255.0, t_color.blue() / 255.0)
                 
-                t_fontsize = font_size * 0.9
+                t_fontsize = font_size * 0.9 * dpi_factor
                 # Calculate precise baseline for centering within title_h
                 title_baseline_y = pos.y + title_h / 2.0 + (t_fontsize * 0.35)
                 title_pos = fitz.Point(pos.x + 15 * dpi_factor * scale, title_baseline_y)
@@ -697,7 +709,7 @@ def export_pdf_document(model, output_path: str) -> None:
                     if len(c_name) > 12:
                         c_name = c_name[:10] + "..."
                         
-                    item_fontsize = font_size * 0.75
+                    item_fontsize = font_size * 0.75 * dpi_factor
                     # Calculate precise baseline for centering within row_h
                     item_baseline_y = y_offset + row_h / 2.0 + (item_fontsize * 0.35)
                     
