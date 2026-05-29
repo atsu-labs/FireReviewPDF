@@ -30,6 +30,65 @@ def export_pdf_document(model, output_path: str) -> None:
             "yugothic": (os.path.join(windir, "Fonts", "yugothm.ttc"), "YuGothic"),
         }
 
+        # 動的にWindowsのレジストリから任意のフォントファミリー名に対応するフォントファイルパスを自動検出します。
+        # これにより "Noto Sans JP" や "BIZ UDゴシック" などすべてのシステムフォントをPDFに正しく埋め込むことができます。
+        def get_windows_font_path(font_family_name):
+            import winreg
+            try:
+                reg_key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows NT\CurrentVersion\Fonts")
+                num_values = winreg.QueryInfoKey(reg_key)[1]
+                
+                target = font_family_name.lower().strip()
+                
+                # 特殊な日本語フォント名の英語置換マップ
+                replacement_map = {
+                    "ゴシック": "gothic",
+                    "明朝": "mincho",
+                    "メイリオ": "meiryo",
+                    "游ゴシック": "yu gothic",
+                    "游明朝": "yu mincho"
+                }
+                
+                targets = [target]
+                for jp, en in replacement_map.items():
+                    if jp in target:
+                        targets.append(target.replace(jp, en))
+                        
+                # スペースを排除したバージョンを追加
+                for t in list(targets):
+                    no_space = t.replace(" ", "").replace("　", "")
+                    if no_space not in targets:
+                        targets.append(no_space)
+                        
+                # レジストリから検索
+                for i in range(num_values):
+                    name, value, _ = winreg.EnumValue(reg_key, i)
+                    name_lower = name.lower()
+                    
+                    matched = False
+                    for t in targets:
+                        name_no_space = name_lower.replace(" ", "").replace("　", "").replace(";", "")
+                        if t in name_no_space:
+                            matched = True
+                            break
+                            
+                    if matched:
+                        windir = os.environ.get('windir', 'C:/Windows')
+                        sys_path = os.path.join(windir, "Fonts", value)
+                        if os.path.exists(sys_path):
+                            return sys_path
+                            
+                        user_profile = os.environ.get('USERPROFILE', 'C:/Users/Default')
+                        user_path = os.path.join(user_profile, r"AppData/Local/Microsoft/Windows/Fonts", value)
+                        if os.path.exists(user_path):
+                            return user_path
+                            
+                        if os.path.exists(value):
+                            return os.path.abspath(value)
+            except Exception:
+                pass
+            return None
+
         # 日本語フォントをロードしてPDFに埋め込み登録します。
         # 保存直前に subset_fonts() を呼び出すことで、PDFサイズ増加をわずか数KB〜数十KBに抑えながら本物の書体出力を実現します。
         def get_or_register_font(page_obj, page_idx, family_name, text_content, ann_type=""):
@@ -46,37 +105,33 @@ def export_pdf_document(model, output_path: str) -> None:
             is_legend = (ann_type == "legend")
             
             # 日本語を描画する必要があるか
-            need_japanese = has_japanese_text or is_legend or any(x in family_lower for x in ["gothic", "ゴシック", "meiryo", "メイリオ", "yu", "游", "mincho", "明朝", "biz"])
+            need_japanese = has_japanese_text or is_legend or any(x in family_lower for x in ["gothic", "ゴシック", "meiryo", "メイリオ", "yu", "游", "mincho", "明朝", "biz", "noto", "sans", "jp"])
             
             if not need_japanese:
                 return "helv"
                 
-            # 日本語を描画する場合のフォント決定
-            font_path = None
-            pdf_name = "BIZUDGothic" # デフォルト
+            # PDF用のクリーンなフォントシンボル名を生成 (英数字のみ抽出)
+            pdf_name = "".join([c for c in family_name if c.isalnum()])
+            if not pdf_name:
+                pdf_name = "CustomFont"
+                
+            if pdf_name in registered_page_fonts[page_idx]:
+                return pdf_name
+                
+            # レジストリから自動でパスを検出
+            font_path = get_windows_font_path(family_name)
             
-            if family_lower in FONT_MAP:
-                path, name = FONT_MAP[family_lower]
-                if os.path.exists(path):
-                    font_path = path
-                    pdf_name = name
-                    
+            # フォールバック処理 (見つからなかった場合は BIZ UDゴシック -> MSゴシック を探索)
             if not font_path:
-                # フォールバック日本語フォントの探索 (BIZ UDゴシック -> MSゴシック -> Meiryo -> 游ゴシック)
-                for f_lower in ["biz udゴシック", "ms gothic", "meiryo", "yu gothic"]:
-                    path, name = FONT_MAP[f_lower]
-                    if os.path.exists(path):
-                        font_path = path
-                        pdf_name = name
+                for fallback_name in ["BIZ UDゴシック", "BIZ UD Gothic", "MS Gothic", "Meiryo"]:
+                    font_path = get_windows_font_path(fallback_name)
+                    if font_path:
+                        pdf_name = "".join([c for c in fallback_name if c.isalnum()])
                         break
                         
             if not font_path:
-                # 最終安全フォールバック (どうしても日本語フォントが見つからない場合)
+                # 最終安全フォールバック
                 return "helv"
-                
-            # ページへの登録
-            if pdf_name in registered_page_fonts[page_idx]:
-                return pdf_name
                 
             try:
                 page_obj.insert_font(fontname=pdf_name, fontfile=font_path)
