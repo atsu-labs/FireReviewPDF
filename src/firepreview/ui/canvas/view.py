@@ -746,7 +746,7 @@ class PDFCanvas(QGraphicsView):
     def add_legend_annotation(self, pos, item_id=None, font_family="BIZ UDゴシック", font_size=12, color="#7c4dff"):
         from .items import LegendItem
         item = LegendItem(self)
-        item.font_family = font_family
+        item.font_family = "BIZ UDゴシック"
         item.font_size = font_size
         item.color = color
         item.setPos(pos)
@@ -770,7 +770,8 @@ class PDFCanvas(QGraphicsView):
         
         if font_size <= 0:
             font_size = 12
-        font = QFont(font_family, font_size)
+        # フォントファミリーを「BIZ UDゴシック」に完全強制一本化します
+        font = QFont("BIZ UDゴシック", font_size)
         text_item.setFont(font)
         
         text_item.setPos(x, y)

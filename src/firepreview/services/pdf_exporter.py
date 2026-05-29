@@ -110,27 +110,24 @@ def export_pdf_document(model, output_path: str) -> None:
             if not need_japanese:
                 return "helv"
                 
-            # PDF用のクリーンなフォントシンボル名を生成 (英数字のみ抽出)
-            pdf_name = "".join([c for c in family_name if c.isalnum()])
-            if not pdf_name:
-                pdf_name = "CustomFont"
-                
+            # 日本語を描画する場合は、指定フォント名に関わらず常に BIZ UDゴシック に完全強制統一します
+            pdf_name = "BIZUDGothic"
+            
             if pdf_name in registered_page_fonts[page_idx]:
                 return pdf_name
                 
-            # レジストリから自動でパスを検出
-            font_path = get_windows_font_path(family_name)
+            # BIZ UDゴシックのフォントパスを検出
+            font_path = get_windows_font_path("BIZ UD Gothic")
             
-            # フォールバック処理 (見つからなかった場合は BIZ UDゴシック -> MSゴシック を探索)
+            # フォールバック処理 (BIZ UDゴシックが見つからなかった場合は MSゴシック -> Meiryo を探索)
             if not font_path:
-                for fallback_name in ["BIZ UDゴシック", "BIZ UD Gothic", "MS Gothic", "Meiryo"]:
+                for fallback_name in ["MS Gothic", "Meiryo", "BIZ UDゴシック"]:
                     font_path = get_windows_font_path(fallback_name)
                     if font_path:
-                        pdf_name = "".join([c for c in fallback_name if c.isalnum()])
                         break
                         
             if not font_path:
-                # 最終安全フォールバック
+                # 最終安全フォールバック (システムフォントがどうしても一切ない場合)
                 return "helv"
                 
             try:

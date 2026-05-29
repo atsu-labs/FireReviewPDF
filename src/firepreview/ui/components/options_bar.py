@@ -191,11 +191,13 @@ class ToolOptionsBar(QFrame):
         
         self.font_label = QLabel("フォント:")
         text_layout.addWidget(self.font_label)
+        self.font_label.hide()
         
         self.tool_font_combo = QFontComboBox()
         self.tool_font_combo.setCurrentFont(QFont(self.current_text_font))
         self.tool_font_combo.currentFontChanged.connect(self._on_font_changed)
         text_layout.addWidget(self.tool_font_combo)
+        self.tool_font_combo.hide()
         
         text_layout.addWidget(QLabel("サイズ:"))
         self.tool_font_size_spin = QSpinBox()
