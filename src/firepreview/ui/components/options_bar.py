@@ -39,7 +39,7 @@ class ToolOptionsBar(QFrame):
         self.current_shape_color = "#7c4dff"
         self.current_fill_color = "#7c4dff"
         self.current_fill_opacity = 30
-        self.current_text_font = "Arial"
+        self.current_text_font = "BIZ UDゴシック"
         self.current_text_size = 12
         self.current_text_color = "#ff0000"
         self.current_marker_color = "#ff1744"

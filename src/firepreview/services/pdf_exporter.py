@@ -32,35 +32,25 @@ def export_pdf_document(model, output_path: str) -> None:
 
         # 日本語フォントを「japan」という非埋め込みのPDF標準日本語フォントにマッピングします。
         # これによりフォントをPDF内に埋め込まず（PDFサイズ増加が 0 KB）、標準フォントとして高解像度に参照出力します。
-        def get_or_register_font(page_obj, page_idx, family_name):
-            if page_idx not in registered_page_fonts:
-                registered_page_fonts[page_idx] = {}
-                
-            family_lower = (family_name or "Arial").lower().strip()
+        def get_pdf_font_name(text_content, font_family, ann_type=""):
+            family_lower = (font_family or "Arial").lower().strip()
             
             # 日本語フォントかどうかのチェック
             # BIZ UDゴシック, MSゴシック, Meiryo, Yu Gothic, 游ゴシック, 凡例 など
-            is_japanese = any(x in family_lower for x in [
+            is_japanese_font = any(x in family_lower for x in [
                 "gothic", "ゴシック", "meiryo", "メイリオ", "yu", "游", 
-                "mincho", "明朝", "biz", "legend", "凡例", "msgoth"
+                "mincho", "明朝", "biz", "msgoth"
             ])
-                
-            pdf_name = "japan" if is_japanese else "helv"
             
-            if pdf_name in registered_page_fonts[page_idx]:
-                return pdf_name
+            # テキスト内容自体に非アスキー文字（日本語等）が含まれるか
+            has_japanese_text = False
+            if text_content:
+                has_japanese_text = any(char > '\u007f' for char in text_content)
                 
-            try:
-                if pdf_name == "japan":
-                    page_obj.insert_font(fontname="japan")
-                else:
-                    page_obj.insert_font(fontname="helv")
-                registered_page_fonts[page_idx][pdf_name] = True
-                return pdf_name
-            except Exception:
-                # 失敗時の安全フォールバック
-                registered_page_fonts[page_idx][pdf_name] = True
-                return "helv"
+            # 凡例アノテーション、日本語フォントファミリー、または日本語文字列を含む場合は標準日本語フォント「japan」
+            if is_japanese_font or has_japanese_text or ann_type == "legend":
+                return "japan"
+            return "helv"
         
         for ann in model.annotations:
             if ann.page_num >= len(export_doc):
@@ -69,7 +59,7 @@ def export_pdf_document(model, output_path: str) -> None:
             page = export_doc[ann.page_num]
             
             font_family_str = getattr(ann, "font_family", "Arial")
-            page_font = get_or_register_font(page, ann.page_num, font_family_str)
+            page_font = get_pdf_font_name(ann.text, font_family_str, ann.type)
             
             color_value = QColor(ann.color)
             color = (
