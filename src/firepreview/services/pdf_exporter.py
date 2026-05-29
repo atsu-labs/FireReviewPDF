@@ -18,39 +18,73 @@ def export_pdf_document(model, output_path: str) -> None:
         # Windows system font file and registration name mapping
         windir = os.environ.get('windir', 'C:/Windows')
         FONT_MAP = {
-            "ms gothic": (os.path.join(windir, "Fonts", "msgothic.ttc"), "msgothic"),
-            "ｍｓ ゴシック": (os.path.join(windir, "Fonts", "msgothic.ttc"), "msgothic"),
-            "msgothic": (os.path.join(windir, "Fonts", "msgothic.ttc"), "msgothic"),
-            
-            "meiryo": (os.path.join(windir, "Fonts", "meiryo.ttc"), "meiryo"),
-            "メイリオ": (os.path.join(windir, "Fonts", "meiryo.ttc"), "meiryo"),
-            
-            "yu gothic": (os.path.join(windir, "Fonts", "yugothm.ttc"), "yugothic"),
-            "游ゴシック": (os.path.join(windir, "Fonts", "yugothm.ttc"), "yugothic"),
-            "yugothic": (os.path.join(windir, "Fonts", "yugothm.ttc"), "yugothic"),
+            "biz udゴシック": (os.path.join(windir, "Fonts", "BIZ-UDGothicR.ttc"), "BIZUDGothic"),
+            "biz udgothic": (os.path.join(windir, "Fonts", "BIZ-UDGothicR.ttc"), "BIZUDGothic"),
+            "ms gothic": (os.path.join(windir, "Fonts", "msgothic.ttc"), "MSGothic"),
+            "ｍｓ ゴシック": (os.path.join(windir, "Fonts", "msgothic.ttc"), "MSGothic"),
+            "msgothic": (os.path.join(windir, "Fonts", "msgothic.ttc"), "MSGothic"),
+            "meiryo": (os.path.join(windir, "Fonts", "meiryo.ttc"), "Meiryo"),
+            "メイリオ": (os.path.join(windir, "Fonts", "meiryo.ttc"), "Meiryo"),
+            "yu gothic": (os.path.join(windir, "Fonts", "yugothm.ttc"), "YuGothic"),
+            "游ゴシック": (os.path.join(windir, "Fonts", "yugothm.ttc"), "YuGothic"),
+            "yugothic": (os.path.join(windir, "Fonts", "yugothm.ttc"), "YuGothic"),
         }
 
-        # 日本語フォントを「japan」という非埋め込みのPDF標準日本語フォントにマッピングします。
-        # これによりフォントをPDF内に埋め込まず（PDFサイズ増加が 0 KB）、標準フォントとして高解像度に参照出力します。
-        def get_pdf_font_name(text_content, font_family, ann_type=""):
-            family_lower = (font_family or "Arial").lower().strip()
-            
-            # 日本語フォントかどうかのチェック
-            # BIZ UDゴシック, MSゴシック, Meiryo, Yu Gothic, 游ゴシック, 凡例 など
-            is_japanese_font = any(x in family_lower for x in [
-                "gothic", "ゴシック", "meiryo", "メイリオ", "yu", "游", 
-                "mincho", "明朝", "biz", "msgoth"
-            ])
+        # 日本語フォントをロードしてPDFに埋め込み登録します。
+        # 保存直前に subset_fonts() を呼び出すことで、PDFサイズ増加をわずか数KB〜数十KBに抑えながら本物の書体出力を実現します。
+        def get_or_register_font(page_obj, page_idx, family_name, text_content, ann_type=""):
+            if page_idx not in registered_page_fonts:
+                registered_page_fonts[page_idx] = {}
+                
+            family_lower = (family_name or "Arial").lower().strip()
             
             # テキスト内容自体に非アスキー文字（日本語等）が含まれるか
             has_japanese_text = False
             if text_content:
                 has_japanese_text = any(char > '\u007f' for char in text_content)
                 
-            # 凡例アノテーション、日本語フォントファミリー、または日本語文字列を含む場合は標準日本語フォント「japan」
-            if is_japanese_font or has_japanese_text or ann_type == "legend":
-                return "japan"
-            return "helv"
+            is_legend = (ann_type == "legend")
+            
+            # 日本語を描画する必要があるか
+            need_japanese = has_japanese_text or is_legend or any(x in family_lower for x in ["gothic", "ゴシック", "meiryo", "メイリオ", "yu", "游", "mincho", "明朝", "biz"])
+            
+            if not need_japanese:
+                return "helv"
+                
+            # 日本語を描画する場合のフォント決定
+            font_path = None
+            pdf_name = "BIZUDGothic" # デフォルト
+            
+            if family_lower in FONT_MAP:
+                path, name = FONT_MAP[family_lower]
+                if os.path.exists(path):
+                    font_path = path
+                    pdf_name = name
+                    
+            if not font_path:
+                # フォールバック日本語フォントの探索 (BIZ UDゴシック -> MSゴシック -> Meiryo -> 游ゴシック)
+                for f_lower in ["biz udゴシック", "ms gothic", "meiryo", "yu gothic"]:
+                    path, name = FONT_MAP[f_lower]
+                    if os.path.exists(path):
+                        font_path = path
+                        pdf_name = name
+                        break
+                        
+            if not font_path:
+                # 最終安全フォールバック (どうしても日本語フォントが見つからない場合)
+                return "helv"
+                
+            # ページへの登録
+            if pdf_name in registered_page_fonts[page_idx]:
+                return pdf_name
+                
+            try:
+                page_obj.insert_font(fontname=pdf_name, fontfile=font_path)
+                registered_page_fonts[page_idx][pdf_name] = True
+                return pdf_name
+            except Exception:
+                registered_page_fonts[page_idx][pdf_name] = True
+                return "helv"
         
         for ann in model.annotations:
             if ann.page_num >= len(export_doc):
@@ -59,7 +93,7 @@ def export_pdf_document(model, output_path: str) -> None:
             page = export_doc[ann.page_num]
             
             font_family_str = getattr(ann, "font_family", "Arial")
-            page_font = get_pdf_font_name(ann.text, font_family_str, ann.type)
+            page_font = get_or_register_font(page, ann.page_num, font_family_str, ann.text, ann.type)
             
             color_value = QColor(ann.color)
             color = (
@@ -638,6 +672,12 @@ def export_pdf_document(model, output_path: str) -> None:
                     )
                     
                     y_offset += row_h
+
+        # フォントをサブセット化して不要な文字グリフを排除し、PDFサイズを劇的に軽量化します（数MBから数KB程度に削減）
+        try:
+            export_doc.subset_fonts()
+        except Exception:
+            pass
 
         export_doc.save(output_path, garbage=4, deflate=True)
 
