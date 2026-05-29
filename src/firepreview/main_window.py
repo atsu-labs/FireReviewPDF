@@ -132,6 +132,7 @@ class MainWindow(QMainWindow):
         self.navigator.page_changed.connect(self.go_to_page)
         self.navigator.object_selected.connect(self.on_object_selected_from_panel)
         self.navigator.object_edit_toggled.connect(self.on_object_edit_toggled_from_panel)
+        self.navigator.color_name_changed.connect(self.on_color_name_changed)
         content_area.addWidget(self.navigator)
 
         # Canvas (Center)
@@ -142,6 +143,7 @@ class MainWindow(QMainWindow):
         self.canvas.polyline_complete.connect(self.on_polyline_complete)
         self.canvas.circle_drag_complete.connect(self.on_circle_drag_complete)
         self.canvas.marker_complete.connect(self.on_marker_complete)
+        self.canvas.legend_complete.connect(self.on_legend_complete)
         self.canvas.item_selected.connect(self.on_item_selected)
         self.canvas.selection_cleared.connect(self.on_selection_cleared)
         self.canvas.item_moved.connect(self.on_item_moved)
@@ -631,9 +633,78 @@ class MainWindow(QMainWindow):
         self.update_marker_summary()
         self.update_object_panel()
 
+    def on_legend_complete(self, pos):
+        ann = self._add_to_model("legend", [pos])
+        ann.font_family = self.current_text_font
+        ann.font_size = self.current_text_size
+        ann.color = self.current_text_color
+        
+        self.canvas.add_legend_annotation(pos, item_id=ann.id,
+                                           font_family=ann.font_family,
+                                           font_size=ann.font_size,
+                                           color=ann.color)
+        
+        self.set_tool(ToolMode.SELECT)
+        
+        self.update_marker_summary()
+        self.update_object_panel()
+
+    def on_color_name_changed(self, page_num, color_hex, new_name):
+        if not hasattr(self.model, 'page_color_names'):
+            self.model.page_color_names = {}
+        if page_num not in self.model.page_color_names:
+            self.model.page_color_names[page_num] = {}
+            
+        color_key = color_hex.lower()
+        old_name = self.model.page_color_names[page_num].get(color_key, "")
+        if old_name == new_name:
+            return
+            
+        self.model.page_color_names[page_num][color_key] = new_name
+        
+        # Update canvas legends
+        if hasattr(self, "canvas"):
+            marker_counts = {}
+            for ann in self.model.annotations:
+                if ann.page_num == self.current_page and ann.type == 'marker':
+                    style = getattr(ann, 'marker_style', 'square')
+                    color = (ann.color or "#7c4dff").lower()
+                    key = (style, color)
+                    marker_counts[key] = marker_counts.get(key, 0) + 1
+            
+            self.canvas.update_legends(marker_counts, self.model.page_color_names[page_num])
+            
+        self.update_object_panel()
+
     def update_marker_summary(self):
         if hasattr(self, "navigator") and hasattr(self, "model"):
-            self.navigator.update_marker_summary(self.model.annotations, self.current_page)
+            # Compute current page marker counts
+            marker_counts = {}
+            total_markers = 0
+            for ann in self.model.annotations:
+                if ann.page_num == self.current_page:
+                    if ann.type == 'marker':
+                        style = getattr(ann, 'marker_style', 'square')
+                        color = (ann.color or "#7c4dff").lower()
+                        key = (style, color)
+                        marker_counts[key] = marker_counts.get(key, 0) + 1
+                        total_markers += 1
+            
+            # Fetch custom color names for current page
+            page_names = self.model.page_color_names.get(self.current_page, {})
+            
+            self.navigator.update_marker_summary(self.model.annotations, self.current_page, page_names)
+            
+            if hasattr(self, "canvas"):
+                self.canvas.update_legends(marker_counts, page_names)
+                
+            # Enable/disable legend tool based on marker existence
+            has_markers = (total_markers > 0)
+            self.toolbar.set_tool_enabled(ToolMode.DRAW_LEGEND, has_markers)
+            
+            # If active tool is Legend but no markers, fallback to Select
+            if not has_markers and self.canvas.tool_mode == ToolMode.DRAW_LEGEND:
+                self.set_tool(ToolMode.SELECT)
 
     def on_calculate_requested(self, item_id):
         if not self._is_current_page_calibrated():
@@ -922,6 +993,11 @@ class MainWindow(QMainWindow):
                                                         leader_end_point=leader_end)
                     elif ann.type == "marker":
                         self.canvas.add_marker_annotation(ann.points[0], marker_style=getattr(ann, "marker_style", "square"), color=ann.color, stroke_opacity=ann.stroke_opacity, item_id=ann.id)
+                    elif ann.type == "legend":
+                        self.canvas.add_legend_annotation(ann.points[0], item_id=ann.id,
+                                                           font_family=getattr(ann, "font_family", "Arial"),
+                                                           font_size=getattr(ann, "font_size", 12),
+                                                           color=getattr(ann, "color", "#7c4dff"))
             self._update_scale_status_label()
             self._update_pdf_size_label()
             self.update_object_panel()
@@ -935,7 +1011,8 @@ class MainWindow(QMainWindow):
 
     def update_object_panel(self):
         page_anns = [ann for ann in self.model.annotations if ann.page_num == self.current_page]
-        self.navigator.update_objects(page_anns)
+        page_names = self.model.page_color_names.get(self.current_page, {})
+        self.navigator.update_objects(page_anns, page_names)
 
     def on_object_selected_from_panel(self, item_id):
         self.canvas.scene.clearSelection()

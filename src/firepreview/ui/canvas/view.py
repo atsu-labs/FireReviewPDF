@@ -15,6 +15,7 @@ class PDFCanvas(QGraphicsView):
     polyline_complete = Signal(list)  # list of QPointF for polyline tool
     circle_drag_complete = Signal(QPointF, float)  # center, radius_px
     marker_complete = Signal(QPointF)
+    legend_complete = Signal(QPointF)
 
     
     # Selection/Editing signals
@@ -87,7 +88,7 @@ class PDFCanvas(QGraphicsView):
         self._original_accepted_buttons = {}
 
         # Instantiate modular drawing tools
-        from .tools import SelectTool, DrawLineTool, PolygonTool, CircleTool, TextTool, CalibrationTool, MarkerTool
+        from .tools import SelectTool, DrawLineTool, PolygonTool, CircleTool, TextTool, CalibrationTool, MarkerTool, LegendTool
         self.tools = {
             ToolMode.SELECT: SelectTool(self),
             ToolMode.DRAW_LINE: DrawLineTool(self),
@@ -95,7 +96,8 @@ class PDFCanvas(QGraphicsView):
             ToolMode.DRAW_CIRCLE_DRAG: CircleTool(self),
             ToolMode.TEXT: TextTool(self),
             ToolMode.CALIBRATE: CalibrationTool(self),
-            ToolMode.DRAW_MARKER: MarkerTool(self)
+            ToolMode.DRAW_MARKER: MarkerTool(self),
+            ToolMode.DRAW_LEGEND: LegendTool(self)
         }
         
         self.hover_connection_line = None
@@ -674,6 +676,25 @@ class PDFCanvas(QGraphicsView):
             self.annotation_items[item_id] = item
         self.scene.addItem(item)
 
+    def add_legend_annotation(self, pos, item_id=None, font_family="Arial", font_size=12, color="#7c4dff"):
+        from .items import LegendItem
+        item = LegendItem(self)
+        item.font_family = font_family
+        item.font_size = font_size
+        item.color = color
+        item.setPos(pos)
+        if item_id:
+            item.setData(0, item_id)
+            item.setData(1, QPointF(0, 0))
+            self.annotation_items[item_id] = item
+        self.scene.addItem(item)
+
+    def update_legends(self, marker_counts, color_names):
+        from .items import LegendItem
+        for item in self.scene.items():
+            if isinstance(item, LegendItem):
+                item.update_data(marker_counts, color_names)
+
     def _add_text_item(self, text, x, y, color, font_family="Arial", font_size=12):
         if not text: return None
         text_item = CustomTextItem(text)
@@ -704,7 +725,21 @@ class PDFCanvas(QGraphicsView):
             if item.data(0) == item_id:
                 if item.parentItem() and item.parentItem().data(0) == item_id:
                     continue
-                from .items import MarkerItem
+                from .items import MarkerItem, LegendItem
+                if isinstance(item, LegendItem):
+                    if "font_size" in attrs:
+                        item.prepareGeometryChange()
+                    if "font_family" in attrs:
+                        item.font_family = attrs["font_family"]
+                    if "font_size" in attrs:
+                        item.font_size = attrs["font_size"]
+                    if "color" in attrs:
+                        item.color = attrs["color"]
+                    item.update()
+                    self.scene.update()
+                    self.viewport().update()
+                    break
+
                 if isinstance(item, MarkerItem):
                     if "color" in attrs:
                         item.color = QColor(attrs["color"])

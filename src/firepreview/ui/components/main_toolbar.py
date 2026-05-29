@@ -25,6 +25,7 @@ class MainToolBar(QFrame):
             ('fa5s.circle', "円", ToolMode.DRAW_CIRCLE_DRAG),
             ('fa5s.font', "テキスト", ToolMode.TEXT),
             ('fa5s.map-marker-alt', "マーカー", ToolMode.DRAW_MARKER),
+            ('fa5s.list-alt', "凡例", ToolMode.DRAW_LEGEND),
         ]
 
         for icon_name, tip, mode in tools:
@@ -90,3 +91,9 @@ class MainToolBar(QFrame):
                 active_btn = btn
                 break
         self.set_active_tool_button(active_btn)
+
+    def set_tool_enabled(self, mode, enabled):
+        for btn in self.tool_btns:
+            if btn.property("tool_mode") == mode:
+                btn.setEnabled(enabled)
+                break

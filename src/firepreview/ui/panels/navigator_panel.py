@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QScrollArea, 
-                              QFrame, QHBoxLayout, QPushButton, QStackedWidget)
+                              QFrame, QHBoxLayout, QPushButton, QStackedWidget, QLineEdit)
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap, QColor
 import qtawesome as qta
@@ -8,6 +8,7 @@ class NavigatorPanel(QWidget):
     page_changed = Signal(int)
     object_selected = Signal(str)  # item_id
     object_edit_toggled = Signal(str, bool)  # item_id, active
+    color_name_changed = Signal(int, str, str)  # page_num, color_hex, new_name
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -218,7 +219,10 @@ class NavigatorPanel(QWidget):
         )
         self.stacked_widget.setCurrentIndex(2)
 
-    def update_marker_summary(self, annotations, current_page):
+    def update_marker_summary(self, annotations, current_page, color_names=None):
+        if color_names is None:
+            color_names = {}
+            
         # 1. Clear existing summary items
         for i in reversed(range(self.sum_layout.count())):
             widget = self.sum_layout.itemAt(i).widget()
@@ -278,11 +282,17 @@ class NavigatorPanel(QWidget):
                 color_dot.setStyleSheet(f"background-color: {col}; border-radius: 6px;")
                 row_layout.addWidget(color_dot)
                 
-                # Color name / Hex
-                c_name = palette_color_names.get(col.lower(), col.upper())
-                lbl_text = QLabel(f"{c_name}")
-                lbl_text.setStyleSheet("color: #ffffff; font-size: 12px;")
-                row_layout.addWidget(lbl_text)
+                # Color name / Hex (Editable QLineEdit)
+                c_name = color_names.get(col.lower(), palette_color_names.get(col.lower(), col.upper()))
+                txt_edit = QLineEdit(c_name)
+                txt_edit.setStyleSheet(
+                    "QLineEdit { background: transparent; border: none; color: #ffffff; font-size: 12px; padding: 1px 3px; }"
+                    "QLineEdit:focus { background-color: #1e1e2d; border: 1px solid #7c4dff; border-radius: 2px; }"
+                )
+                txt_edit.editingFinished.connect(
+                    lambda c=col.lower(), edit=txt_edit: self.color_name_changed.emit(current_page, c, edit.text().strip())
+                )
+                row_layout.addWidget(txt_edit)
                 
                 row_layout.addStretch()
                 
@@ -308,7 +318,7 @@ class NavigatorPanel(QWidget):
             thumb.clicked.connect(self.page_changed.emit)
             self.thumbnails_layout.addWidget(thumb)
 
-    def update_objects(self, annotations):
+    def update_objects(self, annotations, color_names=None):
         # 1. Update the objects count label
         self.obj_count_label.setText(str(len(annotations)))
         
@@ -332,12 +342,12 @@ class NavigatorPanel(QWidget):
                 # Existing row
                 row = self.rows[ann.id]
                 # Update display values on existing row if they changed
-                row.update_properties(ann, is_editing=is_editing, selected=is_selected)
+                row.update_properties(ann, is_editing=is_editing, selected=is_selected, color_names=color_names)
                 # Reposition row widget to preserve exact ordering (very fast in Qt)
                 self.obj_layout.insertWidget(index, row)
             else:
                 # New row
-                row = ObjectItemRow(ann, is_editing=is_editing)
+                row = ObjectItemRow(ann, is_editing=is_editing, color_names=color_names)
                 row.clicked.connect(self.object_selected.emit)
                 row.edit_toggled.connect(self.object_edit_toggled.emit)
                 self.obj_layout.insertWidget(index, row)
@@ -416,10 +426,11 @@ class ObjectItemRow(QFrame):
     clicked = Signal(str)  # item_id
     edit_toggled = Signal(str, bool)  # item_id, is_active
 
-    def __init__(self, annotation, is_editing=False, parent=None):
+    def __init__(self, annotation, is_editing=False, color_names=None, parent=None):
         super().__init__(parent)
         self.annotation_id = annotation.id
         self.is_editing = is_editing
+        self.color_names = color_names or {}
         
         self.setFrameShape(QFrame.StyledPanel)
         self.setCursor(Qt.PointingHandCursor)
@@ -478,7 +489,9 @@ class ObjectItemRow(QFrame):
         self.update_edit_button_state()
         self.apply_styles(selected)
 
-    def update_properties(self, ann, is_editing=False, selected=False):
+    def update_properties(self, ann, is_editing=False, selected=False, color_names=None):
+        if color_names is not None:
+            self.color_names = color_names
         # 1. Type or color changed -> update icon
         if self.current_type != ann.type or self.current_color != ann.color:
             self.current_type = ann.type
@@ -529,7 +542,7 @@ class ObjectItemRow(QFrame):
                 "#00e5ff": "水色", "#aeea00": "黄緑", "#7c4dff": "紫"
             }
             color_str = ann.color or "#7c4dff"
-            c_name = palette_color_names.get(color_str.lower(), color_str.upper())
+            c_name = self.color_names.get(color_str.lower(), palette_color_names.get(color_str.lower(), color_str.upper()))
             return f"マーカー ({style_name} - {c_name})"
         elif ann.type == 'text':
             content = ann.text.strip()

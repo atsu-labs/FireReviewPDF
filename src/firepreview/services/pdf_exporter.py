@@ -1,5 +1,5 @@
 import math
-
+import os
 import fitz
 from PySide6.QtGui import QColor
 
@@ -10,11 +10,111 @@ def export_pdf_document(model, output_path: str) -> None:
 
     try:
         export_doc = fitz.open(model.pdf_path)
+        
+        # Track registered fonts per page to avoid redundant inserts
+        # {page_num: {font_name_in_pdf: True}}
+        registered_page_fonts = {}
+        
+        # Windows system font file and registration name mapping
+        windir = os.environ.get('windir', 'C:/Windows')
+        FONT_MAP = {
+            "ms gothic": (os.path.join(windir, "Fonts", "msgothic.ttc"), "msgothic"),
+            "ｍｓ ゴシック": (os.path.join(windir, "Fonts", "msgothic.ttc"), "msgothic"),
+            "msgothic": (os.path.join(windir, "Fonts", "msgothic.ttc"), "msgothic"),
+            
+            "meiryo": (os.path.join(windir, "Fonts", "meiryo.ttc"), "meiryo"),
+            "メイリオ": (os.path.join(windir, "Fonts", "meiryo.ttc"), "meiryo"),
+            
+            "yu gothic": (os.path.join(windir, "Fonts", "yugothm.ttc"), "yugothic"),
+            "游ゴシック": (os.path.join(windir, "Fonts", "yugothm.ttc"), "yugothic"),
+            "yugothic": (os.path.join(windir, "Fonts", "yugothm.ttc"), "yugothic"),
+        }
+
+        def get_or_register_font(page_obj, page_idx, family_name):
+            if page_idx not in registered_page_fonts:
+                registered_page_fonts[page_idx] = {}
+                
+            family_lower = (family_name or "Arial").lower().strip()
+            
+            # 1. Yu Gothic / Yu Mincho / 游ゴシック (游)
+            if "yu" in family_lower or "游" in family_lower or "yugoth" in family_lower:
+                font_path, pdf_name = os.path.join(windir, "Fonts", "yugothm.ttc"), "yugothic"
+                if pdf_name in registered_page_fonts[page_idx]:
+                    return pdf_name
+                if os.path.exists(font_path):
+                    try:
+                        page_obj.insert_font(fontname=pdf_name, fontfile=font_path)
+                        registered_page_fonts[page_idx][pdf_name] = True
+                        return pdf_name
+                    except Exception:
+                        pass
+
+            # 2. Meiryo / Meiryo UI / メイリオ
+            if "meiryo" in family_lower or "メイリオ" in family_lower:
+                font_path, pdf_name = os.path.join(windir, "Fonts", "meiryo.ttc"), "meiryo"
+                if pdf_name in registered_page_fonts[page_idx]:
+                    return pdf_name
+                if os.path.exists(font_path):
+                    try:
+                        page_obj.insert_font(fontname=pdf_name, fontfile=font_path)
+                        registered_page_fonts[page_idx][pdf_name] = True
+                        return pdf_name
+                    except Exception:
+                        pass
+
+            # 3. MS Gothic / MS UI Gothic / MS PGothic / ゴシック
+            if "gothic" in family_lower or "ゴシック" in family_lower or "msgoth" in family_lower:
+                font_path, pdf_name = os.path.join(windir, "Fonts", "msgothic.ttc"), "msgothic"
+                if pdf_name in registered_page_fonts[page_idx]:
+                    return pdf_name
+                if os.path.exists(font_path):
+                    try:
+                        page_obj.insert_font(fontname=pdf_name, fontfile=font_path)
+                        registered_page_fonts[page_idx][pdf_name] = True
+                        return pdf_name
+                    except Exception:
+                        pass
+
+            # 4. Exact FONT_MAP direct lookup
+            if family_lower in FONT_MAP:
+                font_path, pdf_name = FONT_MAP[family_lower]
+                if pdf_name in registered_page_fonts[page_idx]:
+                    return pdf_name
+                if os.path.exists(font_path):
+                    try:
+                        page_obj.insert_font(fontname=pdf_name, fontfile=font_path)
+                        registered_page_fonts[page_idx][pdf_name] = True
+                        return pdf_name
+                    except Exception:
+                        pass
+
+            # 5. Fallback - Japanese priority font (Meiryo first, msgothic second) to avoid CJK rendering crash
+            for path, name in [
+                (os.path.join(windir, "Fonts", "meiryo.ttc"), "meiryo"),
+                (os.path.join(windir, "Fonts", "msgothic.ttc"), "msgothic"),
+                (os.path.join(windir, "Fonts", "yugothm.ttc"), "yugothic")
+            ]:
+                if os.path.exists(path):
+                    if name in registered_page_fonts[page_idx]:
+                        return name
+                    try:
+                        page_obj.insert_font(fontname=name, fontfile=path)
+                        registered_page_fonts[page_idx][name] = True
+                        return name
+                    except Exception:
+                        pass
+                        
+            return "helv"
+        
         for ann in model.annotations:
             if ann.page_num >= len(export_doc):
                 continue
 
             page = export_doc[ann.page_num]
+            
+            font_family_str = getattr(ann, "font_family", "Arial")
+            page_font = get_or_register_font(page, ann.page_num, font_family_str)
+            
             color_value = QColor(ann.color)
             color = (
                 color_value.red() / 255.0,
@@ -138,7 +238,7 @@ def export_pdf_document(model, output_path: str) -> None:
                         ann.text,
                         color=color,
                         fontsize=ann.font_size,
-                        fontname="helv",
+                        fontname=page_font,
                         fill_opacity=stroke_opacity,
                     )
 
@@ -168,7 +268,7 @@ def export_pdf_document(model, output_path: str) -> None:
                         ann.text,
                         color=color,
                         fontsize=ann.font_size,
-                        fontname="helv",
+                        fontname=page_font,
                         fill_opacity=stroke_opacity,
                     )
 
@@ -193,7 +293,7 @@ def export_pdf_document(model, output_path: str) -> None:
                         ann.text,
                         color=color,
                         fontsize=ann.font_size,
-                        fontname="helv",
+                        fontname=page_font,
                         fill_opacity=stroke_opacity,
                     )
 
@@ -227,7 +327,7 @@ def export_pdf_document(model, output_path: str) -> None:
                         ann.text,
                         color=color,
                         fontsize=ann.font_size,
-                        fontname="helv",
+                        fontname=page_font,
                         fill_opacity=stroke_opacity,
                     )
 
@@ -289,7 +389,7 @@ def export_pdf_document(model, output_path: str) -> None:
                     ann.text,
                     color=color,
                     fontsize=ann.font_size,
-                    fontname="helv",
+                    fontname=page_font,
                     fill_opacity=stroke_opacity,
                 )
 
@@ -306,7 +406,7 @@ def export_pdf_document(model, output_path: str) -> None:
                     b_width = getattr(ann, "border_width", 2) * dpi_factor
 
                     # Calculate precise text bounding box
-                    text_w = fitz.get_text_length(ann.text, fontsize=ann.font_size, fontname="helv")
+                    text_w = fitz.get_text_length(ann.text, fontsize=ann.font_size, fontname=page_font)
                     text_h = ann.font_size
                     margin = 4 * dpi_factor
 
@@ -354,7 +454,181 @@ def export_pdf_document(model, output_path: str) -> None:
                             stroke_opacity=stroke_opacity
                         )
 
+            elif ann.type == "legend":
+                if not ann.points:
+                    continue
+                pos = to_pdf_pt(ann.points[0])
+                
+                # 1. Count markers on the current page
+                marker_counts = {}
+                for other in model.annotations:
+                    if other.page_num == ann.page_num and other.type == 'marker':
+                        style = getattr(other, 'marker_style', 'square')
+                        color_hex = (other.color or "#7c4dff").lower()
+                        key = (style, color_hex)
+                        marker_counts[key] = marker_counts.get(key, 0) + 1
+                        
+                items = sorted(marker_counts.items(), key=lambda x: x[1], reverse=True)
+                
+                # Fetch custom color names for current page
+                page_names = model.page_color_names.get(ann.page_num, {})
+                
+                # Dynamic scaling parameters
+                font_size = getattr(ann, "font_size", 12)
+                scale = font_size / 12.0
+                
+                # 2. Dimensions in PDF points
+                row_h = max(20.0, 30.0 * scale) * dpi_factor
+                title_h = max(24.0, 32.0 * scale) * dpi_factor
+                w = max(150.0, 200.0 * scale) * dpi_factor
+                h = title_h + max(1, len(items)) * row_h + 10 * dpi_factor * scale
+                
+                rect = fitz.Rect(pos.x, pos.y, pos.x + w, pos.y + h)
+                
+                # 3. Draw Background Card
+                page.draw_rect(
+                    rect,
+                    color=(204/255.0, 204/255.0, 204/255.0),
+                    fill=(245/255.0, 246/255.0, 248/255.0),
+                    width=1.2 * dpi_factor,
+                    stroke_opacity=1.0,
+                    fill_opacity=0.95,
+                )
+                
+                # 4. Draw Title: "凡例" (Dynamic ann.color or Brand deep purple: #7c4dff)
+                t_color = QColor(ann.color or "#7c4dff")
+                t_rgb = (t_color.red() / 255.0, t_color.green() / 255.0, t_color.blue() / 255.0)
+                
+                t_fontsize = font_size * 0.9
+                # Calculate precise baseline for centering within title_h
+                title_baseline_y = pos.y + title_h / 2.0 + (t_fontsize * 0.35)
+                title_pos = fitz.Point(pos.x + 15 * dpi_factor * scale, title_baseline_y)
+                
+                page.insert_text(
+                    title_pos,
+                    "凡例" if page_font != "helv" else "Legend",
+                    color=t_rgb,
+                    fontsize=t_fontsize,
+                    fontname=page_font,
+                    fill_opacity=1.0,
+                )
+                
+                # Separator Line
+                page.draw_line(
+                    fitz.Point(pos.x + 15 * dpi_factor * scale, pos.y + (title_h - 4 * scale) * dpi_factor),
+                    fitz.Point(pos.x + (w / dpi_factor - 15 * scale) * dpi_factor, pos.y + (title_h - 4 * scale) * dpi_factor),
+                    color=(220/255.0, 221/255.0, 225/255.0),
+                    width=1 * dpi_factor * scale,
+                    stroke_opacity=1.0,
+                )
+                
+                # 5. Loop and draw items
+                y_offset = pos.y + title_h
+                default_color_names = {
+                    "#ff1744": "赤", "#2979ff": "青", "#00e676": "緑", "#ffd600": "黄", 
+                    "#ff9100": "橙", "#f50057": "桃", "#d500f9": "紫", "#8d6e63": "茶", 
+                    "#00e5ff": "水色", "#aeea00": "黄緑", "#7c4dff": "紫"
+                }
+                
+                for (style, col), count in items:
+                    # A. Draw marker icon
+                    c_val = QColor(col)
+                    c_rgb = (c_val.red() / 255.0, c_val.green() / 255.0, c_val.blue() / 255.0)
+                    icon_center = fitz.Point(pos.x + 25 * dpi_factor * scale, y_offset + row_h / 2.0)
+                    half_sz = 11 * dpi_factor * scale
+                    
+                    if style == "square":
+                        square_half = 10 * dpi_factor * scale
+                        rect_icon = fitz.Rect(
+                            icon_center.x - square_half,
+                            icon_center.y - square_half,
+                            icon_center.x + square_half,
+                            icon_center.y + square_half
+                        )
+                        # White border glow
+                        page.draw_rect(
+                            rect_icon,
+                            color=(1.0, 1.0, 1.0),
+                            fill=c_rgb,
+                            width=2 * dpi_factor * scale,
+                            stroke_opacity=1.0,
+                            fill_opacity=1.0,
+                        )
+                        # Main color border
+                        page.draw_rect(
+                            rect_icon,
+                            color=c_rgb,
+                            width=1.5 * dpi_factor * scale,
+                            stroke_opacity=1.0,
+                        )
+                    elif style == "check":
+                        # White background disk
+                        page.draw_circle(
+                            icon_center,
+                            half_sz,
+                            color=c_rgb,
+                            fill=(1.0, 1.0, 1.0),
+                            width=1.5 * dpi_factor * scale,
+                            stroke_opacity=1.0,
+                            fill_opacity=1.0,
+                        )
+                        # Checkmark path
+                        p_start = fitz.Point(icon_center.x - 6 * dpi_factor * scale, icon_center.y)
+                        p_mid = fitz.Point(icon_center.x - 1.5 * dpi_factor * scale, icon_center.y + 4.5 * dpi_factor * scale)
+                        p_end = fitz.Point(icon_center.x + 6 * dpi_factor * scale, icon_center.y - 3 * dpi_factor * scale)
+                        page.draw_polyline(
+                            [p_start, p_mid, p_end],
+                            color=c_rgb,
+                            width=2.5 * dpi_factor * scale,
+                            stroke_opacity=1.0,
+                            closePath=False,
+                        )
+                        
+                    # B. Color name (Japanese supported with page_font CJK)
+                    c_name = page_names.get(col.lower(), default_color_names.get(col.lower(), col.upper()))
+                    
+                    # Fallback to English translation if no CJK font exists to prevent crashes
+                    if page_font == "helv":
+                        c_name_en = {
+                            "赤": "Red", "青": "Blue", "緑": "Green", "黄": "Yellow", 
+                            "橙": "Orange", "桃": "Pink", "紫": "Purple", "茶": "Brown", 
+                            "水色": "LightBlue", "黄緑": "LightGreen"
+                        }.get(c_name, c_name)
+                        c_name = "".join([char for char in c_name_en if ord(char) < 128])
+                        
+                    if len(c_name) > 12:
+                        c_name = c_name[:10] + "..."
+                        
+                    item_fontsize = font_size * 0.75
+                    # Calculate precise baseline for centering within row_h
+                    item_baseline_y = y_offset + row_h / 2.0 + (item_fontsize * 0.35)
+                    
+                    text_pos = fitz.Point(pos.x + 48 * dpi_factor * scale, item_baseline_y)
+                    page.insert_text(
+                        text_pos,
+                        c_name,
+                        color=(42/255.0, 42/255.0, 61/255.0),
+                        fontsize=item_fontsize,
+                        fontname=page_font,
+                        fill_opacity=1.0,
+                    )
+                    
+                    # C. Count
+                    count_text = str(count)
+                    count_pos = fitz.Point(pos.x + (w / dpi_factor - 45 * scale) * dpi_factor, item_baseline_y)
+                    page.insert_text(
+                        count_pos,
+                        count_text,
+                        color=(46/255.0, 125/255.0, 50/255.0),
+                        fontsize=item_fontsize,
+                        fontname=page_font,
+                        fill_opacity=1.0,
+                    )
+                    
+                    y_offset += row_h
+
         export_doc.save(output_path)
+
     finally:
         if export_doc is not None:
             export_doc.close()
