@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QWidget, QSpinBox, 
                                  QPushButton, QDoubleSpinBox, QComboBox, QCheckBox, 
-                                 QFontComboBox, QColorDialog)
+                                 QFontComboBox, QColorDialog, QSlider)
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFont
 from ..canvas import ToolMode
@@ -25,6 +25,8 @@ class ToolOptionsBar(QFrame):
     marker_continuous_changed = Signal(bool)
     marker_opacity_changed = Signal(int)
     marker_color_changed = Signal(str)
+    arc_span_changed = Signal(float)
+    arc_radial_line_changed = Signal(bool)
 
 
     def __init__(self, parent=None):
@@ -144,6 +146,34 @@ class ToolOptionsBar(QFrame):
         cm_layout.addWidget(self.tool_center_marker_combo)
         shape_layout.addWidget(self.tool_circle_marker_container)
 
+        # Arc settings (DRAW_ARC only)
+        self.tool_arc_settings_container = QWidget()
+        arc_layout = QHBoxLayout(self.tool_arc_settings_container)
+        arc_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.tool_arc_radial_line_check = QCheckBox("距離線を表示")
+        self.tool_arc_radial_line_check.setChecked(False)
+        self.tool_arc_radial_line_check.setStyleSheet("color: white;")
+        self.tool_arc_radial_line_check.toggled.connect(self._on_tool_arc_radial_line_changed)
+        arc_layout.addWidget(self.tool_arc_radial_line_check)
+        
+        arc_layout.addWidget(QLabel(" 角度:"))
+        self.tool_arc_span_slider = QSlider(Qt.Horizontal)
+        self.tool_arc_span_slider.setRange(1, 360)
+        self.tool_arc_span_slider.setValue(30)
+        self.tool_arc_span_slider.setFixedWidth(100)
+        self.tool_arc_span_slider.valueChanged.connect(self._on_tool_arc_span_slider_changed)
+        arc_layout.addWidget(self.tool_arc_span_slider)
+        
+        self.tool_arc_span_spin = QSpinBox()
+        self.tool_arc_span_spin.setRange(1, 360)
+        self.tool_arc_span_spin.setValue(30)
+        self.tool_arc_span_spin.setSuffix("°")
+        self.tool_arc_span_spin.valueChanged.connect(self._on_tool_arc_span_spin_changed)
+        arc_layout.addWidget(self.tool_arc_span_spin)
+        
+        shape_layout.addWidget(self.tool_arc_settings_container)
+
         # Continuous creation checkbox
         self.tool_shape_continuous_check = QCheckBox("連続作成")
         self.tool_shape_continuous_check.setChecked(False)
@@ -251,11 +281,12 @@ class ToolOptionsBar(QFrame):
 
     # --- UI updates when tool switches ---
     def update_options_visibility(self, mode, is_page_calibrated):
-        is_shape_tool = mode in [ToolMode.DRAW_LINE, ToolMode.POLYGON_AREA, ToolMode.DRAW_CIRCLE_DRAG]
+        is_shape_tool = mode in [ToolMode.DRAW_LINE, ToolMode.POLYGON_AREA, ToolMode.DRAW_CIRCLE_DRAG, ToolMode.DRAW_ARC]
         has_fill = mode in [ToolMode.POLYGON_AREA, ToolMode.DRAW_CIRCLE_DRAG]
         has_radius = mode == ToolMode.DRAW_CIRCLE_DRAG and is_page_calibrated
         has_line_markers = mode == ToolMode.DRAW_LINE
-        has_circle_marker = mode == ToolMode.DRAW_CIRCLE_DRAG
+        has_circle_marker = mode in [ToolMode.DRAW_CIRCLE_DRAG, ToolMode.DRAW_ARC]
+        has_arc_settings = mode == ToolMode.DRAW_ARC
 
         if mode in [ToolMode.TEXT, ToolMode.DRAW_LEGEND]:
             self.default_opt_label.hide()
@@ -276,6 +307,7 @@ class ToolOptionsBar(QFrame):
             self.tool_radius_container.setVisible(has_radius)
             self.tool_line_marker_container.setVisible(has_line_markers)
             self.tool_circle_marker_container.setVisible(has_circle_marker)
+            self.tool_arc_settings_container.setVisible(has_arc_settings)
             self.shape_options_widget.show()
         else:
             self.default_opt_label.show()
@@ -388,4 +420,19 @@ class ToolOptionsBar(QFrame):
 
     def _on_marker_opacity_changed(self, value):
         self.marker_opacity_changed.emit(value)
+
+    def _on_tool_arc_radial_line_changed(self, checked):
+        self.arc_radial_line_changed.emit(checked)
+        
+    def _on_tool_arc_span_slider_changed(self, val):
+        self.tool_arc_span_spin.blockSignals(True)
+        self.tool_arc_span_spin.setValue(val)
+        self.tool_arc_span_spin.blockSignals(False)
+        self.arc_span_changed.emit(float(val))
+        
+    def _on_tool_arc_span_spin_changed(self, val):
+        self.tool_arc_span_slider.blockSignals(True)
+        self.tool_arc_span_slider.setValue(val)
+        self.tool_arc_span_slider.blockSignals(False)
+        self.arc_span_changed.emit(float(val))
 

@@ -55,6 +55,8 @@ class MainWindow(QMainWindow):
         self._start_marker_values = ["", "circle", "arrow"]
         self._end_marker_values = ["", "circle", "arrow"]
         self._center_marker_values = ["", "circle", "cross", "x"]
+        self.current_arc_span = 30.0
+        self.current_arc_show_radial_line = False
         
         # Marker defaults
         self.current_marker_style = "square"
@@ -119,6 +121,8 @@ class MainWindow(QMainWindow):
         self.options_bar.font_size_changed.connect(self._on_options_font_size_changed)
         self.options_bar.text_color_changed.connect(self._on_options_text_color_changed)
         self.options_bar.text_continuous_changed.connect(self._on_options_text_continuous_changed)
+        self.options_bar.arc_span_changed.connect(self._on_options_arc_span_changed)
+        self.options_bar.arc_radial_line_changed.connect(self._on_options_arc_radial_line_changed)
         
         self.main_layout.addWidget(self.options_bar)
 
@@ -142,6 +146,7 @@ class MainWindow(QMainWindow):
         self.canvas.polygon_complete.connect(self.on_polygon_complete)
         self.canvas.polyline_complete.connect(self.on_polyline_complete)
         self.canvas.circle_drag_complete.connect(self.on_circle_drag_complete)
+        self.canvas.arc_drag_complete.connect(self.on_arc_drag_complete)
         self.canvas.marker_complete.connect(self.on_marker_complete)
         self.canvas.legend_complete.connect(self.on_legend_complete)
         self.canvas.item_selected.connect(self.on_item_selected)
@@ -230,7 +235,7 @@ class MainWindow(QMainWindow):
         self.canvas.set_tool_mode(mode)
         self.options_bar.update_options_visibility(mode, self._is_current_page_calibrated())
 
-        is_shape_tool = mode in [ToolMode.DRAW_LINE, ToolMode.POLYGON_AREA, ToolMode.DRAW_CIRCLE_DRAG]
+        is_shape_tool = mode in [ToolMode.DRAW_LINE, ToolMode.POLYGON_AREA, ToolMode.DRAW_CIRCLE_DRAG, ToolMode.DRAW_ARC]
         if mode == ToolMode.TEXT:
             self.canvas.set_text_defaults(self.current_text_font, self.current_text_size, self.current_text_color, self.options_bar.tool_continuous_check.isChecked())
         elif mode == ToolMode.DRAW_MARKER:
@@ -322,6 +327,20 @@ class MainWindow(QMainWindow):
     def _on_options_text_continuous_changed(self, checked):
         self.canvas.set_text_defaults(self.current_text_font, self.current_text_size, self.current_text_color, checked)
 
+    def _on_options_arc_span_changed(self, value):
+        self.current_arc_span = value
+        if hasattr(self, "canvas"):
+            self.canvas.current_arc_span = value
+            if self.canvas.editing_item_id:
+                self.canvas.update_item_properties(self.canvas.editing_item_id, {"arc_span": value})
+
+    def _on_options_arc_radial_line_changed(self, checked):
+        self.current_arc_show_radial_line = checked
+        if hasattr(self, "canvas"):
+            self.canvas.current_arc_show_radial_line = checked
+            if self.canvas.editing_item_id:
+                self.canvas.update_item_properties(self.canvas.editing_item_id, {"show_radial_line": checked})
+
     def _on_zoom_combo_changed_from_toolbar(self, text):
         clean_text = text.replace("%", "").strip()
         try:
@@ -362,6 +381,13 @@ class MainWindow(QMainWindow):
             ann.text = self._format_area(area_mm2)
         elif ann.type == "circle":
             radius_px = ann.radius_px if ann.radius_px > 0 else (ann.real_value / sf if ann.real_value > 0 else 0)
+            radius_mm = radius_px * sf
+            ann.real_value = radius_mm
+            ann.text = self._format_radius(radius_mm)
+        elif ann.type == "arc":
+            radius_px = getattr(ann, "radius_px", 0.0)
+            if radius_px <= 0 and ann.real_value > 0:
+                radius_px = ann.real_value / sf
             radius_mm = radius_px * sf
             ann.real_value = radius_mm
             ann.text = self._format_radius(radius_mm)
@@ -531,7 +557,7 @@ class MainWindow(QMainWindow):
                 elif ann.type == "polygon":
                     ann.text = self._format_area(ann.real_value)
                     self.canvas.update_item_properties(ann.id, {"text": ann.text})
-                elif ann.type == "circle" and ann.text != "R=15m":
+                elif ann.type in ("circle", "arc") and ann.text != "R=15m":
                     ann.text = self._format_radius(ann.real_value)
                     self.canvas.update_item_properties(ann.id, {"text": ann.text})
 
@@ -616,6 +642,24 @@ class MainWindow(QMainWindow):
                                           line_width=ann.line_width, stroke_opacity=ann.stroke_opacity,
                                           fill_opacity=ann.fill_opacity, fill_color=ann.fill_color,
                                           center_marker=ann.center_marker)
+        self.update_object_panel()
+
+    def on_arc_drag_complete(self, center, radius_px, drag_angle):
+        ann = self._add_to_model("arc", [center], real_value=0.0, text="")
+        ann.color = self.current_shape_color
+        ann.line_width = self.current_line_width
+        ann.radius_px = radius_px
+        ann.center_marker = self.current_center_marker
+        ann.drag_angle = drag_angle
+        ann.arc_span = self.current_arc_span
+        ann.show_radial_line = self.current_arc_show_radial_line
+        
+        self.canvas.add_arc_annotation(center, radius_px, drag_angle, ann.arc_span,
+                                       text="", color=ann.color, item_id=ann.id,
+                                       font_family=ann.font_family, font_size=ann.font_size,
+                                       line_width=ann.line_width, stroke_opacity=ann.stroke_opacity,
+                                       center_marker=ann.center_marker,
+                                       show_radial_line=ann.show_radial_line)
         self.update_object_panel()
 
     def on_marker_complete(self, pos):
@@ -721,7 +765,9 @@ class MainWindow(QMainWindow):
                                               ann.font_family, ann.font_size, ann.line_width,
                                               stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity,
                                               fill_color=ann.fill_color,
-                                              center_marker=ann.center_marker, start_marker=ann.start_marker, end_marker=ann.end_marker)
+                                              center_marker=ann.center_marker, start_marker=ann.start_marker, end_marker=ann.end_marker,
+                                              arc_span=getattr(ann, "arc_span", 30.0),
+                                              show_radial_line=getattr(ann, "show_radial_line", False))
                 
                 if self.canvas.editing_node_item_id == ann.id:
                     self.prop_panel.set_node_edit_active(True)
@@ -775,7 +821,9 @@ class MainWindow(QMainWindow):
                                               border_color=getattr(ann, "border_color", "#ff0000"),
                                               border_width=getattr(ann, "border_width", 2),
                                               has_leader=getattr(ann, "has_leader", False),
-                                              marker_style=getattr(ann, "marker_style", "square"))
+                                              marker_style=getattr(ann, "marker_style", "square"),
+                                              arc_span=getattr(ann, "arc_span", 30.0),
+                                              show_radial_line=getattr(ann, "show_radial_line", False))
                 self.navigator.set_selected_object(item_id)
                 break
 
@@ -803,6 +851,9 @@ class MainWindow(QMainWindow):
                 if "start_marker" in attrs: ann.start_marker = attrs["start_marker"]
                 if "end_marker" in attrs: ann.end_marker = attrs["end_marker"]
                 if "marker_style" in attrs: ann.marker_style = attrs["marker_style"]
+                if "drag_angle" in attrs: ann.drag_angle = attrs["drag_angle"]
+                if "arc_span" in attrs: ann.arc_span = attrs["arc_span"]
+                if "show_radial_line" in attrs: ann.show_radial_line = attrs["show_radial_line"]
                 
                 # Border & Leader settings
                 if "has_border" in attrs: ann.has_border = attrs["has_border"]
@@ -983,6 +1034,23 @@ class MainWindow(QMainWindow):
                         else:
                             radius_px = 0
                         self.canvas.add_circle_annotation(ann.points[0], radius_px, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity, fill_color=ann.fill_color, center_marker=ann.center_marker, label_offset=getattr(ann, "label_offset", [0.0, 0.0]))
+                    elif ann.type == "arc":
+                        current_scale_factor = self._get_current_scale_factor()
+                        if getattr(ann, "radius_px", 0.0) > 0:
+                            radius_px = ann.radius_px
+                        elif ann.real_value > 0 and current_scale_factor > 0:
+                            radius_px = ann.real_value / current_scale_factor
+                        else:
+                            radius_px = 0
+                        self.canvas.add_arc_annotation(
+                            ann.points[0], radius_px, getattr(ann, "drag_angle", 0.0),
+                            getattr(ann, "arc_span", 30.0), text=ann.text, color=ann.color,
+                            item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size,
+                            line_width=ann.line_width, stroke_opacity=ann.stroke_opacity,
+                            center_marker=ann.center_marker,
+                            show_radial_line=getattr(ann, "show_radial_line", False),
+                            label_offset=getattr(ann, "label_offset", [0.0, 0.0])
+                        )
                     elif ann.type == "text":
                         leader_end = ann.points[1] if len(ann.points) >= 2 else None
                         self.canvas.add_text_annotation(ann.points[0], ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, stroke_opacity=ann.stroke_opacity,

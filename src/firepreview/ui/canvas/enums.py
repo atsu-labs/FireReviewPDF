@@ -8,5 +8,7 @@ class ToolMode:
     DRAW_CIRCLE_DRAG = 8  # Circle by dragging center→radius
     DRAW_MARKER = 9
     DRAW_LEGEND = 10
+    DRAW_ARC = 11
+
 
 
