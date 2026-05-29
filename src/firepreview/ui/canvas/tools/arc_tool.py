@@ -23,13 +23,6 @@ class ArcTool(BaseCanvasTool):
                 
             drag_angle = math.degrees(math.atan2(pos.y() - self.canvas.drag_start.y(), pos.x() - self.canvas.drag_start.x()))
             
-            if hasattr(self.canvas, 'temp_arc') and self.canvas.temp_arc:
-                try:
-                    scene.removeItem(self.canvas.temp_arc)
-                except RuntimeError:
-                    pass
-                self.canvas.temp_arc = None
-
             path = QPainterPath()
             cx, cy = self.canvas.drag_start.x(), self.canvas.drag_start.y()
             rect = QRectF(cx - radius, cy - radius, radius * 2, radius * 2)
@@ -46,14 +39,15 @@ class ArcTool(BaseCanvasTool):
                 mid_pt = QPointF(cx + radius * math.cos(mid_rad), cy + radius * math.sin(mid_rad))
                 path.lineTo(mid_pt)
 
-            self.canvas.temp_arc = QGraphicsPathItem(path)
-            
-            pen = QPen(QColor(self.canvas.current_shape_color), self.canvas.current_shape_line_width)
-            pen.setCosmetic(True)
-            self.canvas.temp_arc.setPen(pen)
-            self.canvas.temp_arc.setBrush(Qt.NoBrush)
-            
-            scene.addItem(self.canvas.temp_arc)
+            if hasattr(self.canvas, 'temp_arc') and self.canvas.temp_arc:
+                self.canvas.temp_arc.setPath(path)
+            else:
+                self.canvas.temp_arc = QGraphicsPathItem(path)
+                pen = QPen(QColor(self.canvas.current_shape_color), self.canvas.current_shape_line_width)
+                pen.setCosmetic(True)
+                self.canvas.temp_arc.setPen(pen)
+                self.canvas.temp_arc.setBrush(Qt.NoBrush)
+                scene.addItem(self.canvas.temp_arc)
             return True
         return False
 

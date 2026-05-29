@@ -331,15 +331,11 @@ class MainWindow(QMainWindow):
         self.current_arc_span = value
         if hasattr(self, "canvas"):
             self.canvas.current_arc_span = value
-            if self.canvas.editing_item_id:
-                self.canvas.update_item_properties(self.canvas.editing_item_id, {"arc_span": value})
 
     def _on_options_arc_radial_line_changed(self, checked):
         self.current_arc_show_radial_line = checked
         if hasattr(self, "canvas"):
             self.canvas.current_arc_show_radial_line = checked
-            if self.canvas.editing_item_id:
-                self.canvas.update_item_properties(self.canvas.editing_item_id, {"show_radial_line": checked})
 
     def _on_zoom_combo_changed_from_toolbar(self, text):
         clean_text = text.replace("%", "").strip()

@@ -127,7 +127,7 @@ class SelectTool(BaseCanvasTool):
                                     center = item.data(5)
                                     item.setData(5, center + delta)
                                     item.setPos(0, 0)
-                                    self.canvas.update_item_properties(item_id, {})
+                                    self.canvas.update_item_properties(item_id, {"center_marker": item.data(10) or ""})
                                 item.setData(1, QPointF(0, 0))
                             else:
                                 item.setData(1, item.pos())
