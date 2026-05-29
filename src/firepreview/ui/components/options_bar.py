@@ -189,7 +189,9 @@ class ToolOptionsBar(QFrame):
         text_layout = QHBoxLayout(self.text_options_widget)
         text_layout.setContentsMargins(0, 0, 0, 0)
         
-        text_layout.addWidget(QLabel("フォント:"))
+        self.font_label = QLabel("フォント:")
+        text_layout.addWidget(self.font_label)
+        
         self.tool_font_combo = QFontComboBox()
         self.tool_font_combo.setCurrentFont(QFont(self.current_text_font))
         self.tool_font_combo.currentFontChanged.connect(self._on_font_changed)

@@ -30,81 +30,37 @@ def export_pdf_document(model, output_path: str) -> None:
             "yugothic": (os.path.join(windir, "Fonts", "yugothm.ttc"), "yugothic"),
         }
 
+        # 日本語フォントを「japan」という非埋め込みのPDF標準日本語フォントにマッピングします。
+        # これによりフォントをPDF内に埋め込まず（PDFサイズ増加が 0 KB）、標準フォントとして高解像度に参照出力します。
         def get_or_register_font(page_obj, page_idx, family_name):
             if page_idx not in registered_page_fonts:
                 registered_page_fonts[page_idx] = {}
                 
             family_lower = (family_name or "Arial").lower().strip()
             
-            # 1. Yu Gothic / Yu Mincho / 游ゴシック (游)
-            if "yu" in family_lower or "游" in family_lower or "yugoth" in family_lower:
-                font_path, pdf_name = os.path.join(windir, "Fonts", "yugothm.ttc"), "yugothic"
-                if pdf_name in registered_page_fonts[page_idx]:
-                    return pdf_name
-                if os.path.exists(font_path):
-                    try:
-                        page_obj.insert_font(fontname=pdf_name, fontfile=font_path)
-                        registered_page_fonts[page_idx][pdf_name] = True
-                        return pdf_name
-                    except Exception:
-                        pass
-
-            # 2. Meiryo / Meiryo UI / メイリオ
-            if "meiryo" in family_lower or "メイリオ" in family_lower:
-                font_path, pdf_name = os.path.join(windir, "Fonts", "meiryo.ttc"), "meiryo"
-                if pdf_name in registered_page_fonts[page_idx]:
-                    return pdf_name
-                if os.path.exists(font_path):
-                    try:
-                        page_obj.insert_font(fontname=pdf_name, fontfile=font_path)
-                        registered_page_fonts[page_idx][pdf_name] = True
-                        return pdf_name
-                    except Exception:
-                        pass
-
-            # 3. MS Gothic / MS UI Gothic / MS PGothic / ゴシック
-            if "gothic" in family_lower or "ゴシック" in family_lower or "msgoth" in family_lower:
-                font_path, pdf_name = os.path.join(windir, "Fonts", "msgothic.ttc"), "msgothic"
-                if pdf_name in registered_page_fonts[page_idx]:
-                    return pdf_name
-                if os.path.exists(font_path):
-                    try:
-                        page_obj.insert_font(fontname=pdf_name, fontfile=font_path)
-                        registered_page_fonts[page_idx][pdf_name] = True
-                        return pdf_name
-                    except Exception:
-                        pass
-
-            # 4. Exact FONT_MAP direct lookup
-            if family_lower in FONT_MAP:
-                font_path, pdf_name = FONT_MAP[family_lower]
-                if pdf_name in registered_page_fonts[page_idx]:
-                    return pdf_name
-                if os.path.exists(font_path):
-                    try:
-                        page_obj.insert_font(fontname=pdf_name, fontfile=font_path)
-                        registered_page_fonts[page_idx][pdf_name] = True
-                        return pdf_name
-                    except Exception:
-                        pass
-
-            # 5. Fallback - Japanese priority font (Meiryo first, msgothic second) to avoid CJK rendering crash
-            for path, name in [
-                (os.path.join(windir, "Fonts", "meiryo.ttc"), "meiryo"),
-                (os.path.join(windir, "Fonts", "msgothic.ttc"), "msgothic"),
-                (os.path.join(windir, "Fonts", "yugothm.ttc"), "yugothic")
-            ]:
-                if os.path.exists(path):
-                    if name in registered_page_fonts[page_idx]:
-                        return name
-                    try:
-                        page_obj.insert_font(fontname=name, fontfile=path)
-                        registered_page_fonts[page_idx][name] = True
-                        return name
-                    except Exception:
-                        pass
-                        
-            return "helv"
+            # 日本語フォントかどうかのチェック
+            # BIZ UDゴシック, MSゴシック, Meiryo, Yu Gothic, 游ゴシック, 凡例 など
+            is_japanese = any(x in family_lower for x in [
+                "gothic", "ゴシック", "meiryo", "メイリオ", "yu", "游", 
+                "mincho", "明朝", "biz", "legend", "凡例", "msgoth"
+            ])
+                
+            pdf_name = "japan" if is_japanese else "helv"
+            
+            if pdf_name in registered_page_fonts[page_idx]:
+                return pdf_name
+                
+            try:
+                if pdf_name == "japan":
+                    page_obj.insert_font(fontname="japan")
+                else:
+                    page_obj.insert_font(fontname="helv")
+                registered_page_fonts[page_idx][pdf_name] = True
+                return pdf_name
+            except Exception:
+                # 失敗時の安全フォールバック
+                registered_page_fonts[page_idx][pdf_name] = True
+                return "helv"
         
         for ann in model.annotations:
             if ann.page_num >= len(export_doc):
@@ -693,7 +649,7 @@ def export_pdf_document(model, output_path: str) -> None:
                     
                     y_offset += row_h
 
-        export_doc.save(output_path)
+        export_doc.save(output_path, garbage=4, deflate=True)
 
     finally:
         if export_doc is not None:
