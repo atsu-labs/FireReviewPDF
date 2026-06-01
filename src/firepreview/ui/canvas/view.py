@@ -746,7 +746,7 @@ class PDFCanvas(QGraphicsView):
     def add_legend_annotation(self, pos, item_id=None, font_family="BIZ UDゴシック", font_size=12, color="#7c4dff"):
         from .items import LegendItem
         item = LegendItem(self)
-        item.font_family = "BIZ UDゴシック"
+        item.font_family = font_family
         item.font_size = font_size
         item.color = color
         item.setPos(pos)

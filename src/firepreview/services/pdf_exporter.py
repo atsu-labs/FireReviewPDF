@@ -130,17 +130,22 @@ def export_pdf_document(model, output_path: str) -> None:
                         break
                         
             if not font_path:
-                # 最終安全フォールバック (システムフォントがどうしても一切ない場合) を適切にキャッシュして冗長走査を排除
-                registered_page_fonts[page_idx][pdf_name] = "helv"
-                return "helv"
+                # 日本語描画が必要な状況で適切なシステムフォントが一切ない場合は例外を送出
+                raise RuntimeError(
+                    "日本語を描画するための適切なシステムフォント（BIZ UDゴシック、MSゴシック、Meiryo等）がシステム内に検出されません。"
+                    "お使いのOSに日本語フォントが正しくインストールされているか確認してください。"
+                )
                 
             try:
                 page_obj.insert_font(fontname=pdf_name, fontfile=font_path)
                 registered_page_fonts[page_idx][pdf_name] = pdf_name
                 return pdf_name
-            except Exception:
-                registered_page_fonts[page_idx][pdf_name] = "helv"
-                return "helv"
+            except Exception as e:
+                # PDFへの埋め込み登録に失敗した場合も、文字化けを防ぐため例外を送出
+                raise RuntimeError(
+                    f"日本語フォント（{font_path}）のPDFエクスポート用登録に失敗しました。"
+                    f"エラー詳細: {e}"
+                )
         
         for ann in model.annotations:
             if ann.page_num >= len(export_doc):
