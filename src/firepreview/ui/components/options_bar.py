@@ -39,7 +39,7 @@ class ToolOptionsBar(QFrame):
         self.current_shape_color = "#7c4dff"
         self.current_fill_color = "#7c4dff"
         self.current_fill_opacity = 30
-        self.current_text_font = "Arial"
+        self.current_text_font = "BIZ UDゴシック"
         self.current_text_size = 12
         self.current_text_color = "#ff0000"
         self.current_marker_color = "#ff1744"
@@ -189,11 +189,15 @@ class ToolOptionsBar(QFrame):
         text_layout = QHBoxLayout(self.text_options_widget)
         text_layout.setContentsMargins(0, 0, 0, 0)
         
-        text_layout.addWidget(QLabel("フォント:"))
+        self.font_label = QLabel("フォント:")
+        text_layout.addWidget(self.font_label)
+        self.font_label.hide()
+        
         self.tool_font_combo = QFontComboBox()
         self.tool_font_combo.setCurrentFont(QFont(self.current_text_font))
         self.tool_font_combo.currentFontChanged.connect(self._on_font_changed)
         text_layout.addWidget(self.tool_font_combo)
+        self.tool_font_combo.hide()
         
         text_layout.addWidget(QLabel("サイズ:"))
         self.tool_font_size_spin = QSpinBox()

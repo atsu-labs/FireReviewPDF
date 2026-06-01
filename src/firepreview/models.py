@@ -106,7 +106,7 @@ class Annotation:
         self.color = "#7c4dff"
         self.fill_color = ""  # Optional fill color; empty means derive from color
         self.text = ""
-        self.font_family = "Arial"
+        self.font_family = "BIZ UDゴシック"
         self.font_size = 12
         self.line_width = 2
         self.stroke_opacity = 100

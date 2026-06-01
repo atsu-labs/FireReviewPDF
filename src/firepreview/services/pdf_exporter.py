@@ -12,99 +12,140 @@ def export_pdf_document(model, output_path: str) -> None:
         export_doc = fitz.open(model.pdf_path)
         
         # Track registered fonts per page to avoid redundant inserts
-        # {page_num: {font_name_in_pdf: True}}
+        # {page_num: {font_name_in_pdf: registered_font_name_or_helv}}
         registered_page_fonts = {}
         
-        # Windows system font file and registration name mapping
-        windir = os.environ.get('windir', 'C:/Windows')
-        FONT_MAP = {
-            "ms gothic": (os.path.join(windir, "Fonts", "msgothic.ttc"), "msgothic"),
-            "ｍｓ ゴシック": (os.path.join(windir, "Fonts", "msgothic.ttc"), "msgothic"),
-            "msgothic": (os.path.join(windir, "Fonts", "msgothic.ttc"), "msgothic"),
-            
-            "meiryo": (os.path.join(windir, "Fonts", "meiryo.ttc"), "meiryo"),
-            "メイリオ": (os.path.join(windir, "Fonts", "meiryo.ttc"), "meiryo"),
-            
-            "yu gothic": (os.path.join(windir, "Fonts", "yugothm.ttc"), "yugothic"),
-            "游ゴシック": (os.path.join(windir, "Fonts", "yugothm.ttc"), "yugothic"),
-            "yugothic": (os.path.join(windir, "Fonts", "yugothm.ttc"), "yugothic"),
-        }
+        # Y軸ベースラインシフト補正を一元管理するヘルパー関数
+        def get_baseline_shift(ann_font_size):
+            return (4 + ann_font_size * 0.85) * dpi_factor
 
-        def get_or_register_font(page_obj, page_idx, family_name):
+        # 動的レジストリ探索のフォントパスキャッシュ
+        _font_path_cache = {}
+
+        # 動的にWindowsのレジストリから任意のフォントファミリー名に対応するフォントファイルパスを自動検出します。
+        # これにより "Noto Sans JP" や "BIZ UDゴシック" などすべてのシステムフォントをPDFに正しく埋め込むことができます。
+        def get_windows_font_path(font_family_name):
+            import sys
+            if sys.platform != 'win32':
+                return None
+            if font_family_name in _font_path_cache:
+                return _font_path_cache[font_family_name]
+                
+            import winreg
+            path = None
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows NT\CurrentVersion\Fonts") as reg_key:
+                    num_values = winreg.QueryInfoKey(reg_key)[1]
+                    
+                    target = font_family_name.lower().strip()
+                    
+                    # 特殊な日本語フォント名の英語置換マップ
+                    replacement_map = {
+                        "ゴシック": "gothic",
+                        "明朝": "mincho",
+                        "メイリオ": "meiryo",
+                        "游ゴシック": "yu gothic",
+                        "游明朝": "yu mincho"
+                    }
+                    
+                    targets = [target]
+                    for jp, en in replacement_map.items():
+                        if jp in target:
+                            targets.append(target.replace(jp, en))
+                            
+                    # スペースを排除したバージョンを追加
+                    for t in list(targets):
+                        no_space = t.replace(" ", "").replace("　", "")
+                        if no_space not in targets:
+                            targets.append(no_space)
+                            
+                    # レジストリから検索
+                    for i in range(num_values):
+                        name, value, _ = winreg.EnumValue(reg_key, i)
+                        name_lower = name.lower()
+                        
+                        matched = False
+                        for t in targets:
+                            name_no_space = name_lower.replace(" ", "").replace("　", "").replace(";", "")
+                            if t in name_no_space:
+                                matched = True
+                                break
+                                
+                        if matched:
+                            windir = os.environ.get('windir', 'C:/Windows')
+                            sys_path = os.path.join(windir, "Fonts", value)
+                            if os.path.exists(sys_path):
+                                path = sys_path
+                                break
+                                
+                            user_profile = os.environ.get('USERPROFILE', 'C:/Users/Default')
+                            user_path = os.path.join(user_profile, r"AppData/Local/Microsoft/Windows/Fonts", value)
+                            if os.path.exists(user_path):
+                                path = user_path
+                                break
+                                
+                            if os.path.exists(value):
+                                path = os.path.abspath(value)
+                                break
+            except Exception:
+                pass
+            _font_path_cache[font_family_name] = path
+            return path
+
+        # 日本語フォントをロードしてPDFに埋め込み登録します。
+        # 保存直前に subset_fonts() を呼び出すことで、PDFサイズ増加をわずか数KB〜数十KBに抑えながら本物の書体出力を実現します。
+        def get_or_register_font(page_obj, page_idx, family_name, text_content, ann_type=""):
             if page_idx not in registered_page_fonts:
                 registered_page_fonts[page_idx] = {}
                 
             family_lower = (family_name or "Arial").lower().strip()
             
-            # 1. Yu Gothic / Yu Mincho / 游ゴシック (游)
-            if "yu" in family_lower or "游" in family_lower or "yugoth" in family_lower:
-                font_path, pdf_name = os.path.join(windir, "Fonts", "yugothm.ttc"), "yugothic"
-                if pdf_name in registered_page_fonts[page_idx]:
-                    return pdf_name
-                if os.path.exists(font_path):
-                    try:
-                        page_obj.insert_font(fontname=pdf_name, fontfile=font_path)
-                        registered_page_fonts[page_idx][pdf_name] = True
-                        return pdf_name
-                    except Exception:
-                        pass
-
-            # 2. Meiryo / Meiryo UI / メイリオ
-            if "meiryo" in family_lower or "メイリオ" in family_lower:
-                font_path, pdf_name = os.path.join(windir, "Fonts", "meiryo.ttc"), "meiryo"
-                if pdf_name in registered_page_fonts[page_idx]:
-                    return pdf_name
-                if os.path.exists(font_path):
-                    try:
-                        page_obj.insert_font(fontname=pdf_name, fontfile=font_path)
-                        registered_page_fonts[page_idx][pdf_name] = True
-                        return pdf_name
-                    except Exception:
-                        pass
-
-            # 3. MS Gothic / MS UI Gothic / MS PGothic / ゴシック
-            if "gothic" in family_lower or "ゴシック" in family_lower or "msgoth" in family_lower:
-                font_path, pdf_name = os.path.join(windir, "Fonts", "msgothic.ttc"), "msgothic"
-                if pdf_name in registered_page_fonts[page_idx]:
-                    return pdf_name
-                if os.path.exists(font_path):
-                    try:
-                        page_obj.insert_font(fontname=pdf_name, fontfile=font_path)
-                        registered_page_fonts[page_idx][pdf_name] = True
-                        return pdf_name
-                    except Exception:
-                        pass
-
-            # 4. Exact FONT_MAP direct lookup
-            if family_lower in FONT_MAP:
-                font_path, pdf_name = FONT_MAP[family_lower]
-                if pdf_name in registered_page_fonts[page_idx]:
-                    return pdf_name
-                if os.path.exists(font_path):
-                    try:
-                        page_obj.insert_font(fontname=pdf_name, fontfile=font_path)
-                        registered_page_fonts[page_idx][pdf_name] = True
-                        return pdf_name
-                    except Exception:
-                        pass
-
-            # 5. Fallback - Japanese priority font (Meiryo first, msgothic second) to avoid CJK rendering crash
-            for path, name in [
-                (os.path.join(windir, "Fonts", "meiryo.ttc"), "meiryo"),
-                (os.path.join(windir, "Fonts", "msgothic.ttc"), "msgothic"),
-                (os.path.join(windir, "Fonts", "yugothm.ttc"), "yugothic")
-            ]:
-                if os.path.exists(path):
-                    if name in registered_page_fonts[page_idx]:
-                        return name
-                    try:
-                        page_obj.insert_font(fontname=name, fontfile=path)
-                        registered_page_fonts[page_idx][name] = True
-                        return name
-                    except Exception:
-                        pass
+            # テキスト内容自体に非アスキー文字（日本語等）が含まれるか
+            has_japanese_text = False
+            if text_content:
+                has_japanese_text = any(char > '\u007f' for char in text_content)
+                
+            is_legend = (ann_type == "legend")
+            
+            # 日本語を描画する必要があるか
+            need_japanese = has_japanese_text or is_legend or any(x in family_lower for x in ["gothic", "ゴシック", "meiryo", "メイリオ", "yu", "游", "mincho", "明朝", "biz", "noto", "sans", "jp"])
+            
+            if not need_japanese:
+                return "helv"
+                
+            # 日本語を描画する場合は、指定フォント名に関わらず常に BIZ UDゴシック に完全強制統一します
+            pdf_name = "BIZUDGothic"
+            
+            if pdf_name in registered_page_fonts[page_idx]:
+                return registered_page_fonts[page_idx][pdf_name]
+                
+            # BIZ UDゴシックのフォントパスを検出（英語名・日本語名の両方で最優先探索）
+            font_path = get_windows_font_path("BIZ UD Gothic") or get_windows_font_path("BIZ UDゴシック")
+            
+            # フォールバック処理 (BIZ UDゴシックが見つからなかった場合は MSゴシック -> Meiryo を探索)
+            if not font_path:
+                for fallback_name in ["MS Gothic", "Meiryo"]:
+                    font_path = get_windows_font_path(fallback_name)
+                    if font_path:
+                        break
                         
-            return "helv"
+            if not font_path:
+                # 日本語描画が必要な状況で適切なシステムフォントが一切ない場合は例外を送出
+                raise RuntimeError(
+                    "日本語を描画するための適切なシステムフォント（BIZ UDゴシック、MSゴシック、Meiryo等）がシステム内に検出されません。"
+                    "お使いのOSに日本語フォントが正しくインストールされているか確認してください。"
+                )
+                
+            try:
+                page_obj.insert_font(fontname=pdf_name, fontfile=font_path)
+                registered_page_fonts[page_idx][pdf_name] = pdf_name
+                return pdf_name
+            except Exception as e:
+                # PDFへの埋め込み登録に失敗した場合も、文字化けを防ぐため例外を送出
+                raise RuntimeError(
+                    f"日本語フォント（{font_path}）のPDFエクスポート用登録に失敗しました。"
+                    f"エラー詳細: {e}"
+                )
         
         for ann in model.annotations:
             if ann.page_num >= len(export_doc):
@@ -113,7 +154,7 @@ def export_pdf_document(model, output_path: str) -> None:
             page = export_doc[ann.page_num]
             
             font_family_str = getattr(ann, "font_family", "Arial")
-            page_font = get_or_register_font(page, ann.page_num, font_family_str)
+            page_font = get_or_register_font(page, ann.page_num, font_family_str, ann.text, ann.type)
             
             color_value = QColor(ann.color)
             color = (
@@ -233,11 +274,13 @@ def export_pdf_document(model, output_path: str) -> None:
                     offset = getattr(ann, "label_offset", None) or [0.0, 0.0]
                     offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor)
                     mid = (p1 + p2) / 2 + offset_pt
+                    fontsize = ann.font_size * dpi_factor
+                    dy = get_baseline_shift(ann.font_size)
                     page.insert_text(
-                        mid,
+                        fitz.Point(mid.x, mid.y + dy),
                         ann.text,
                         color=color,
-                        fontsize=ann.font_size,
+                        fontsize=fontsize,
                         fontname=page_font,
                         fill_opacity=stroke_opacity,
                     )
@@ -263,11 +306,13 @@ def export_pdf_document(model, output_path: str) -> None:
                     avg_x = sum(pt.x for pt in pts) / len(pts)
                     avg_y = sum(pt.y for pt in pts) / len(pts)
                     mid = fitz.Point(avg_x, avg_y) + offset_pt
+                    fontsize = ann.font_size * dpi_factor
+                    dy = get_baseline_shift(ann.font_size)
                     page.insert_text(
-                        mid,
+                        fitz.Point(mid.x, mid.y + dy),
                         ann.text,
                         color=color,
-                        fontsize=ann.font_size,
+                        fontsize=fontsize,
                         fontname=page_font,
                         fill_opacity=stroke_opacity,
                     )
@@ -288,11 +333,13 @@ def export_pdf_document(model, output_path: str) -> None:
                     offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor)
                     avg_x = sum(point.x for point in pts) / len(pts) + offset_pt.x
                     avg_y = sum(point.y for point in pts) / len(pts) + offset_pt.y
+                    fontsize = ann.font_size * dpi_factor
+                    dy = get_baseline_shift(ann.font_size)
                     page.insert_text(
-                        (avg_x, avg_y),
+                        (avg_x, avg_y + dy),
                         ann.text,
                         color=color,
-                        fontsize=ann.font_size,
+                        fontsize=fontsize,
                         fontname=page_font,
                         fill_opacity=stroke_opacity,
                     )
@@ -322,11 +369,13 @@ def export_pdf_document(model, output_path: str) -> None:
                 if ann.text:
                     offset = getattr(ann, "label_offset", None) or [0.0, 0.0]
                     offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor)
+                    fontsize = ann.font_size * dpi_factor
+                    dy = get_baseline_shift(ann.font_size)
                     page.insert_text(
-                        (center.x + offset_pt.x, center.y - radius - 5 + offset_pt.y),
+                        (center.x + offset_pt.x, center.y - radius - 5 + offset_pt.y + dy),
                         ann.text,
                         color=color,
-                        fontsize=ann.font_size,
+                        fontsize=fontsize,
                         fontname=page_font,
                         fill_opacity=stroke_opacity,
                     )
@@ -388,11 +437,13 @@ def export_pdf_document(model, output_path: str) -> None:
                     label_radius = radius + 10 * dpi_factor
                     ref_pos = fitz.Point(center.x + label_radius * math.cos(mid_rad),
                                          center.y + label_radius * math.sin(mid_rad))
+                    fontsize = ann.font_size * dpi_factor
+                    dy = get_baseline_shift(ann.font_size)
                     page.insert_text(
-                        ref_pos + offset_pt,
+                        ref_pos + offset_pt + fitz.Point(0, dy),
                         ann.text,
                         color=color,
-                        fontsize=ann.font_size,
+                        fontsize=fontsize,
                         fontname=page_font,
                         fill_opacity=stroke_opacity,
                     )
@@ -450,11 +501,13 @@ def export_pdf_document(model, output_path: str) -> None:
                 if not ann.points:
                     continue
                 pos = to_pdf_pt(ann.points[0])
+                fontsize = ann.font_size * dpi_factor
+                dy = get_baseline_shift(ann.font_size)
                 page.insert_text(
-                    pos,
+                    fitz.Point(pos.x, pos.y + dy),
                     ann.text,
                     color=color,
-                    fontsize=ann.font_size,
+                    fontsize=fontsize,
                     fontname=page_font,
                     fill_opacity=stroke_opacity,
                 )
@@ -472,16 +525,16 @@ def export_pdf_document(model, output_path: str) -> None:
                     b_width = getattr(ann, "border_width", 2) * dpi_factor
 
                     # Calculate precise text bounding box
-                    text_w = fitz.get_text_length(ann.text, fontsize=ann.font_size, fontname=page_font)
-                    text_h = ann.font_size
+                    text_w = fitz.get_text_length(ann.text, fontsize=fontsize, fontname=page_font)
+                    text_h = fontsize
                     margin = 4 * dpi_factor
 
-                    # Define the border rectangle (insert_text starts at bottom-left)
+                    # Define the border rectangle matching Qt's QGraphicsTextItem bounds (top-left is pos)
                     rect = fitz.Rect(
                         pos.x - margin,
-                        pos.y - text_h - margin,
+                        pos.y - margin,
                         pos.x + text_w + margin,
-                        pos.y + margin
+                        pos.y + text_h + margin
                     )
 
                     if has_border:
@@ -565,7 +618,7 @@ def export_pdf_document(model, output_path: str) -> None:
                 t_color = QColor(ann.color or "#7c4dff")
                 t_rgb = (t_color.red() / 255.0, t_color.green() / 255.0, t_color.blue() / 255.0)
                 
-                t_fontsize = font_size * 0.9
+                t_fontsize = font_size * 0.9 * dpi_factor
                 # Calculate precise baseline for centering within title_h
                 title_baseline_y = pos.y + title_h / 2.0 + (t_fontsize * 0.35)
                 title_pos = fitz.Point(pos.x + 15 * dpi_factor * scale, title_baseline_y)
@@ -665,7 +718,7 @@ def export_pdf_document(model, output_path: str) -> None:
                     if len(c_name) > 12:
                         c_name = c_name[:10] + "..."
                         
-                    item_fontsize = font_size * 0.75
+                    item_fontsize = font_size * 0.75 * dpi_factor
                     # Calculate precise baseline for centering within row_h
                     item_baseline_y = y_offset + row_h / 2.0 + (item_fontsize * 0.35)
                     
@@ -693,7 +746,13 @@ def export_pdf_document(model, output_path: str) -> None:
                     
                     y_offset += row_h
 
-        export_doc.save(output_path)
+        # フォントをサブセット化して不要な文字グリフを排除し、PDFサイズを劇的に軽量化します（数MBから数KB程度に削減）
+        try:
+            export_doc.subset_fonts()
+        except Exception:
+            pass
+
+        export_doc.save(output_path, garbage=4, deflate=True)
 
     finally:
         if export_doc is not None:

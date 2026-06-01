@@ -240,6 +240,7 @@ class PropertyPanel(QWidget):
         self.font_combo = QFontComboBox()
         self.font_combo.currentFontChanged.connect(self._on_font_family_changed)
         font_layout.addWidget(self.font_combo, 2)
+        self.font_combo.hide()
         
         self.font_size_spin = QSpinBox()
         self.font_size_spin.setRange(1, 200)

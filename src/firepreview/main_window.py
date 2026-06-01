@@ -40,7 +40,7 @@ class MainWindow(QMainWindow):
         self._pref_dialog_active = False
         self._calib_all_pages_from_prefs = False
         
-        self.current_text_font = "Arial"
+        self.current_text_font = "BIZ UDゴシック"
         self.current_text_size = 12
         self.current_text_color = "#ff0000"
 
