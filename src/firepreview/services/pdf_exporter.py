@@ -35,56 +35,56 @@ def export_pdf_document(model, output_path: str) -> None:
         def get_windows_font_path(font_family_name):
             import winreg
             try:
-                reg_key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows NT\CurrentVersion\Fonts")
-                num_values = winreg.QueryInfoKey(reg_key)[1]
-                
-                target = font_family_name.lower().strip()
-                
-                # 特殊な日本語フォント名の英語置換マップ
-                replacement_map = {
-                    "ゴシック": "gothic",
-                    "明朝": "mincho",
-                    "メイリオ": "meiryo",
-                    "游ゴシック": "yu gothic",
-                    "游明朝": "yu mincho"
-                }
-                
-                targets = [target]
-                for jp, en in replacement_map.items():
-                    if jp in target:
-                        targets.append(target.replace(jp, en))
-                        
-                # スペースを排除したバージョンを追加
-                for t in list(targets):
-                    no_space = t.replace(" ", "").replace("　", "")
-                    if no_space not in targets:
-                        targets.append(no_space)
-                        
-                # レジストリから検索
-                for i in range(num_values):
-                    name, value, _ = winreg.EnumValue(reg_key, i)
-                    name_lower = name.lower()
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows NT\CurrentVersion\Fonts") as reg_key:
+                    num_values = winreg.QueryInfoKey(reg_key)[1]
                     
-                    matched = False
-                    for t in targets:
-                        name_no_space = name_lower.replace(" ", "").replace("　", "").replace(";", "")
-                        if t in name_no_space:
-                            matched = True
-                            break
+                    target = font_family_name.lower().strip()
+                    
+                    # 特殊な日本語フォント名の英語置換マップ
+                    replacement_map = {
+                        "ゴシック": "gothic",
+                        "明朝": "mincho",
+                        "メイリオ": "meiryo",
+                        "游ゴシック": "yu gothic",
+                        "游明朝": "yu mincho"
+                    }
+                    
+                    targets = [target]
+                    for jp, en in replacement_map.items():
+                        if jp in target:
+                            targets.append(target.replace(jp, en))
                             
-                    if matched:
-                        windir = os.environ.get('windir', 'C:/Windows')
-                        sys_path = os.path.join(windir, "Fonts", value)
-                        if os.path.exists(sys_path):
-                            return sys_path
+                    # スペースを排除したバージョンを追加
+                    for t in list(targets):
+                        no_space = t.replace(" ", "").replace("　", "")
+                        if no_space not in targets:
+                            targets.append(no_space)
                             
-                        user_profile = os.environ.get('USERPROFILE', 'C:/Users/Default')
-                        user_path = os.path.join(user_profile, r"AppData/Local/Microsoft/Windows/Fonts", value)
-                        if os.path.exists(user_path):
-                            return user_path
-                            
-                        if os.path.exists(value):
-                            return os.path.abspath(value)
+                    # レジストリから検索
+                    for i in range(num_values):
+                        name, value, _ = winreg.EnumValue(reg_key, i)
+                        name_lower = name.lower()
+                        
+                        matched = False
+                        for t in targets:
+                            name_no_space = name_lower.replace(" ", "").replace("　", "").replace(";", "")
+                            if t in name_no_space:
+                                matched = True
+                                break
+                                
+                        if matched:
+                            windir = os.environ.get('windir', 'C:/Windows')
+                            sys_path = os.path.join(windir, "Fonts", value)
+                            if os.path.exists(sys_path):
+                                return sys_path
+                                
+                            user_profile = os.environ.get('USERPROFILE', 'C:/Users/Default')
+                            user_path = os.path.join(user_profile, r"AppData/Local/Microsoft/Windows/Fonts", value)
+                            if os.path.exists(user_path):
+                                return user_path
+                                
+                            if os.path.exists(value):
+                                return os.path.abspath(value)
             except Exception:
                 pass
             return None
@@ -114,14 +114,14 @@ def export_pdf_document(model, output_path: str) -> None:
             pdf_name = "BIZUDGothic"
             
             if pdf_name in registered_page_fonts[page_idx]:
-                return pdf_name
+                return registered_page_fonts[page_idx][pdf_name]
                 
-            # BIZ UDゴシックのフォントパスを検出
-            font_path = get_windows_font_path("BIZ UD Gothic")
+            # BIZ UDゴシックのフォントパスを検出（英語名・日本語名の両方で最優先探索）
+            font_path = get_windows_font_path("BIZ UD Gothic") or get_windows_font_path("BIZ UDゴシック")
             
             # フォールバック処理 (BIZ UDゴシックが見つからなかった場合は MSゴシック -> Meiryo を探索)
             if not font_path:
-                for fallback_name in ["MS Gothic", "Meiryo", "BIZ UDゴシック"]:
+                for fallback_name in ["MS Gothic", "Meiryo"]:
                     font_path = get_windows_font_path(fallback_name)
                     if font_path:
                         break
@@ -132,10 +132,10 @@ def export_pdf_document(model, output_path: str) -> None:
                 
             try:
                 page_obj.insert_font(fontname=pdf_name, fontfile=font_path)
-                registered_page_fonts[page_idx][pdf_name] = True
+                registered_page_fonts[page_idx][pdf_name] = pdf_name
                 return pdf_name
             except Exception:
-                registered_page_fonts[page_idx][pdf_name] = True
+                registered_page_fonts[page_idx][pdf_name] = "helv"
                 return "helv"
         
         for ann in model.annotations:
