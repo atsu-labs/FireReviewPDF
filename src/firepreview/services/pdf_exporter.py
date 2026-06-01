@@ -12,28 +12,27 @@ def export_pdf_document(model, output_path: str) -> None:
         export_doc = fitz.open(model.pdf_path)
         
         # Track registered fonts per page to avoid redundant inserts
-        # {page_num: {font_name_in_pdf: True}}
+        # {page_num: {font_name_in_pdf: registered_font_name_or_helv}}
         registered_page_fonts = {}
         
-        # Windows system font file and registration name mapping
-        windir = os.environ.get('windir', 'C:/Windows')
-        FONT_MAP = {
-            "biz udゴシック": (os.path.join(windir, "Fonts", "BIZ-UDGothicR.ttc"), "BIZUDGothic"),
-            "biz udgothic": (os.path.join(windir, "Fonts", "BIZ-UDGothicR.ttc"), "BIZUDGothic"),
-            "ms gothic": (os.path.join(windir, "Fonts", "msgothic.ttc"), "MSGothic"),
-            "ｍｓ ゴシック": (os.path.join(windir, "Fonts", "msgothic.ttc"), "MSGothic"),
-            "msgothic": (os.path.join(windir, "Fonts", "msgothic.ttc"), "MSGothic"),
-            "meiryo": (os.path.join(windir, "Fonts", "meiryo.ttc"), "Meiryo"),
-            "メイリオ": (os.path.join(windir, "Fonts", "meiryo.ttc"), "Meiryo"),
-            "yu gothic": (os.path.join(windir, "Fonts", "yugothm.ttc"), "YuGothic"),
-            "游ゴシック": (os.path.join(windir, "Fonts", "yugothm.ttc"), "YuGothic"),
-            "yugothic": (os.path.join(windir, "Fonts", "yugothm.ttc"), "YuGothic"),
-        }
+        # Y軸ベースラインシフト補正を一元管理するヘルパー関数
+        def get_baseline_shift(ann_font_size):
+            return (4 + ann_font_size * 0.85) * dpi_factor
+
+        # 動的レジストリ探索のフォントパスキャッシュ
+        _font_path_cache = {}
 
         # 動的にWindowsのレジストリから任意のフォントファミリー名に対応するフォントファイルパスを自動検出します。
         # これにより "Noto Sans JP" や "BIZ UDゴシック" などすべてのシステムフォントをPDFに正しく埋め込むことができます。
         def get_windows_font_path(font_family_name):
+            import sys
+            if sys.platform != 'win32':
+                return None
+            if font_family_name in _font_path_cache:
+                return _font_path_cache[font_family_name]
+                
             import winreg
+            path = None
             try:
                 with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows NT\CurrentVersion\Fonts") as reg_key:
                     num_values = winreg.QueryInfoKey(reg_key)[1]
@@ -76,18 +75,22 @@ def export_pdf_document(model, output_path: str) -> None:
                             windir = os.environ.get('windir', 'C:/Windows')
                             sys_path = os.path.join(windir, "Fonts", value)
                             if os.path.exists(sys_path):
-                                return sys_path
+                                path = sys_path
+                                break
                                 
                             user_profile = os.environ.get('USERPROFILE', 'C:/Users/Default')
                             user_path = os.path.join(user_profile, r"AppData/Local/Microsoft/Windows/Fonts", value)
                             if os.path.exists(user_path):
-                                return user_path
+                                path = user_path
+                                break
                                 
                             if os.path.exists(value):
-                                return os.path.abspath(value)
+                                path = os.path.abspath(value)
+                                break
             except Exception:
                 pass
-            return None
+            _font_path_cache[font_family_name] = path
+            return path
 
         # 日本語フォントをロードしてPDFに埋め込み登録します。
         # 保存直前に subset_fonts() を呼び出すことで、PDFサイズ増加をわずか数KB〜数十KBに抑えながら本物の書体出力を実現します。
@@ -127,7 +130,8 @@ def export_pdf_document(model, output_path: str) -> None:
                         break
                         
             if not font_path:
-                # 最終安全フォールバック (システムフォントがどうしても一切ない場合)
+                # 最終安全フォールバック (システムフォントがどうしても一切ない場合) を適切にキャッシュして冗長走査を排除
+                registered_page_fonts[page_idx][pdf_name] = "helv"
                 return "helv"
                 
             try:
@@ -266,7 +270,7 @@ def export_pdf_document(model, output_path: str) -> None:
                     offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor)
                     mid = (p1 + p2) / 2 + offset_pt
                     fontsize = ann.font_size * dpi_factor
-                    dy = 4 * dpi_factor + fontsize * 0.85
+                    dy = get_baseline_shift(ann.font_size)
                     page.insert_text(
                         fitz.Point(mid.x, mid.y + dy),
                         ann.text,
@@ -298,7 +302,7 @@ def export_pdf_document(model, output_path: str) -> None:
                     avg_y = sum(pt.y for pt in pts) / len(pts)
                     mid = fitz.Point(avg_x, avg_y) + offset_pt
                     fontsize = ann.font_size * dpi_factor
-                    dy = 4 * dpi_factor + fontsize * 0.85
+                    dy = get_baseline_shift(ann.font_size)
                     page.insert_text(
                         fitz.Point(mid.x, mid.y + dy),
                         ann.text,
@@ -325,7 +329,7 @@ def export_pdf_document(model, output_path: str) -> None:
                     avg_x = sum(point.x for point in pts) / len(pts) + offset_pt.x
                     avg_y = sum(point.y for point in pts) / len(pts) + offset_pt.y
                     fontsize = ann.font_size * dpi_factor
-                    dy = 4 * dpi_factor + fontsize * 0.85
+                    dy = get_baseline_shift(ann.font_size)
                     page.insert_text(
                         (avg_x, avg_y + dy),
                         ann.text,
@@ -361,7 +365,7 @@ def export_pdf_document(model, output_path: str) -> None:
                     offset = getattr(ann, "label_offset", None) or [0.0, 0.0]
                     offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor)
                     fontsize = ann.font_size * dpi_factor
-                    dy = 4 * dpi_factor + fontsize * 0.85
+                    dy = get_baseline_shift(ann.font_size)
                     page.insert_text(
                         (center.x + offset_pt.x, center.y - radius - 5 + offset_pt.y + dy),
                         ann.text,
@@ -429,7 +433,7 @@ def export_pdf_document(model, output_path: str) -> None:
                     ref_pos = fitz.Point(center.x + label_radius * math.cos(mid_rad),
                                          center.y + label_radius * math.sin(mid_rad))
                     fontsize = ann.font_size * dpi_factor
-                    dy = 4 * dpi_factor + fontsize * 0.85
+                    dy = get_baseline_shift(ann.font_size)
                     page.insert_text(
                         ref_pos + offset_pt + fitz.Point(0, dy),
                         ann.text,
@@ -493,7 +497,7 @@ def export_pdf_document(model, output_path: str) -> None:
                     continue
                 pos = to_pdf_pt(ann.points[0])
                 fontsize = ann.font_size * dpi_factor
-                dy = 4 * dpi_factor + fontsize * 0.85
+                dy = get_baseline_shift(ann.font_size)
                 page.insert_text(
                     fitz.Point(pos.x, pos.y + dy),
                     ann.text,
