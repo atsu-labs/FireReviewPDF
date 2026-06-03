@@ -118,7 +118,7 @@ python src/main.py
 ### ファイル構成
 ```text
 FireRevlewPDF/
-├── .agents/                    # AIエージェント向けの開発ルール設定
+├── .agent/                    # AIエージェント向けの開発ルール設定
 │   └── rules/
 │       └── development-rules.md
 ├── .clinerules                 # エージェント動作用設定ファイル
