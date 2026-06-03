@@ -114,7 +114,7 @@ def export_pdf_document(model, output_path: str) -> None:
                 return "helv"
                 
             # 日本語を描画する場合は、指定フォント名に関わらず常に BIZ UDゴシック に完全強制統一します
-            pdf_name = "BIZUDGothic"
+            pdf_name = "bizudgothic"
             
             if pdf_name in registered_page_fonts[page_idx]:
                 return registered_page_fonts[page_idx][pdf_name]
@@ -153,6 +153,12 @@ def export_pdf_document(model, output_path: str) -> None:
 
             page = export_doc[ann.page_num]
             
+            # 各ページの回転（page.rotation）に対する逆変換行列を取得
+            page_rotation = page.rotation
+            derot_matrix = page.derotation_matrix
+            # 平行移動を除外した、方向ベクトルの回転行列
+            rot_matrix = fitz.Matrix(derot_matrix.a, derot_matrix.b, derot_matrix.c, derot_matrix.d, 0, 0)
+            
             font_family_str = getattr(ann, "font_family", "Arial")
             page_font = get_or_register_font(page, ann.page_num, font_family_str, ann.text, ann.type)
             
@@ -173,7 +179,8 @@ def export_pdf_document(model, output_path: str) -> None:
             )
 
             def to_pdf_pt(qp):
-                return fitz.Point(qp.x() * dpi_factor, qp.y() * dpi_factor)
+                pt = fitz.Point(qp.x() * dpi_factor, qp.y() * dpi_factor)
+                return pt * derot_matrix
 
             marker_size = max(ann.line_width * 3, 10 * dpi_factor)
 
@@ -272,17 +279,19 @@ def export_pdf_document(model, output_path: str) -> None:
                 )
                 if ann.text:
                     offset = getattr(ann, "label_offset", None) or [0.0, 0.0]
-                    offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor)
+                    offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor) * rot_matrix
                     mid = (p1 + p2) / 2 + offset_pt
                     fontsize = ann.font_size * dpi_factor
                     dy = get_baseline_shift(ann.font_size)
+                    dy_pt = fitz.Point(0, dy) * rot_matrix
                     page.insert_text(
-                        fitz.Point(mid.x, mid.y + dy),
+                        mid + dy_pt,
                         ann.text,
                         color=color,
                         fontsize=fontsize,
                         fontname=page_font,
                         fill_opacity=stroke_opacity,
+                        rotate=page_rotation,
                     )
 
             elif ann.type == "polyline":
@@ -302,19 +311,21 @@ def export_pdf_document(model, output_path: str) -> None:
                         draw_endpoint_marker(page, pts[-1], pts[-2], ann.end_marker)
                 if ann.text and pts:
                     offset = getattr(ann, "label_offset", None) or [0.0, 0.0]
-                    offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor)
+                    offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor) * rot_matrix
                     avg_x = sum(pt.x for pt in pts) / len(pts)
                     avg_y = sum(pt.y for pt in pts) / len(pts)
                     mid = fitz.Point(avg_x, avg_y) + offset_pt
                     fontsize = ann.font_size * dpi_factor
                     dy = get_baseline_shift(ann.font_size)
+                    dy_pt = fitz.Point(0, dy) * rot_matrix
                     page.insert_text(
-                        fitz.Point(mid.x, mid.y + dy),
+                        mid + dy_pt,
                         ann.text,
                         color=color,
                         fontsize=fontsize,
                         fontname=page_font,
                         fill_opacity=stroke_opacity,
+                        rotate=page_rotation,
                     )
 
             elif ann.type == "polygon":
@@ -330,18 +341,20 @@ def export_pdf_document(model, output_path: str) -> None:
                 )
                 if ann.text:
                     offset = getattr(ann, "label_offset", None) or [0.0, 0.0]
-                    offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor)
+                    offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor) * rot_matrix
                     avg_x = sum(point.x for point in pts) / len(pts) + offset_pt.x
                     avg_y = sum(point.y for point in pts) / len(pts) + offset_pt.y
                     fontsize = ann.font_size * dpi_factor
                     dy = get_baseline_shift(ann.font_size)
+                    dy_pt = fitz.Point(0, dy) * rot_matrix
                     page.insert_text(
-                        (avg_x, avg_y + dy),
+                        fitz.Point(avg_x, avg_y) + dy_pt,
                         ann.text,
                         color=color,
                         fontsize=fontsize,
                         fontname=page_font,
                         fill_opacity=stroke_opacity,
+                        rotate=page_rotation,
                     )
 
             elif ann.type == "circle":
@@ -368,16 +381,19 @@ def export_pdf_document(model, output_path: str) -> None:
                     draw_center_marker(page, center, ann.center_marker)
                 if ann.text:
                     offset = getattr(ann, "label_offset", None) or [0.0, 0.0]
-                    offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor)
+                    offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor) * rot_matrix
                     fontsize = ann.font_size * dpi_factor
                     dy = get_baseline_shift(ann.font_size)
+                    dy_pt = fitz.Point(0, dy) * rot_matrix
+                    text_rel_pt = fitz.Point(0, -radius - 5 * dpi_factor) * rot_matrix
                     page.insert_text(
-                        (center.x + offset_pt.x, center.y - radius - 5 + offset_pt.y + dy),
+                        center + text_rel_pt + offset_pt + dy_pt,
                         ann.text,
                         color=color,
                         fontsize=fontsize,
                         fontname=page_font,
                         fill_opacity=stroke_opacity,
+                        rotate=page_rotation,
                     )
 
             elif ann.type == "arc":
@@ -392,10 +408,11 @@ def export_pdf_document(model, output_path: str) -> None:
                 
                 if radius > 0:
                     drag_angle = getattr(ann, "drag_angle", 0.0)
+                    drag_angle_pdf = drag_angle - page_rotation
                     arc_span = getattr(ann, "arc_span", 30.0)
                     
-                    start_angle_deg = drag_angle - arc_span / 2.0
-                    end_angle_deg = drag_angle + arc_span / 2.0
+                    start_angle_deg = drag_angle_pdf - arc_span / 2.0
+                    end_angle_deg = drag_angle_pdf + arc_span / 2.0
                     
                     num_segments = max(10, int(arc_span / 5.0))
                     segment_points = []
@@ -416,7 +433,7 @@ def export_pdf_document(model, output_path: str) -> None:
                         )
                         
                     if getattr(ann, "show_radial_line", False):
-                        mid_rad = math.radians(drag_angle)
+                        mid_rad = math.radians(drag_angle_pdf)
                         mid_pt = fitz.Point(center.x + radius * math.cos(mid_rad),
                                             center.y + radius * math.sin(mid_rad))
                         page.draw_line(
@@ -432,20 +449,22 @@ def export_pdf_document(model, output_path: str) -> None:
                     
                 if ann.text:
                     offset = getattr(ann, "label_offset", None) or [0.0, 0.0]
-                    offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor)
-                    mid_rad = math.radians(drag_angle)
+                    offset_pt = fitz.Point(offset[0] * dpi_factor, offset[1] * dpi_factor) * rot_matrix
+                    mid_rad = math.radians(drag_angle_pdf)
                     label_radius = radius + 10 * dpi_factor
                     ref_pos = fitz.Point(center.x + label_radius * math.cos(mid_rad),
                                          center.y + label_radius * math.sin(mid_rad))
                     fontsize = ann.font_size * dpi_factor
                     dy = get_baseline_shift(ann.font_size)
+                    dy_pt = fitz.Point(0, dy) * rot_matrix
                     page.insert_text(
-                        ref_pos + offset_pt + fitz.Point(0, dy),
+                        ref_pos + offset_pt + dy_pt,
                         ann.text,
                         color=color,
                         fontsize=fontsize,
                         fontname=page_font,
                         fill_opacity=stroke_opacity,
+                        rotate=page_rotation,
                     )
 
             elif ann.type == "marker":
@@ -486,9 +505,9 @@ def export_pdf_document(model, output_path: str) -> None:
                         fill_opacity=stroke_opacity,
                     )
                     # 2. Checkmark path
-                    p_start = fitz.Point(pos.x - 6 * dpi_factor, pos.y)
-                    p_mid = fitz.Point(pos.x - 1.5 * dpi_factor, pos.y + 4.5 * dpi_factor)
-                    p_end = fitz.Point(pos.x + 6 * dpi_factor, pos.y - 3 * dpi_factor)
+                    p_start = pos + fitz.Point(-6 * dpi_factor, 0) * rot_matrix
+                    p_mid = pos + fitz.Point(-1.5 * dpi_factor, 4.5 * dpi_factor) * rot_matrix
+                    p_end = pos + fitz.Point(6 * dpi_factor, -3 * dpi_factor) * rot_matrix
                     page.draw_polyline(
                         [p_start, p_mid, p_end],
                         color=color,
@@ -503,14 +522,20 @@ def export_pdf_document(model, output_path: str) -> None:
                 pos = to_pdf_pt(ann.points[0])
                 fontsize = ann.font_size * dpi_factor
                 dy = get_baseline_shift(ann.font_size)
-                page.insert_text(
-                    fitz.Point(pos.x, pos.y + dy),
-                    ann.text,
-                    color=color,
-                    fontsize=fontsize,
-                    fontname=page_font,
-                    fill_opacity=stroke_opacity,
-                )
+                dy_pt = fitz.Point(0, dy) * rot_matrix
+                lines = (ann.text or "").split('\n')
+                line_height = fontsize * 1.2
+                for i, line in enumerate(lines):
+                    dy_pt = fitz.Point(0, dy + i * line_height) * rot_matrix
+                    page.insert_text(
+                        pos + dy_pt,
+                        line,
+                        color=color,
+                        fontsize=fontsize,
+                        fontname=page_font,
+                        fill_opacity=stroke_opacity,
+                        rotate=page_rotation,
+                    )
 
                 has_border = getattr(ann, "has_border", False)
                 has_leader = getattr(ann, "has_leader", False)
@@ -524,22 +549,36 @@ def export_pdf_document(model, output_path: str) -> None:
                     )
                     b_width = getattr(ann, "border_width", 2) * dpi_factor
 
-                    # Calculate precise text bounding box
-                    text_w = fitz.get_text_length(ann.text, fontsize=fontsize, fontname=page_font)
-                    text_h = fontsize
+                    # Calculate precise text bounding box using fitz.Font to support custom fonts (handling multiple lines)
+                    if page_font == "helv":
+                        font_obj = fitz.Font(fontname="helv")
+                    else:
+                        f_path = get_windows_font_path("BIZ UD Gothic") or get_windows_font_path("BIZ UDゴシック")
+                        if not f_path:
+                            for fallback_name in ["MS Gothic", "Meiryo"]:
+                                f_path = get_windows_font_path(fallback_name)
+                                if f_path:
+                                    break
+                        if f_path:
+                            font_obj = fitz.Font(fontfile=f_path)
+                        else:
+                            font_obj = fitz.Font(fontname="helv")
+                    
+                    lines = (ann.text or "").split('\n')
+                    num_lines = max(1, len(lines))
+                    text_w = max(font_obj.text_length(line, fontsize=fontsize) for line in lines) if lines else 0
+                    line_height = fontsize * 1.2
+                    text_h = line_height * (num_lines - 1) + fontsize
                     margin = 4 * dpi_factor
 
-                    # Define the border rectangle matching Qt's QGraphicsTextItem bounds (top-left is pos)
-                    rect = fitz.Rect(
-                        pos.x - margin,
-                        pos.y - margin,
-                        pos.x + text_w + margin,
-                        pos.y + text_h + margin
-                    )
+                    c0 = pos + fitz.Point(-margin, -margin) * rot_matrix
+                    c1 = pos + fitz.Point(text_w + margin, -margin) * rot_matrix
+                    c2 = pos + fitz.Point(text_w + margin, text_h + margin) * rot_matrix
+                    c3 = pos + fitz.Point(-margin, text_h + margin) * rot_matrix
 
                     if has_border:
-                        page.draw_rect(
-                            rect,
+                        page.draw_polyline(
+                            [c0, c1, c2, c3, c0],
                             color=b_color,
                             width=b_width,
                             stroke_opacity=stroke_opacity
@@ -547,14 +586,7 @@ def export_pdf_document(model, output_path: str) -> None:
 
                     if has_leader and len(ann.points) >= 2:
                         p2 = to_pdf_pt(ann.points[1])
-                        # Check all 4 corners
-                        corners = [
-                            fitz.Point(rect.x0, rect.y0),  # Top-left
-                            fitz.Point(rect.x1, rect.y0),  # Top-right
-                            fitz.Point(rect.x0, rect.y1),  # Bottom-left
-                            fitz.Point(rect.x1, rect.y1)   # Bottom-right
-                        ]
-                        # Find closest corner to the end point
+                        corners = [c0, c1, c2, c3]
                         best_pt = corners[0]
                         min_dist = float('inf')
                         for pt in corners:
@@ -602,11 +634,13 @@ def export_pdf_document(model, output_path: str) -> None:
                 w = max(150.0, 200.0 * scale) * dpi_factor
                 h = title_h + max(1, len(items)) * row_h + 10 * dpi_factor * scale
                 
-                rect = fitz.Rect(pos.x, pos.y, pos.x + w, pos.y + h)
+                card_c0 = pos
+                card_c1 = pos + fitz.Point(w, 0) * rot_matrix
+                card_c2 = pos + fitz.Point(w, h) * rot_matrix
+                card_c3 = pos + fitz.Point(0, h) * rot_matrix
                 
-                # 3. Draw Background Card
-                page.draw_rect(
-                    rect,
+                page.draw_polyline(
+                    [card_c0, card_c1, card_c2, card_c3, card_c0],
                     color=(204/255.0, 204/255.0, 204/255.0),
                     fill=(245/255.0, 246/255.0, 248/255.0),
                     width=1.2 * dpi_factor,
@@ -614,14 +648,13 @@ def export_pdf_document(model, output_path: str) -> None:
                     fill_opacity=0.95,
                 )
                 
-                # 4. Draw Title: "凡例" (Dynamic ann.color or Brand deep purple: #7c4dff)
+                # 4. Draw Title
                 t_color = QColor(ann.color or "#7c4dff")
                 t_rgb = (t_color.red() / 255.0, t_color.green() / 255.0, t_color.blue() / 255.0)
                 
                 t_fontsize = font_size * 0.9 * dpi_factor
-                # Calculate precise baseline for centering within title_h
-                title_baseline_y = pos.y + title_h / 2.0 + (t_fontsize * 0.35)
-                title_pos = fitz.Point(pos.x + 15 * dpi_factor * scale, title_baseline_y)
+                title_baseline_y = title_h / 2.0 + (t_fontsize * 0.35)
+                title_pos = pos + fitz.Point(15 * dpi_factor * scale, title_baseline_y) * rot_matrix
                 
                 page.insert_text(
                     title_pos,
@@ -630,19 +663,22 @@ def export_pdf_document(model, output_path: str) -> None:
                     fontsize=t_fontsize,
                     fontname=page_font,
                     fill_opacity=1.0,
+                    rotate=page_rotation,
                 )
                 
                 # Separator Line
+                line_p1 = pos + fitz.Point(15 * dpi_factor * scale, title_h - 4 * dpi_factor * scale) * rot_matrix
+                line_p2 = pos + fitz.Point(w - 15 * dpi_factor * scale, title_h - 4 * dpi_factor * scale) * rot_matrix
                 page.draw_line(
-                    fitz.Point(pos.x + 15 * dpi_factor * scale, pos.y + (title_h - 4 * scale) * dpi_factor),
-                    fitz.Point(pos.x + (w / dpi_factor - 15 * scale) * dpi_factor, pos.y + (title_h - 4 * scale) * dpi_factor),
+                    line_p1,
+                    line_p2,
                     color=(220/255.0, 221/255.0, 225/255.0),
                     width=1 * dpi_factor * scale,
                     stroke_opacity=1.0,
                 )
                 
                 # 5. Loop and draw items
-                y_offset = pos.y + title_h
+                y_offset = title_h
                 default_color_names = {
                     "#ff1744": "赤", "#2979ff": "青", "#00e676": "緑", "#ffd600": "黄", 
                     "#ff9100": "橙", "#f50057": "桃", "#d500f9": "紫", "#8d6e63": "茶", 
@@ -650,38 +686,33 @@ def export_pdf_document(model, output_path: str) -> None:
                 }
                 
                 for (style, col), count in items:
-                    # A. Draw marker icon
                     c_val = QColor(col)
                     c_rgb = (c_val.red() / 255.0, c_val.green() / 255.0, c_val.blue() / 255.0)
-                    icon_center = fitz.Point(pos.x + 25 * dpi_factor * scale, y_offset + row_h / 2.0)
+                    icon_center = pos + fitz.Point(25 * dpi_factor * scale, y_offset + row_h / 2.0) * rot_matrix
                     half_sz = 11 * dpi_factor * scale
                     
                     if style == "square":
                         square_half = 10 * dpi_factor * scale
-                        rect_icon = fitz.Rect(
-                            icon_center.x - square_half,
-                            icon_center.y - square_half,
-                            icon_center.x + square_half,
-                            icon_center.y + square_half
-                        )
-                        # White border glow
-                        page.draw_rect(
-                            rect_icon,
+                        ic0 = icon_center + fitz.Point(-square_half, -square_half) * rot_matrix
+                        ic1 = icon_center + fitz.Point(square_half, -square_half) * rot_matrix
+                        ic2 = icon_center + fitz.Point(square_half, square_half) * rot_matrix
+                        ic3 = icon_center + fitz.Point(-square_half, square_half) * rot_matrix
+                        
+                        page.draw_polyline(
+                            [ic0, ic1, ic2, ic3, ic0],
                             color=(1.0, 1.0, 1.0),
                             fill=c_rgb,
                             width=2 * dpi_factor * scale,
                             stroke_opacity=1.0,
                             fill_opacity=1.0,
                         )
-                        # Main color border
-                        page.draw_rect(
-                            rect_icon,
+                        page.draw_polyline(
+                            [ic0, ic1, ic2, ic3, ic0],
                             color=c_rgb,
                             width=1.5 * dpi_factor * scale,
                             stroke_opacity=1.0,
                         )
                     elif style == "check":
-                        # White background disk
                         page.draw_circle(
                             icon_center,
                             half_sz,
@@ -691,10 +722,9 @@ def export_pdf_document(model, output_path: str) -> None:
                             stroke_opacity=1.0,
                             fill_opacity=1.0,
                         )
-                        # Checkmark path
-                        p_start = fitz.Point(icon_center.x - 6 * dpi_factor * scale, icon_center.y)
-                        p_mid = fitz.Point(icon_center.x - 1.5 * dpi_factor * scale, icon_center.y + 4.5 * dpi_factor * scale)
-                        p_end = fitz.Point(icon_center.x + 6 * dpi_factor * scale, icon_center.y - 3 * dpi_factor * scale)
+                        p_start = icon_center + fitz.Point(-6 * dpi_factor * scale, 0) * rot_matrix
+                        p_mid = icon_center + fitz.Point(-1.5 * dpi_factor * scale, 4.5 * dpi_factor * scale) * rot_matrix
+                        p_end = icon_center + fitz.Point(6 * dpi_factor * scale, -3 * dpi_factor * scale) * rot_matrix
                         page.draw_polyline(
                             [p_start, p_mid, p_end],
                             color=c_rgb,
@@ -703,10 +733,9 @@ def export_pdf_document(model, output_path: str) -> None:
                             closePath=False,
                         )
                         
-                    # B. Color name (Japanese supported with page_font CJK)
+                    # B. Color name
                     c_name = page_names.get(col.lower(), default_color_names.get(col.lower(), col.upper()))
                     
-                    # Fallback to English translation if no CJK font exists to prevent crashes
                     if page_font == "helv":
                         c_name_en = {
                             "赤": "Red", "青": "Blue", "緑": "Green", "黄": "Yellow", 
@@ -719,10 +748,9 @@ def export_pdf_document(model, output_path: str) -> None:
                         c_name = c_name[:10] + "..."
                         
                     item_fontsize = font_size * 0.75 * dpi_factor
-                    # Calculate precise baseline for centering within row_h
                     item_baseline_y = y_offset + row_h / 2.0 + (item_fontsize * 0.35)
                     
-                    text_pos = fitz.Point(pos.x + 48 * dpi_factor * scale, item_baseline_y)
+                    text_pos = pos + fitz.Point(48 * dpi_factor * scale, item_baseline_y) * rot_matrix
                     page.insert_text(
                         text_pos,
                         c_name,
@@ -730,11 +758,12 @@ def export_pdf_document(model, output_path: str) -> None:
                         fontsize=item_fontsize,
                         fontname=page_font,
                         fill_opacity=1.0,
+                        rotate=page_rotation,
                     )
                     
                     # C. Count
                     count_text = str(count)
-                    count_pos = fitz.Point(pos.x + (w / dpi_factor - 45 * scale) * dpi_factor, item_baseline_y)
+                    count_pos = pos + fitz.Point((w / dpi_factor - 45 * scale) * dpi_factor, item_baseline_y) * rot_matrix
                     page.insert_text(
                         count_pos,
                         count_text,
@@ -742,6 +771,7 @@ def export_pdf_document(model, output_path: str) -> None:
                         fontsize=item_fontsize,
                         fontname=page_font,
                         fill_opacity=1.0,
+                        rotate=page_rotation,
                     )
                     
                     y_offset += row_h

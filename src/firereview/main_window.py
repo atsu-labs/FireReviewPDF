@@ -997,6 +997,8 @@ class MainWindow(QMainWindow):
         try:
             export_pdf_document(self.model, file_path)
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             QMessageBox.critical(self, "エラー", f"PDFを書き出せませんでした: {e}")
             return
         QMessageBox.information(self, "書き出し", f"PDFを書き出しました: {file_path}")
