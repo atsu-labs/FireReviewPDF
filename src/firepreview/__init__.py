@@ -1,1 +1,0 @@
-"""FirePreview application package."""

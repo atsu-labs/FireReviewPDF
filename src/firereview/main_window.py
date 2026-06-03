@@ -31,7 +31,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("FirePreview")
+        self.setWindowTitle("FireReviewPDF")
         self.resize(1400, 900)
 
         self.pdf_handler = PDFHandler()
@@ -185,7 +185,7 @@ class MainWindow(QMainWindow):
         h_layout = QHBoxLayout(header)
         h_layout.setContentsMargins(15, 0, 15, 0)
 
-        title = QLabel("FirePreview")
+        title = QLabel("FireReviewPDF")
         title.setStyleSheet("font-weight: bold; font-size: 18px; color: #ffffff;")
         h_layout.addWidget(title)
 

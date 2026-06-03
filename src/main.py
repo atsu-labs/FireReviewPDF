@@ -1,6 +1,6 @@
 import sys
 
-from firepreview.app import main
+from firereview.app import main
 
 
 if __name__ == "__main__":

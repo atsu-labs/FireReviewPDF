@@ -117,7 +117,7 @@ python src/main.py
 
 ### ファイル構成
 ```text
-FireRevlewPDF/
+FireReviewPDF/
 ├── .agent/                    # AIエージェント向けの開発ルール設定
 │   └── rules/
 │       └── development-rules.md
@@ -128,7 +128,7 @@ FireRevlewPDF/
 │   └── screenshots/            # ドキュメント用画像アセット
 ├── src/
 │   ├── main.py                 # アプリケーションの起動用エントリーポイント
-│   └── firepreview/            # メインパッケージ
+│   └── firereview/            # メインパッケージ
 │       ├── __init__.py
 │       ├── app.py              # アプリケーションの初期化・フォント設定・起動制御
 │       ├── main_window.py      # メインウィンドウ（Orchestrator、コントローラー層）

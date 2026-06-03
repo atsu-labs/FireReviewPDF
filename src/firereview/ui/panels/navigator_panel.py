@@ -34,7 +34,7 @@ class NavigatorPanel(QWidget):
         # Project Info
         info_widget = QWidget()
         info_layout = QVBoxLayout(info_widget)
-        proj_name = QLabel("FirePreview Project")
+        proj_name = QLabel("FireReviewPDF Project")
         proj_name.setStyleSheet("font-size: 16px; font-weight: bold; color: #ffffff;")
         proj_date = QLabel("更新: 2023/10/24 14:20")
         proj_date.setStyleSheet("color: #888899; font-size: 11px;")
