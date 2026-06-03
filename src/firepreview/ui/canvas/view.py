@@ -69,7 +69,7 @@ class PDFCanvas(QGraphicsView):
         self.continuous_shape = False  # Stay in same tool after completing a shape
         
         # Text default properties
-        self.current_text_font = "Arial"
+        self.current_text_font = "BIZ UDゴシック"
         self.current_text_size = 12
         self.current_text_color = "#ff0000"
         self.continuous_text_input = False
@@ -440,7 +440,7 @@ class PDFCanvas(QGraphicsView):
 
     # === Annotation rendering API methods ===
 
-    def add_line_annotation(self, p1, p2, text="", color="red", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, label_offset=None):
+    def add_line_annotation(self, p1, p2, text="", color="red", item_id=None, font_family="BIZ UDゴシック", font_size=12, line_width=2, stroke_opacity=100, label_offset=None):
         line = QGraphicsLineItem(p1.x(), p1.y(), p2.x(), p2.y())
         line.setAcceptHoverEvents(True)
         stroke_c = QColor(color)
@@ -469,7 +469,7 @@ class PDFCanvas(QGraphicsView):
         if item_id:
             self.annotation_items[item_id] = line
 
-    def add_polyline_annotation(self, points, text="", color="#7c4dff", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, start_marker="", end_marker="", label_offset=None):
+    def add_polyline_annotation(self, points, text="", color="#7c4dff", item_id=None, font_family="BIZ UDゴシック", font_size=12, line_width=2, stroke_opacity=100, start_marker="", end_marker="", label_offset=None):
         if not points:
             return
         path = QPainterPath()
@@ -514,7 +514,7 @@ class PDFCanvas(QGraphicsView):
         if item_id:
             self.annotation_items[item_id] = item
 
-    def add_polygon_annotation(self, points, text="", color="blue", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, fill_opacity=30, fill_color="", label_offset=None):
+    def add_polygon_annotation(self, points, text="", color="blue", item_id=None, font_family="BIZ UDゴシック", font_size=12, line_width=2, stroke_opacity=100, fill_opacity=30, fill_color="", label_offset=None):
         poly = QGraphicsPolygonItem(QPolygonF(points))
         poly.setAcceptHoverEvents(True)
         stroke_c = QColor(color)
@@ -550,7 +550,7 @@ class PDFCanvas(QGraphicsView):
         if item_id:
             self.annotation_items[item_id] = poly
 
-    def add_circle_annotation(self, center, radius_px, text="", color="green", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, fill_opacity=30, fill_color="", center_marker="", label_offset=None):
+    def add_circle_annotation(self, center, radius_px, text="", color="green", item_id=None, font_family="BIZ UDゴシック", font_size=12, line_width=2, stroke_opacity=100, fill_opacity=30, fill_color="", center_marker="", label_offset=None):
         circle = QGraphicsEllipseItem(center.x() - radius_px, center.y() - radius_px, radius_px * 2, radius_px * 2)
         circle.setAcceptHoverEvents(True)
         stroke_c = QColor(color)
@@ -589,7 +589,7 @@ class PDFCanvas(QGraphicsView):
         if item_id:
             self.annotation_items[item_id] = circle
 
-    def add_arc_annotation(self, center, radius_px, drag_angle, arc_span, text="", color="green", item_id=None, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, center_marker="", show_radial_line=False, label_offset=None):
+    def add_arc_annotation(self, center, radius_px, drag_angle, arc_span, text="", color="green", item_id=None, font_family="BIZ UDゴシック", font_size=12, line_width=2, stroke_opacity=100, center_marker="", show_radial_line=False, label_offset=None):
         path = QPainterPath()
         rect = QRectF(center.x() - radius_px, center.y() - radius_px, radius_px * 2, radius_px * 2)
         start_angle = -drag_angle - arc_span / 2.0
@@ -718,7 +718,7 @@ class PDFCanvas(QGraphicsView):
             item.setBrush(QColor(color))
             item.setData(2, "marker")
 
-    def add_text_annotation(self, pos, text, color="black", item_id=None, font_family="Arial", font_size=12, stroke_opacity=100,
+    def add_text_annotation(self, pos, text, color="black", item_id=None, font_family="BIZ UDゴシック", font_size=12, stroke_opacity=100,
                             has_border=False, border_color="#ff0000", border_width=2, has_leader=False, leader_end_point=None):
         txt_item = self._add_text_item(text, pos.x(), pos.y(), color, font_family, font_size)
         if txt_item:
@@ -743,7 +743,7 @@ class PDFCanvas(QGraphicsView):
             self.annotation_items[item_id] = item
         self.scene.addItem(item)
 
-    def add_legend_annotation(self, pos, item_id=None, font_family="Arial", font_size=12, color="#7c4dff"):
+    def add_legend_annotation(self, pos, item_id=None, font_family="BIZ UDゴシック", font_size=12, color="#7c4dff"):
         from .items import LegendItem
         item = LegendItem(self)
         item.font_family = font_family
@@ -762,7 +762,7 @@ class PDFCanvas(QGraphicsView):
             if isinstance(item, LegendItem):
                 item.update_data(marker_counts, color_names)
 
-    def _add_text_item(self, text, x, y, color, font_family="Arial", font_size=12):
+    def _add_text_item(self, text, x, y, color, font_family="BIZ UDゴシック", font_size=12):
         if not text: return None
         text_item = CustomTextItem(text)
         text_item.setAcceptHoverEvents(True)
@@ -770,7 +770,8 @@ class PDFCanvas(QGraphicsView):
         
         if font_size <= 0:
             font_size = 12
-        font = QFont(font_family, font_size)
+        # フォントファミリーを「BIZ UDゴシック」に完全強制一本化します
+        font = QFont("BIZ UDゴシック", font_size)
         text_item.setFont(font)
         
         text_item.setPos(x, y)
@@ -967,7 +968,7 @@ class PDFCanvas(QGraphicsView):
 
                 if "text" in attrs and attrs["text"].strip() and not text_items and not isinstance(item, QGraphicsTextItem):
                     color_str = item.pen().color().name() if hasattr(item, 'pen') else "#7c4dff"
-                    ff = attrs.get("font_family", "Arial")
+                    ff = attrs.get("font_family", "BIZ UDゴシック")
                     fs = attrs.get("font_size", 12)
                     if fs <= 0:
                         fs = 12

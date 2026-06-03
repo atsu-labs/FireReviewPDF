@@ -220,7 +220,7 @@ class LegendItem(QGraphicsItem):
         self.marker_counts = {}  # {(style, color): count}
         self.color_names = {}  # {color_hex: name}
         
-        self.font_family = "Arial"
+        self.font_family = "BIZ UDゴシック"
         self.font_size = 12
         self.color = "#7c4dff"
         
