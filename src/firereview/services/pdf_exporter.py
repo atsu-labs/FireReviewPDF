@@ -523,15 +523,19 @@ def export_pdf_document(model, output_path: str) -> None:
                 fontsize = ann.font_size * dpi_factor
                 dy = get_baseline_shift(ann.font_size)
                 dy_pt = fitz.Point(0, dy) * rot_matrix
-                page.insert_text(
-                    pos + dy_pt,
-                    ann.text,
-                    color=color,
-                    fontsize=fontsize,
-                    fontname=page_font,
-                    fill_opacity=stroke_opacity,
-                    rotate=page_rotation,
-                )
+                lines = (ann.text or "").split('\n')
+                line_height = fontsize * 1.2
+                for i, line in enumerate(lines):
+                    dy_pt = fitz.Point(0, dy + i * line_height) * rot_matrix
+                    page.insert_text(
+                        pos + dy_pt,
+                        line,
+                        color=color,
+                        fontsize=fontsize,
+                        fontname=page_font,
+                        fill_opacity=stroke_opacity,
+                        rotate=page_rotation,
+                    )
 
                 has_border = getattr(ann, "has_border", False)
                 has_leader = getattr(ann, "has_leader", False)
@@ -555,7 +559,10 @@ def export_pdf_document(model, output_path: str) -> None:
                                 f_path = get_windows_font_path(fallback_name)
                                 if f_path:
                                     break
-                        font_obj = fitz.Font(fontfile=f_path)
+                        if f_path:
+                            font_obj = fitz.Font(fontfile=f_path)
+                        else:
+                            font_obj = fitz.Font(fontname="helv")
                     
                     lines = (ann.text or "").split('\n')
                     num_lines = max(1, len(lines))
@@ -660,8 +667,8 @@ def export_pdf_document(model, output_path: str) -> None:
                 )
                 
                 # Separator Line
-                line_p1 = pos + fitz.Point(15 * dpi_factor * scale, (title_h - 4 * scale) * dpi_factor) * rot_matrix
-                line_p2 = pos + fitz.Point((w / dpi_factor - 15 * scale) * dpi_factor, (title_h - 4 * scale) * dpi_factor) * rot_matrix
+                line_p1 = pos + fitz.Point(15 * dpi_factor * scale, title_h - 4 * dpi_factor * scale) * rot_matrix
+                line_p2 = pos + fitz.Point(w - 15 * dpi_factor * scale, title_h - 4 * dpi_factor * scale) * rot_matrix
                 page.draw_line(
                     line_p1,
                     line_p2,
