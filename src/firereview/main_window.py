@@ -944,8 +944,19 @@ class MainWindow(QMainWindow):
     def on_delete_item(self, item_id):
         if hasattr(self.canvas, 'active_edit_mode') and self.canvas.active_edit_mode and self.canvas.editing_item_id == item_id:
             self.on_object_edit_toggled_from_panel(item_id, False)
+            
+        is_selected = False
+        if hasattr(self.prop_panel, 'current_item_id') and self.prop_panel.current_item_id == item_id:
+            is_selected = True
+
         self.model.annotations = [a for a in self.model.annotations if a.id != item_id]
-        self.update_page_view()
+        self.canvas.remove_annotation(item_id)
+        
+        if is_selected:
+            self.on_selection_cleared()
+            
+        self.update_object_panel()
+        self.update_marker_summary()
 
     def open_pdf(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "PDF図面を開く", "", "PDF Files (*.pdf)")
@@ -1007,7 +1018,7 @@ class MainWindow(QMainWindow):
         pixmaps = []
         count = self.pdf_handler.get_page_count()
         for i in range(count):
-            pixmaps.append(self.pdf_handler.get_page_pixmap(i))
+            pixmaps.append(self.pdf_handler.get_page_pixmap(i, dpi=30))
         self.navigator.set_page_count(count)
         self.navigator.update_thumbnails(pixmaps)
 
