@@ -560,6 +560,7 @@ class MainWindow(QMainWindow):
     def go_to_page(self, page_idx):
         self.current_page = page_idx
         self.update_page_view()
+        self.canvas.reset_view()
 
     # --- (Delegated Methods from original main.py) ---
     def on_calibration_selected(self, p1, p2):
