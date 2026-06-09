@@ -797,6 +797,9 @@ class PDFCanvas(QGraphicsView):
         if self.editing_label_item_id == item_id:
             self.end_label_editing()
             
+        if self.hover_connection_line:
+            self.hover_connection_line.setVisible(False)
+            
         item = self.annotation_items.pop(item_id, None)
         if item:
             try:

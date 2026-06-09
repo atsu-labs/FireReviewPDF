@@ -944,8 +944,17 @@ class MainWindow(QMainWindow):
     def on_delete_item(self, item_id):
         if hasattr(self.canvas, 'active_edit_mode') and self.canvas.active_edit_mode and self.canvas.editing_item_id == item_id:
             self.on_object_edit_toggled_from_panel(item_id, False)
+            
+        is_selected = False
+        if hasattr(self.prop_panel, 'current_item_id') and self.prop_panel.current_item_id == item_id:
+            is_selected = True
+
         self.model.annotations = [a for a in self.model.annotations if a.id != item_id]
         self.canvas.remove_annotation(item_id)
+        
+        if is_selected:
+            self.on_selection_cleared()
+            
         self.update_object_panel()
         self.update_marker_summary()
 

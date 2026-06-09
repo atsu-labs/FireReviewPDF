@@ -1,3 +1,4 @@
+from collections import OrderedDict
 import fitz  # PyMuPDF
 from PySide6.QtGui import QImage, QPixmap
 
@@ -18,7 +19,8 @@ class PDFHandler:
     def __init__(self):
         self.doc = None
         self.current_page_num = 0
-        self._pixmap_cache = {}
+        self._pixmap_cache = OrderedDict()
+        self._cache_limit = 10
 
     def open_file(self, file_path):
         try:
@@ -39,7 +41,10 @@ class PDFHandler:
         
         cache_key = (page_num, dpi)
         if cache_key in self._pixmap_cache:
-            return self._pixmap_cache[cache_key]
+            # Move to end (most recently used)
+            pixmap = self._pixmap_cache.pop(cache_key)
+            self._pixmap_cache[cache_key] = pixmap
+            return pixmap
 
         page = self.doc[page_num]
         zoom = dpi / 72  # 72 is the default PDF DPI
@@ -49,7 +54,11 @@ class PDFHandler:
         # Convert pixmap to QImage
         img = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format_RGB888)
         pixmap = QPixmap.fromImage(img)
+        
+        # Insert and enforce size limit
         self._pixmap_cache[cache_key] = pixmap
+        if len(self._pixmap_cache) > self._cache_limit:
+            self._pixmap_cache.popitem(last=False)  # Pop oldest (first item)
         return pixmap
 
     def get_page_size_mm(self, page_num):
