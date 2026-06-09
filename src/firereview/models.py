@@ -126,6 +126,7 @@ class Annotation:
         self.drag_angle = 0.0
         self.arc_span = 30.0
         self.show_radial_line = False
+        self.is_calculated = False
 
     def to_dict(self):
         from PySide6.QtCore import QPointF
@@ -161,7 +162,8 @@ class Annotation:
             "label_offset": self.label_offset,
             "drag_angle": self.drag_angle,
             "arc_span": self.arc_span,
-            "show_radial_line": self.show_radial_line
+            "show_radial_line": self.show_radial_line,
+            "is_calculated": self.is_calculated
         }
 
     @classmethod
@@ -194,4 +196,5 @@ class Annotation:
         ann.drag_angle = data.get("drag_angle", 0.0)
         ann.arc_span = data.get("arc_span", 30.0)
         ann.show_radial_line = data.get("show_radial_line", False)
+        ann.is_calculated = data.get("is_calculated", False)
         return ann

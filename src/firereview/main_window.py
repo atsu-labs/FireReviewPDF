@@ -393,7 +393,8 @@ class MainWindow(QMainWindow):
             sf = self._get_scale_factor_for_page(ann.page_num)
             if sf <= 0:
                 continue
-            self._calculate_annotation_values(ann, sf)
+            if ann.is_calculated:
+                self._calculate_annotation_values(ann, sf)
 
     # --- 単位フォーマットヘルパー ---
     def _format_distance(self, value_mm):
@@ -757,6 +758,7 @@ class MainWindow(QMainWindow):
         for ann in self.model.annotations:
             if ann.id == item_id:
                 self._calculate_annotation_values(ann, current_scale_factor)
+                ann.is_calculated = True
                 self.canvas.update_item_properties(item_id, {"text": ann.text})
                 self.prop_panel.set_item_data(ann.id, ann.type, ann.text, ann.color,
                                               ann.font_family, ann.font_size, ann.line_width,
@@ -934,7 +936,7 @@ class MainWindow(QMainWindow):
             if ann.id == item_id:
                 ann.points = points
                 
-                if self._is_current_page_calibrated():
+                if self._is_current_page_calibrated() and ann.is_calculated:
                     self.on_calculate_requested(item_id)
                 
                 if ann.type == "polyline":
