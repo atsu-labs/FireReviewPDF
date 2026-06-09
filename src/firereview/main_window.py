@@ -1018,7 +1018,7 @@ class MainWindow(QMainWindow):
         pixmaps = []
         count = self.pdf_handler.get_page_count()
         for i in range(count):
-            pixmaps.append(self.pdf_handler.get_page_pixmap(i))
+            pixmaps.append(self.pdf_handler.get_page_pixmap(i, dpi=30))
         self.navigator.set_page_count(count)
         self.navigator.update_thumbnails(pixmaps)
 

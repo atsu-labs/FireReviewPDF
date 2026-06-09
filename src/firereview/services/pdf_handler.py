@@ -20,7 +20,7 @@ class PDFHandler:
         self.doc = None
         self.current_page_num = 0
         self._pixmap_cache = OrderedDict()
-        self._cache_limit = 10
+        self._cache_limit = 3
 
     def open_file(self, file_path):
         try:
