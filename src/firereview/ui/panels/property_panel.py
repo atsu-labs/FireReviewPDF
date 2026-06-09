@@ -35,6 +35,7 @@ class PropertyPanel(QWidget):
         self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scroll_area.setStyleSheet("background-color: transparent; border: none;")
+        self.scroll_area.viewport().setStyleSheet("background-color: transparent;")
 
         self.scroll_content = QWidget()
         self.scroll_content.setObjectName("PropertyPanelContent")
@@ -387,6 +388,7 @@ class PropertyPanel(QWidget):
         
         type_names = {"line": "直線（計測）", "polyline": "直線", "polygon": "矩形", "circle": "円", "text": "テキスト", "marker": "マーカー", "arc": "円弧"}
         self.type_title.setText(type_names.get(item_type, "要素"))
+        self.sub_title.setVisible(True)
         
         # Dynamic visibility
         is_shape = item_type in ["line", "polyline", "polygon", "circle", "arc"]
@@ -500,6 +502,7 @@ class PropertyPanel(QWidget):
         self.current_item_id = None
         self.current_item_type = None
         self.type_title.setText("要素を選択してください")
+        self.sub_title.setVisible(False)
         self.text_edit.setPlainText("")
         self.color_preview.setStyleSheet("background-color: transparent; border: 1px solid #3d3d5c;")
         self.appearance_container.setVisible(False)
