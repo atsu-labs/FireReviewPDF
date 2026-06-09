@@ -393,7 +393,7 @@ class MainWindow(QMainWindow):
             sf = self._get_scale_factor_for_page(ann.page_num)
             if sf <= 0:
                 continue
-            if getattr(ann, "is_calculated", False):
+            if ann.is_calculated:
                 self._calculate_annotation_values(ann, sf)
 
     # --- 単位フォーマットヘルパー ---
@@ -936,7 +936,7 @@ class MainWindow(QMainWindow):
             if ann.id == item_id:
                 ann.points = points
                 
-                if self._is_current_page_calibrated() and getattr(ann, "is_calculated", False):
+                if self._is_current_page_calibrated() and ann.is_calculated:
                     self.on_calculate_requested(item_id)
                 
                 if ann.type == "polyline":
