@@ -788,6 +788,24 @@ class PDFCanvas(QGraphicsView):
         if item_id:
             self.existing_text_edited.emit(item_id, new_text)
 
+    def remove_annotation(self, item_id):
+        """Removes the annotation item from the canvas scene without clearing other items."""
+        if self.editing_item_id == item_id:
+            self.set_active_edit_item(item_id, False)
+        if self.editing_node_item_id == item_id:
+            self.end_node_editing()
+        if self.editing_label_item_id == item_id:
+            self.end_label_editing()
+            
+        item = self.annotation_items.pop(item_id, None)
+        if item:
+            try:
+                self.scene.removeItem(item)
+            except RuntimeError:
+                pass
+        self.scene.update()
+        self.viewport().update()
+
     def update_item_properties(self, item_id, attrs):
         for item in self.scene.items():
             if item.data(0) == item_id:

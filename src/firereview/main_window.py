@@ -945,7 +945,9 @@ class MainWindow(QMainWindow):
         if hasattr(self.canvas, 'active_edit_mode') and self.canvas.active_edit_mode and self.canvas.editing_item_id == item_id:
             self.on_object_edit_toggled_from_panel(item_id, False)
         self.model.annotations = [a for a in self.model.annotations if a.id != item_id]
-        self.update_page_view()
+        self.canvas.remove_annotation(item_id)
+        self.update_object_panel()
+        self.update_marker_summary()
 
     def open_pdf(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "PDF図面を開く", "", "PDF Files (*.pdf)")
