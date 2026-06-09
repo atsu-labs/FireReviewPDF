@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QLineEdit, 
                              QPushButton, QColorDialog, QHBoxLayout, QFontComboBox, 
                              QSpinBox, QSlider, QFrame, QGridLayout, QPlainTextEdit, QComboBox,
-                             QCheckBox)
+                             QCheckBox, QScrollArea)
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QColor, QFont
 
@@ -25,7 +25,22 @@ class PropertyPanel(QWidget):
         self.setup_ui()
 
     def setup_ui(self):
-        self.main_layout = QVBoxLayout(self)
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        self.scroll_area = QScrollArea(self)
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QScrollArea.NoFrame)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setStyleSheet("background-color: transparent; border: none;")
+
+        self.scroll_content = QWidget()
+        self.scroll_content.setObjectName("PropertyPanelContent")
+        self.scroll_content.setStyleSheet("background-color: transparent;")
+
+        self.main_layout = QVBoxLayout(self.scroll_content)
         self.main_layout.setContentsMargins(15, 15, 15, 15)
         self.main_layout.setSpacing(10)
         
@@ -37,21 +52,6 @@ class PropertyPanel(QWidget):
         self.sub_title = QLabel("選択中の要素")
         self.sub_title.setStyleSheet("color: #888899; font-size: 12px;")
         self.main_layout.addWidget(self.sub_title)
-
-        # --- Alignment Section ---
-        self.align_container = QWidget()
-        align_layout = QVBoxLayout(self.align_container)
-        align_layout.setContentsMargins(0, 0, 0, 0)
-        align_layout.addWidget(self._create_section_label("整列"))
-        grid = QGridLayout()
-        grid.setSpacing(5)
-        for i, text in enumerate(["|←", "↔", "→|", "↑", "↕", "↓"]):
-            btn = QPushButton(text)
-            btn.setFixedSize(35, 30)
-            btn.setStyleSheet("background-color: #2a2a3d; color: white; border-radius: 4px;")
-            grid.addWidget(btn, 0, i)
-        align_layout.addLayout(grid)
-        self.main_layout.addWidget(self.align_container)
 
         # --- Appearance Section (Common) ---
         self.appearance_container = QWidget()
@@ -369,8 +369,11 @@ class PropertyPanel(QWidget):
         self.delete_btn.setStyleSheet("color: #ff5555; background: transparent; border: 1px solid #ff5555; border-radius: 4px; padding: 5px;")
         self.delete_btn.clicked.connect(self._on_delete_clicked)
         self.main_layout.addWidget(self.delete_btn)
+
+        self.scroll_area.setWidget(self.scroll_content)
+        outer_layout.addWidget(self.scroll_area)
         
-        self.setEnabled(False)
+        self.clear_panel()
 
     def _create_section_label(self, text):
         lbl = QLabel(text)
@@ -405,7 +408,6 @@ class PropertyPanel(QWidget):
         self.node_edit_container.setVisible(is_node_editable and not is_marker)
         self.border_leader_container.setVisible(is_text)
         self.marker_anno_container.setVisible(is_marker)
-        self.align_container.setVisible(not is_marker)
         self.appearance_container.setVisible(not is_marker)
  
         # Reset node edit button state for the new item
@@ -489,6 +491,7 @@ class PropertyPanel(QWidget):
             self.anno_marker_opacity_label.setText(f"{stroke_opacity}%")
             self.anno_marker_opacity_slider.blockSignals(False)
         
+        self.delete_btn.setVisible(True)
         self.setEnabled(True)
         self._block_signals = False
 
@@ -499,17 +502,21 @@ class PropertyPanel(QWidget):
         self.type_title.setText("要素を選択してください")
         self.text_edit.setPlainText("")
         self.color_preview.setStyleSheet("background-color: transparent; border: 1px solid #3d3d5c;")
+        self.appearance_container.setVisible(False)
         self.fill_container.setVisible(False)
+        self.marker_container.setVisible(False)
+        self.line_container.setVisible(False)
         self.arc_container.setVisible(False)
         self.calc_container.setVisible(False)
         self.node_edit_container.setVisible(False)
+        self.text_container.setVisible(False)
         self.border_leader_container.setVisible(False)
+        self.marker_anno_container.setVisible(False)
+        self.delete_btn.setVisible(False)
         self.node_edit_btn.blockSignals(True)
         self.node_edit_btn.setChecked(False)
         self.node_edit_btn.setText("📐 頂点を編集")
         self.node_edit_btn.blockSignals(False)
-        self.marker_container.setVisible(False)
-        self.marker_anno_container.setVisible(False)
         self.setEnabled(False)
         self._block_signals = False
 
