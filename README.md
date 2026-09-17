@@ -57,12 +57,23 @@
 
 ### インストール
 ```powershell
-pip install PySide6 pymupdf qtawesome
+# 実行に必要なパッケージのインストール
+pip install -r requirements.txt
+
+# 開発・テスト用パッケージのインストール
+pip install -r requirements-dev.txt
 ```
 
 ### 実行
 ```powershell
 python src/main.py
+```
+
+### テストの実行
+単体テストには `pytest` を使用します。
+
+```powershell
+pytest
 ```
 
 ### Windows アプリ（EXE）のビルド
