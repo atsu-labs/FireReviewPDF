@@ -82,9 +82,11 @@ class TestProjectStore:
             load_project(str(invalid_file))
         assert "プロジェクトデータの復元に失敗しました" in str(exc_info.value)
 
-    def test_save_to_invalid_directory(self):
-        # 存在しないディレクトリ配下への書き込み
-        invalid_path = "/non_existent_directory_xyz/project.json"
+    def test_save_to_invalid_directory(self, tmp_path):
+        # 通常ファイルを親パスとして指定し、OS非依存で確実に書き込みエラー（OSError）を発生させる
+        dummy_file = tmp_path / "dummy_file.txt"
+        dummy_file.write_text("not a directory", encoding="utf-8")
+        invalid_path = str(dummy_file / "project.json")
         with pytest.raises(OSError) as exc_info:
             save_project(DrawingModel(), invalid_path)
         assert "プロジェクトファイルの書き込みに失敗しました" in str(exc_info.value)

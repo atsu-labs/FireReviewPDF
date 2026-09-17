@@ -113,6 +113,21 @@ class TestDrawingModelCalculations:
         area = model.calculate_real_area(pts)
         assert pytest.approx(area, abs=1e-6) == 5400.0
 
+    def test_calculate_real_area_vertex_order(self):
+        model = DrawingModel()
+        model.scale_factor = 2.0
+        # 反時計回り
+        ccw_pts = [QPointF(0, 0), QPointF(10, 0), QPointF(10, 10), QPointF(0, 10)]
+        # 時計回り（逆順）
+        cw_pts = [QPointF(0, 0), QPointF(0, 10), QPointF(10, 10), QPointF(10, 0)]
+
+        area_ccw = model.calculate_real_area(ccw_pts)
+        area_cw = model.calculate_real_area(cw_pts)
+
+        expected = 100.0 * (2.0 ** 2)  # 400.0
+        assert pytest.approx(area_ccw, abs=1e-6) == expected
+        assert pytest.approx(area_cw, abs=1e-6) == expected
+
 
 class TestAnnotation:
     def test_annotation_defaults(self):
