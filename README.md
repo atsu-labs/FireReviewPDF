@@ -65,6 +65,23 @@ pip install PySide6 pymupdf qtawesome
 python src/main.py
 ```
 
+### Windows アプリ（EXE）のビルド
+PyInstaller を使用して、単一実行可能ファイル（Onefile 形式）を作成できます。
+
+1. **PyInstaller のインストール:**
+   ```powershell
+   pip install pyinstaller
+   ```
+2. **ビルドの実行:**
+   ```powershell
+   # 付属のビルドスクリプトを実行
+   .\build_exe.ps1
+   
+   # または直接 spec ファイルを指定してビルド
+   pyinstaller FireReviewPDF.spec --clean
+   ```
+3. ビルドが完了すると、`dist/FireReviewPDF.exe` が生成されます。コンソール画面なしのスタンドアロン Windows アプリケーションとして直接起動できます。
+
 ---
 
 ## 3. 基本的な操作フロー

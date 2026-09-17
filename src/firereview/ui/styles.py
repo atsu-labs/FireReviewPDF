@@ -1,8 +1,12 @@
 import os
+import sys
 
 
 def _asset(filename: str) -> str:
     """アセットファイルの絶対パスを返す（Qt stylesheet 用にスラッシュに統一）"""
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        base_dir = os.path.join(sys._MEIPASS, "firereview", "ui", "assets")
+        return os.path.join(base_dir, filename).replace("\\", "/")
     return os.path.join(os.path.dirname(__file__), "assets", filename).replace("\\", "/")
 
 
