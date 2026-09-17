@@ -11,10 +11,19 @@ Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host "  FireReviewPDF Windows EXE Build Script" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 
+# 作業ディレクトリをスクリプトのルートに固定
+Set-Location $PSScriptRoot
+
 # Python 実行パスの検出
+# 仮想環境 (.venv) または LOCALAPPDATA 配下の Python を優先的に検出
 $pythonCmd = "python"
-if (Get-Command "C:\Users\fd-shidou\AppData\Local\Python\bin\python.exe" -ErrorAction SilentlyContinue) {
-    $pythonCmd = "C:\Users\fd-shidou\AppData\Local\Python\bin\python.exe"
+$venvPython = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+$localPython = Join-Path $env:LOCALAPPDATA "Python\bin\python.exe"
+
+if (Test-Path $venvPython) {
+    $pythonCmd = $venvPython
+} elseif (Test-Path $localPython) {
+    $pythonCmd = $localPython
 }
 
 Write-Host "`n[1/3] Python & PyInstaller の確認..." -ForegroundColor Yellow
