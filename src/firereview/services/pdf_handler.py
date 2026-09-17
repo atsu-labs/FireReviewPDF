@@ -51,8 +51,8 @@ class PDFHandler:
         mat = fitz.Matrix(zoom, zoom)
         pix = page.get_pixmap(matrix=mat)
         
-        # Convert pixmap to QImage
-        img = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format_RGB888)
+        # Convert pixmap to QImage (use .copy() to ensure safe memory ownership)
+        img = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format_RGB888).copy()
         pixmap = QPixmap.fromImage(img)
         
         # Insert and enforce size limit
