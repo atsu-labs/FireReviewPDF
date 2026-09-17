@@ -14,7 +14,14 @@ def save_project(model: DrawingModel, file_path: str) -> None:
 def load_project(file_path: str) -> DrawingModel:
     try:
         with open(file_path, "r", encoding="utf-8") as file:
-            data = json.load(file)
-            return DrawingModel.from_dict(data)
+            try:
+                data = json.load(file)
+            except Exception as e:
+                raise ValueError(f"プロジェクトファイルのJSON解析に失敗しました: {e}") from e
+    except OSError as e:
+        raise OSError(f"プロジェクトファイルの読み込みに失敗しました: {e}") from e
+
+    try:
+        return DrawingModel.from_dict(data)
     except Exception as e:
-        raise ValueError(f"プロジェクトファイルの読み込みまたは解析に失敗しました: {e}") from e
+        raise ValueError(f"プロジェクトデータの復元に失敗しました: {e}") from e
