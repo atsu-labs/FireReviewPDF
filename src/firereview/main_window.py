@@ -970,6 +970,12 @@ class MainWindow(QMainWindow):
                 self._load_thumbnails()
                 self.update_page_view()
                 self.canvas.reset_view()
+            else:
+                QMessageBox.critical(
+                    self,
+                    "エラー",
+                    f"PDFファイルを開けませんでした:\n{file_path}\n\nファイルが破損しているか、アクセス権限がない可能性があります。"
+                )
 
     def swap_pdf(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "背景PDFを差し替え", "", "PDF Files (*.pdf)")
@@ -977,28 +983,66 @@ class MainWindow(QMainWindow):
             if self.pdf_handler.open_file(file_path):
                 self.model.pdf_path = file_path
                 self.update_page_view()
+            else:
+                QMessageBox.critical(
+                    self,
+                    "エラー",
+                    f"差し替え用PDFファイルを開けませんでした:\n{file_path}\n\nファイルが破損しているか、アクセス権限がない可能性があります。"
+                )
 
     def save_project(self):
         file_path, _ = QFileDialog.getSaveFileName(self, "プロジェクトを保存", "", "JSON Files (*.json)")
         if file_path:
-            save_project_file(self.model, file_path)
-            QMessageBox.information(self, "保存", "プロジェクトを保存しました。")
+            try:
+                save_project_file(self.model, file_path)
+                QMessageBox.information(self, "保存", "プロジェクトを保存しました。")
+            except Exception as e:
+                QMessageBox.critical(self, "エラー", f"プロジェクトの保存に失敗しました:\n{e}")
 
     def load_project(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "プロジェクトを読み込み", "", "JSON Files (*.json)")
-        if file_path:
-            self.model = load_project_file(file_path)
-            
-            if self.model.pdf_path and os.path.exists(self.model.pdf_path):
-                self.pdf_handler.open_file(self.model.pdf_path)
+        if not file_path:
+            return
+
+        try:
+            loaded_model = load_project_file(file_path)
+        except Exception as e:
+            QMessageBox.critical(self, "エラー", f"プロジェクトファイルの読み込みに失敗しました:\n{e}")
+            return
+
+        pdf_loaded = False
+        pdf_path = loaded_model.pdf_path
+        if pdf_path and os.path.exists(pdf_path):
+            if self.pdf_handler.open_file(pdf_path):
+                pdf_loaded = True
             else:
-                QMessageBox.warning(self, "警告", "PDFファイルが見つかりません。再選択してください。")
-                self.open_pdf()
-            
-            self.current_page = 0
-            self._load_thumbnails()
-            self.update_page_view()
-            self.canvas.reset_view()
+                QMessageBox.warning(
+                    self,
+                    "警告",
+                    f"プロジェクトに設定されていた背景PDFを開けませんでした:\n{pdf_path}\n\nファイルが破損している可能性があります。別のPDFを選択してください。"
+                )
+        else:
+            QMessageBox.warning(self, "警告", "プロジェクトに設定されていた背景PDFが見つかりません。再選択してください。")
+
+        if not pdf_loaded:
+            alt_path, _ = QFileDialog.getOpenFileName(self, "背景PDFを選択", "", "PDF Files (*.pdf)")
+            if not alt_path:
+                QMessageBox.warning(self, "キャンセル", "背景PDFが選択されなかったため、プロジェクトの読み込みを中止しました。")
+                return
+            if not self.pdf_handler.open_file(alt_path):
+                QMessageBox.critical(
+                    self,
+                    "エラー",
+                    f"選択されたPDFファイルを開けませんでした:\n{alt_path}\n\nファイルが破損しているか、アクセス権限がない可能性があります。"
+                )
+                return
+            loaded_model.pdf_path = alt_path
+
+        self.model = loaded_model
+        self.current_page = 0
+        self._load_thumbnails()
+        self.update_page_view()
+        self.canvas.reset_view()
 
     def export_pdf(self):
         if not self.pdf_handler.doc or not self.model.pdf_path:
