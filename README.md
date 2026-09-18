@@ -143,6 +143,9 @@ PyInstaller を使用して、単一実行可能ファイル（Onefile 形式）
 * **PDF処理エンジン:** PyMuPDF (fitz)
   * 150 DPIでの鮮明なラスタライズレンダリングと用紙サイズ（ミリメートル寸法）の自動解析。
   * **Strategy / Registryパターン**（`BasePdfRenderer` を継承する図形別専用レンダラー）による疎結合な描画ロジック分離。
+* **サービス層・責務分離:**
+  * **`DocumentManager`:** プロジェクトJSONおよびPDFのファイル読み書き、状態変更追跡（ダーティフラグ管理）をカプセル化。
+  * **`MeasurementService`:** キャリブレーション値の計算、実寸法（距離・面積・半径）の算出、単位変換・表示フォーマット等のピュアな計算ロジックをGUIから完全分離。
 * **データ永続化仕様:** 
   * 座標系はPDFのピクセル座標（150 DPIベース）を基準に統一。
   * JSON保存時はページごとのスケールファクター、注釈の幾何情報、テキスト装飾、凡例位置、マーカー集計用のローカル色名データを完全保持。
@@ -167,6 +170,8 @@ FireReviewPDF/
 │       ├── models.py           # データモデル定義（DrawingModel、BaseAnnotation、図形別派生クラス）
 │       ├── services/           # ビジネスロジック・サービス層
 │       │   ├── __init__.py
+│       │   ├── document_manager.py # プロジェクトファイル・PDF入出力・ダーティ管理
+│       │   ├── measurement_service.py # スケール計算・実寸法計測・単位変換サービス
 │       │   ├── pdf_exporter.py # アノテーション合成・PDF出力オーケストレーター
 │       │   ├── pdf_handler.py  # PyMuPDFを使用したPDF描画・サイズ解析
 │       │   ├── pdf_renderers/  # 図形別PDF描画ストラテジー（Strategyパターン）

@@ -8,9 +8,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QShortcut, QKeySequence
 import qtawesome as qta
 
-from .services.pdf_exporter import export_pdf_document
 from .services.pdf_handler import PDFHandler
-from .services.project_store import load_project as load_project_file, save_project as save_project_file
+from .services import DocumentManager, MeasurementService
 from .ui.canvas import PDFCanvas, ToolMode
 from .ui.preferences_dialog import PreferencesDialog
 from .models import DrawingModel, Annotation
@@ -35,7 +34,10 @@ class MainWindow(QMainWindow):
         self.resize(1400, 900)
 
         self.pdf_handler = PDFHandler()
-        self.model = DrawingModel()
+        self.document_manager = DocumentManager(self.pdf_handler, parent=self)
+        self.document_manager.dirty_changed.connect(self._on_dirty_changed)
+        self.measurement_service = MeasurementService()
+
         self.current_page = 0  # 内部ページ番号は0始まり
         self._pref_dialog_active = False
         self._calib_all_pages_from_prefs = False
@@ -62,9 +64,6 @@ class MainWindow(QMainWindow):
         self.current_marker_style = "square"
         self.current_marker_color = "#ff1744"
         self.current_marker_opacity = 70
-        # Dirty state tracking
-        self.is_dirty = False
-        self.current_project_path = ""
 
         self.setup_ui()
         self._setup_menus()
@@ -72,27 +71,48 @@ class MainWindow(QMainWindow):
         self._setup_shortcuts()
         self._update_window_title()
 
+    @property
+    def model(self) -> DrawingModel:
+        return self.document_manager.model
+
+    @model.setter
+    def model(self, value: DrawingModel):
+        self.document_manager.model = value
+
+    @property
+    def is_dirty(self) -> bool:
+        return self.document_manager.is_dirty
+
+    @is_dirty.setter
+    def is_dirty(self, value: bool):
+        self.document_manager.set_dirty(value)
+
+    @property
+    def current_project_path(self) -> str:
+        return self.document_manager.current_project_path
+
+    @current_project_path.setter
+    def current_project_path(self, value: str):
+        self.document_manager.current_project_path = value
+
     def set_dirty(self, dirty: bool = True):
         """ダーティ状態を設定し、タイトルバーの表示を更新する。"""
-        if self.is_dirty != dirty:
-            self.is_dirty = dirty
-            self._update_window_title()
+        self.document_manager.set_dirty(dirty)
+
+    def _on_dirty_changed(self, is_dirty: bool):
+        self._update_window_title()
 
     def _update_window_title(self):
         """プロジェクト/PDFファイル名および未保存マーク（*）を反映してウィンドウタイトルを更新する。"""
         base_title = "FireReviewPDF"
-        file_name = ""
-        if self.current_project_path:
-            file_name = os.path.basename(self.current_project_path)
-        elif self.model.pdf_path:
-            file_name = os.path.basename(self.model.pdf_path)
+        file_name = self.document_manager.get_active_document_name()
 
         if file_name:
             title = f"{base_title} - {file_name}"
         else:
             title = base_title
 
-        if self.is_dirty:
+        if self.document_manager.is_dirty:
             title += " *"
         self.setWindowTitle(title)
 
@@ -419,55 +439,20 @@ class MainWindow(QMainWindow):
         self.canvas.set_shape_defaults(self.current_shape_color, self.current_line_width, self.current_fill_color)
 
     def _calculate_annotation_values(self, ann, sf):
-        if ann.type in ("line", "polyline") and len(ann.points) >= 2:
-            total = sum(
-                math.sqrt((ann.points[i+1].x() - ann.points[i].x())**2 +
-                          (ann.points[i+1].y() - ann.points[i].y())**2)
-                * sf
-                for i in range(len(ann.points) - 1)
-            )
-            ann.real_value = total
-            ann.text = self._format_distance(total)
-        elif ann.type == "polygon" and len(ann.points) >= 3:
-            area_mm2 = self.model.calculate_real_area(ann.points, sf)
-            ann.real_value = area_mm2
-            ann.text = self._format_area(area_mm2)
-        elif ann.type == "circle":
-            radius_px = ann.radius_px if ann.radius_px > 0 else (ann.real_value / sf if ann.real_value > 0 else 0)
-            radius_mm = radius_px * sf
-            ann.real_value = radius_mm
-            ann.text = self._format_radius(radius_mm)
-        elif ann.type == "arc":
-            radius_px = getattr(ann, "radius_px", 0.0)
-            if radius_px <= 0 and ann.real_value > 0:
-                radius_px = ann.real_value / sf
-            radius_mm = radius_px * sf
-            ann.real_value = radius_mm
-            ann.text = self._format_radius(radius_mm)
+        self.measurement_service.calculate_annotation_values(ann, sf, self.model)
 
     def _recalculate_all_annotations(self):
-        for ann in self.model.annotations:
-            sf = self._get_scale_factor_for_page(ann.page_num)
-            if sf <= 0:
-                continue
-            if ann.is_calculated:
-                self._calculate_annotation_values(ann, sf)
+        self.measurement_service.recalculate_all_annotations(self.model)
 
     # --- 単位フォーマットヘルパー ---
     def _format_distance(self, value_mm):
-        if self.model.unit == 'm':
-            return f"{value_mm / 1000:.3f} m"
-        return f"{value_mm:.1f} mm"
+        return self.measurement_service.format_distance(value_mm, self.model.unit)
 
     def _format_area(self, value_mm2):
-        if self.model.unit == 'm':
-            return f"{value_mm2 / 1_000_000:.2f} m²"
-        return f"{value_mm2:.1f} mm²"
+        return self.measurement_service.format_area(value_mm2, self.model.unit)
 
     def _format_radius(self, value_mm):
-        if self.model.unit == 'm':
-            return f"R={value_mm / 1000:.3f} m"
-        return f"R={value_mm:.1f} mm"
+        return self.measurement_service.format_radius(value_mm, self.model.unit)
 
     def _get_scale_factor_for_page(self, page_num):
         return self.model.get_scale_factor(page_num)
@@ -482,14 +467,9 @@ class MainWindow(QMainWindow):
         return self._is_page_calibrated(self.current_page)
 
     def _format_scale_ratio(self, scale_factor):
-        mm_per_pixel_on_pdf = 25.4 / self.PDF_RENDER_DPI
-        if scale_factor <= 0 or mm_per_pixel_on_pdf <= 0:
-            return ""
-        ratio = scale_factor / mm_per_pixel_on_pdf
-        rounded = round(ratio)
-        if abs(ratio - rounded) < self.SCALE_RATIO_ROUNDING_TOLERANCE:
-            return f"1/{rounded}"
-        return f"1/{ratio:.1f}"
+        return self.measurement_service.format_scale_ratio(
+            scale_factor, self.PDF_RENDER_DPI, self.SCALE_RATIO_ROUNDING_TOLERANCE
+        )
 
     def _update_scale_status_label(self):
         if self._is_current_page_calibrated():
@@ -1036,15 +1016,11 @@ class MainWindow(QMainWindow):
 
         file_path, _ = QFileDialog.getOpenFileName(self, "PDF図面を開く", "", "PDF Files (*.pdf)")
         if file_path:
-            if self.pdf_handler.open_file(file_path):
-                self.model = DrawingModel()
-                self.model.pdf_path = file_path
+            if self.document_manager.open_pdf(file_path):
                 self.current_page = 0
-                self.current_project_path = ""
                 self._load_thumbnails()
                 self.update_page_view()
                 self.canvas.reset_view()
-                self.set_dirty(False)
             else:
                 QMessageBox.critical(
                     self,
@@ -1055,10 +1031,8 @@ class MainWindow(QMainWindow):
     def swap_pdf(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "背景PDFを差し替え", "", "PDF Files (*.pdf)")
         if file_path:
-            if self.pdf_handler.open_file(file_path):
-                self.model.pdf_path = file_path
+            if self.document_manager.swap_pdf(file_path):
                 self.update_page_view()
-                self.set_dirty(True)
             else:
                 QMessageBox.critical(
                     self,
@@ -1067,18 +1041,12 @@ class MainWindow(QMainWindow):
                 )
 
     def save_project(self) -> bool:
-        default_path = self.current_project_path
-        if not default_path and self.model.pdf_path:
-            base, _ = os.path.splitext(self.model.pdf_path)
-            default_path = base + ".json"
-
+        default_path = self.document_manager.get_suggested_save_path()
         file_path, _ = QFileDialog.getSaveFileName(self, "プロジェクトを保存", default_path, "JSON Files (*.json)")
         if not file_path:
             return False
         try:
-            save_project_file(self.model, file_path)
-            self.current_project_path = file_path
-            self.set_dirty(False)
+            self.document_manager.save_project(file_path)
             QMessageBox.information(self, "保存", "プロジェクトを保存しました。")
             return True
         except Exception as e:
@@ -1094,7 +1062,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            loaded_model = load_project_file(file_path)
+            loaded_model = self.document_manager.load_project(file_path)
         except Exception as e:
             QMessageBox.critical(self, "エラー", f"プロジェクトファイルの読み込みに失敗しました:\n{e}")
             return
@@ -1127,13 +1095,11 @@ class MainWindow(QMainWindow):
                 return
             loaded_model.pdf_path = alt_path
 
-        self.model = loaded_model
-        self.current_project_path = file_path
+        self.document_manager.apply_loaded_project(loaded_model, file_path)
         self.current_page = 0
         self._load_thumbnails()
         self.update_page_view()
         self.canvas.reset_view()
-        self.set_dirty(False)
 
     def export_pdf(self):
         if not self.pdf_handler.doc or not self.model.pdf_path:
@@ -1144,7 +1110,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            export_pdf_document(self.model, file_path)
+            self.document_manager.export_pdf(file_path)
         except Exception as e:
             import traceback
             traceback.print_exc()
