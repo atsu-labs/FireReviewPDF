@@ -169,3 +169,44 @@ class TestCloseEvent:
         event = QCloseEvent()
         window.closeEvent(event)
         assert event.isAccepted() is True
+
+
+class TestSaveProject:
+    def test_save_project_default_path_from_pdf(self, window, monkeypatch, tmp_path):
+        captured_dir = None
+
+        from PySide6.QtWidgets import QFileDialog
+        monkeypatch.setattr(
+            QFileDialog,
+            "getSaveFileName",
+            lambda parent, caption, dir, filter: (str(tmp_path / "out.json"), "")
+        )
+
+        def fake_get_save_file_name(parent, caption, dir, filter):
+            nonlocal captured_dir
+            captured_dir = dir
+            return (str(tmp_path / "out.json"), "")
+
+        monkeypatch.setattr(QFileDialog, "getSaveFileName", fake_get_save_file_name)
+
+        window.model.pdf_path = os.path.join("some", "path", "drawing.pdf")
+        assert window.save_project() is True
+        assert captured_dir == os.path.join("some", "path", "drawing.json")
+
+    def test_save_project_default_path_from_current_project(self, window, monkeypatch, tmp_path):
+        captured_dir = None
+
+        from PySide6.QtWidgets import QFileDialog
+
+        def fake_get_save_file_name(parent, caption, dir, filter):
+            nonlocal captured_dir
+            captured_dir = dir
+            return (str(tmp_path / "out.json"), "")
+
+        monkeypatch.setattr(QFileDialog, "getSaveFileName", fake_get_save_file_name)
+
+        window.model.pdf_path = os.path.join("some", "path", "drawing.pdf")
+        window.current_project_path = os.path.join("projects", "my_project.json")
+        assert window.save_project() is True
+        assert captured_dir == os.path.join("projects", "my_project.json")
+

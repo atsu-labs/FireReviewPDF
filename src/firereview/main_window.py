@@ -1067,7 +1067,12 @@ class MainWindow(QMainWindow):
                 )
 
     def save_project(self) -> bool:
-        file_path, _ = QFileDialog.getSaveFileName(self, "プロジェクトを保存", "", "JSON Files (*.json)")
+        default_path = self.current_project_path
+        if not default_path and self.model.pdf_path:
+            base, _ = os.path.splitext(self.model.pdf_path)
+            default_path = base + ".json"
+
+        file_path, _ = QFileDialog.getSaveFileName(self, "プロジェクトを保存", default_path, "JSON Files (*.json)")
         if not file_path:
             return False
         try:
