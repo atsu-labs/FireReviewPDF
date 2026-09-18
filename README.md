@@ -166,8 +166,12 @@ FireReviewPDF/
 │   └── firereview/            # メインパッケージ
 │       ├── __init__.py
 │       ├── app.py              # アプリケーションの初期化・フォント設定・起動制御
-│       ├── main_window.py      # メインウィンドウ（Orchestrator、コントローラー層）
+│       ├── main_window.py      # メインウィンドウ（Orchestrator、UI統合）
 │       ├── models.py           # データモデル定義（DrawingModel、BaseAnnotation、図形別派生クラス）
+│       ├── controllers/        # UI・モデル連携コントローラー層
+│       │   ├── __init__.py
+│       │   ├── tool_controller.py  # 描画ツールのオプション設定・デフォルト値管理
+│       │   └── canvas_controller.py# キャンバスイベント・注釈生成・画面同期
 │       ├── services/           # ビジネスロジック・サービス層
 │       │   ├── __init__.py
 │       │   ├── document_manager.py # プロジェクトファイル・PDF入出力・ダーティ管理
