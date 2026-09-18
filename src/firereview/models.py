@@ -265,6 +265,7 @@ class ArcAnnotation(Annotation):
         self.drag_angle: float = 0.0
         self.arc_span: float = 30.0
         self.show_radial_line: bool = False
+        self.center_marker: str = ""
 
 
 class MarkerAnnotation(Annotation):

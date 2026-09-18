@@ -43,6 +43,7 @@ class TestAnnotationPolymorphism:
         assert isinstance(arc, ArcAnnotation)
         assert arc.type == "arc"
         assert arc.arc_span == 30.0
+        assert arc.center_marker == ""
 
         marker = Annotation("marker")
         assert isinstance(marker, MarkerAnnotation)
