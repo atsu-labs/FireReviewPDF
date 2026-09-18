@@ -137,8 +137,12 @@ PyInstaller を使用して、単一実行可能ファイル（Onefile 形式）
 * **GUIフレームワーク:** PySide6 (Qt for Python)
   * `QGraphicsView` / `QGraphicsScene` を使用したスムーズなズーム・パン、高精度な座標系管理。
   * 各種描画モードは **Stateパターン**（`BaseCanvasTool` を継承する各種ツールクラス）によってイベント管理を分離。
+* **アノテーションモデル:**
+  * 基底クラス `BaseAnnotation` と図形固有の派生クラス（`CircleAnnotation`, `ArcAnnotation`, `TextAnnotation` 等）によるポリモーフィズム設計。
+  * `Annotation("type")` ファクトリおよび `Annotation.from_dict()` の動的ディスパッチによる後方互換性維持。
 * **PDF処理エンジン:** PyMuPDF (fitz)
   * 150 DPIでの鮮明なラスタライズレンダリングと用紙サイズ（ミリメートル寸法）の自動解析。
+  * **Strategy / Registryパターン**（`BasePdfRenderer` を継承する図形別専用レンダラー）による疎結合な描画ロジック分離。
 * **データ永続化仕様:** 
   * 座標系はPDFのピクセル座標（150 DPIベース）を基準に統一。
   * JSON保存時はページごとのスケールファクター、注釈の幾何情報、テキスト装飾、凡例位置、マーカー集計用のローカル色名データを完全保持。
@@ -160,11 +164,19 @@ FireReviewPDF/
 │       ├── __init__.py
 │       ├── app.py              # アプリケーションの初期化・フォント設定・起動制御
 │       ├── main_window.py      # メインウィンドウ（Orchestrator、コントローラー層）
-│       ├── models.py           # データモデル定義（DrawingModel、Annotation）
+│       ├── models.py           # データモデル定義（DrawingModel、BaseAnnotation、図形別派生クラス）
 │       ├── services/           # ビジネスロジック・サービス層
 │       │   ├── __init__.py
-│       │   ├── pdf_exporter.py # アノテーション合成・PDF出力エンジン
+│       │   ├── pdf_exporter.py # アノテーション合成・PDF出力オーケストレーター
 │       │   ├── pdf_handler.py  # PyMuPDFを使用したPDF描画・サイズ解析
+│       │   ├── pdf_renderers/  # 図形別PDF描画ストラテジー（Strategyパターン）
+│       │   │   ├── __init__.py # レンダラーレジストリ
+│       │   │   ├── base.py     # レンダラー基底クラスおよび描画コンテキスト
+│       │   │   ├── fonts.py    # システムフォント探索・埋め込みユーティリティ
+│       │   │   ├── shape_renderers.py # 基本図形（線、円、円弧等）描画
+│       │   │   ├── text_renderer.py   # テキスト・引出線描画
+│       │   │   ├── marker_renderer.py # マーカー描画
+│       │   │   └── legend_renderer.py # 凡例描画
 │       │   └── project_store.py# JSON形式によるプロジェクトデータのセーブ＆ロード
 │       └── ui/                 # UIコンポーネント・キャンバス描画層
 │           ├── __init__.py
