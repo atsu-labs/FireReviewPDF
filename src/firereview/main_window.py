@@ -62,12 +62,69 @@ class MainWindow(QMainWindow):
         self.current_marker_style = "square"
         self.current_marker_color = "#ff1744"
         self.current_marker_opacity = 70
-        self.continuous_marker = False
+        # Dirty state tracking
+        self.is_dirty = False
+        self.current_project_path = ""
 
         self.setup_ui()
         self._setup_menus()
         self.apply_styles()
         self._setup_shortcuts()
+        self._update_window_title()
+
+    def set_dirty(self, dirty: bool = True):
+        """ダーティ状態を設定し、タイトルバーの表示を更新する。"""
+        if self.is_dirty != dirty:
+            self.is_dirty = dirty
+            self._update_window_title()
+
+    def _update_window_title(self):
+        """プロジェクト/PDFファイル名および未保存マーク（*）を反映してウィンドウタイトルを更新する。"""
+        base_title = "FireReviewPDF"
+        file_name = ""
+        if self.current_project_path:
+            file_name = os.path.basename(self.current_project_path)
+        elif self.model.pdf_path:
+            file_name = os.path.basename(self.model.pdf_path)
+
+        if file_name:
+            title = f"{base_title} - {file_name}"
+        else:
+            title = base_title
+
+        if self.is_dirty:
+            title += " *"
+        self.setWindowTitle(title)
+
+    def maybe_save_changes(self) -> bool:
+        """未保存の変更がある場合に保存確認ダイアログを表示する。
+
+        Returns:
+            bool: 処理を継続してよい場合は True、キャンセルされた場合は False。
+        """
+        if not self.is_dirty:
+            return True
+
+        reply = QMessageBox.question(
+            self,
+            "未保存の変更",
+            "プロジェクトへの変更が保存されていません。\n保存しますか？",
+            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+            QMessageBox.Save
+        )
+
+        if reply == QMessageBox.Save:
+            return self.save_project()
+        elif reply == QMessageBox.Discard:
+            return True
+        else:
+            return False
+
+    def closeEvent(self, event):
+        if self.maybe_save_changes():
+            event.accept()
+        else:
+            event.ignore()
 
     def _setup_menus(self):
         self.menubar = MainMenuBar(self)
@@ -539,6 +596,7 @@ class MainWindow(QMainWindow):
         self._recalculate_all_annotations()
         self._update_scale_status_label()
         self.update_page_view()
+        self.set_dirty(True)
 
     def apply_unit_change(self, new_unit):
         old_unit = self.model.unit
@@ -557,6 +615,7 @@ class MainWindow(QMainWindow):
                 elif ann.type in ("circle", "arc") and ann.text != "R=15m":
                     ann.text = self._format_radius(ann.real_value)
                     self.canvas.update_item_properties(ann.id, {"text": ann.text})
+        self.set_dirty(True)
 
     def go_to_page(self, page_idx):
         self.current_page = page_idx
@@ -583,6 +642,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "完了", "キャリブレーションが完了しました。")
                 self._update_scale_status_label()
                 self.update_page_view()
+                self.set_dirty(True)
 
         if getattr(self, "_pref_dialog_active", False):
             if hasattr(self, "pref_dialog") and self.pref_dialog:
@@ -717,6 +777,7 @@ class MainWindow(QMainWindow):
             self.canvas.update_legends(marker_counts, self.model.page_color_names[page_num])
             
         self.update_object_panel()
+        self.set_dirty(True)
 
     def update_marker_summary(self):
         if hasattr(self, "navigator") and hasattr(self, "model"):
@@ -771,6 +832,7 @@ class MainWindow(QMainWindow):
                 if self.canvas.editing_node_item_id == ann.id:
                     self.prop_panel.set_node_edit_active(True)
                 self.update_object_panel()
+                self.set_dirty(True)
                 break
 
     def on_request_tool_change(self, mode):
@@ -798,6 +860,7 @@ class MainWindow(QMainWindow):
             else:
                 self.prop_panel.text_edit.setText(new_text)
             self.prop_panel._block_signals = False
+        self.set_dirty(True)
 
     def _add_to_model(self, type, points, real_value=0.0, text=""):
         ann = Annotation(type)
@@ -806,6 +869,7 @@ class MainWindow(QMainWindow):
         ann.text = text
         ann.page_num = self.current_page
         self.model.annotations.append(ann)
+        self.set_dirty(True)
         return ann
 
     def on_item_selected(self, item_id):
@@ -892,6 +956,7 @@ class MainWindow(QMainWindow):
                     self.update_object_panel()
                 if needs_summary_update:
                     self.update_marker_summary()
+                self.set_dirty(True)
                 break
 
     def on_item_moved(self, item_id, delta):
@@ -913,6 +978,7 @@ class MainWindow(QMainWindow):
                 
                 if attrs:
                     self.canvas.update_item_properties(item_id, attrs)
+                self.set_dirty(True)
                 break
 
     def on_label_moved(self, item_id, delta):
@@ -920,6 +986,7 @@ class MainWindow(QMainWindow):
             if ann.id == item_id:
                 offset = getattr(ann, "label_offset", None) or [0.0, 0.0]
                 ann.label_offset = [offset[0] + delta.x(), offset[1] + delta.y()]
+                self.set_dirty(True)
                 break
 
     def on_node_edit_toggled(self, item_id, active):
@@ -942,6 +1009,7 @@ class MainWindow(QMainWindow):
                 if ann.type == "polyline":
                     self.canvas.update_item_properties(item_id, {"start_marker": ann.start_marker, "end_marker": ann.end_marker})
                 self.update_object_panel()
+                self.set_dirty(True)
                 break
 
     def on_delete_item(self, item_id):
@@ -960,16 +1028,23 @@ class MainWindow(QMainWindow):
             
         self.update_object_panel()
         self.update_marker_summary()
+        self.set_dirty(True)
 
     def open_pdf(self):
+        if not self.maybe_save_changes():
+            return
+
         file_path, _ = QFileDialog.getOpenFileName(self, "PDF図面を開く", "", "PDF Files (*.pdf)")
         if file_path:
             if self.pdf_handler.open_file(file_path):
+                self.model = DrawingModel()
                 self.model.pdf_path = file_path
                 self.current_page = 0
+                self.current_project_path = ""
                 self._load_thumbnails()
                 self.update_page_view()
                 self.canvas.reset_view()
+                self.set_dirty(False)
             else:
                 QMessageBox.critical(
                     self,
@@ -983,6 +1058,7 @@ class MainWindow(QMainWindow):
             if self.pdf_handler.open_file(file_path):
                 self.model.pdf_path = file_path
                 self.update_page_view()
+                self.set_dirty(True)
             else:
                 QMessageBox.critical(
                     self,
@@ -990,16 +1066,29 @@ class MainWindow(QMainWindow):
                     f"差し替え用PDFファイルを開けませんでした:\n{file_path}\n\nファイルが破損しているか、アクセス権限がない可能性があります。"
                 )
 
-    def save_project(self):
-        file_path, _ = QFileDialog.getSaveFileName(self, "プロジェクトを保存", "", "JSON Files (*.json)")
-        if file_path:
-            try:
-                save_project_file(self.model, file_path)
-                QMessageBox.information(self, "保存", "プロジェクトを保存しました。")
-            except Exception as e:
-                QMessageBox.critical(self, "エラー", f"プロジェクトの保存に失敗しました:\n{e}")
+    def save_project(self) -> bool:
+        default_path = self.current_project_path
+        if not default_path and self.model.pdf_path:
+            base, _ = os.path.splitext(self.model.pdf_path)
+            default_path = base + ".json"
+
+        file_path, _ = QFileDialog.getSaveFileName(self, "プロジェクトを保存", default_path, "JSON Files (*.json)")
+        if not file_path:
+            return False
+        try:
+            save_project_file(self.model, file_path)
+            self.current_project_path = file_path
+            self.set_dirty(False)
+            QMessageBox.information(self, "保存", "プロジェクトを保存しました。")
+            return True
+        except Exception as e:
+            QMessageBox.critical(self, "エラー", f"プロジェクトの保存に失敗しました:\n{e}")
+            return False
 
     def load_project(self):
+        if not self.maybe_save_changes():
+            return
+
         file_path, _ = QFileDialog.getOpenFileName(self, "プロジェクトを読み込み", "", "JSON Files (*.json)")
         if not file_path:
             return
@@ -1039,10 +1128,12 @@ class MainWindow(QMainWindow):
             loaded_model.pdf_path = alt_path
 
         self.model = loaded_model
+        self.current_project_path = file_path
         self.current_page = 0
         self._load_thumbnails()
         self.update_page_view()
         self.canvas.reset_view()
+        self.set_dirty(False)
 
     def export_pdf(self):
         if not self.pdf_handler.doc or not self.model.pdf_path:
