@@ -1,16 +1,15 @@
 import os
-import math
 from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, 
                              QLabel, QHBoxLayout, QWidget, QVBoxLayout, 
                              QInputDialog, QMessageBox, QPushButton, 
                              QFrame)
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QShortcut, QKeySequence
+from PySide6.QtGui import QShortcut, QKeySequence
 import qtawesome as qta
 
-from .services.pdf_exporter import export_pdf_document
 from .services.pdf_handler import PDFHandler
-from .services.project_store import load_project as load_project_file, save_project as save_project_file
+from .services import DocumentManager, MeasurementService
+from .controllers import ToolController, CanvasController
 from .ui.canvas import PDFCanvas, ToolMode
 from .ui.preferences_dialog import PreferencesDialog
 from .models import DrawingModel, Annotation
@@ -35,36 +34,16 @@ class MainWindow(QMainWindow):
         self.resize(1400, 900)
 
         self.pdf_handler = PDFHandler()
-        self.model = DrawingModel()
+        self.document_manager = DocumentManager(self.pdf_handler, parent=self)
+        self.document_manager.dirty_changed.connect(self._on_dirty_changed)
+        self.measurement_service = MeasurementService()
+        self.tool_controller = ToolController(
+            on_marker_updated_cb=lambda: self.update_marker_summary()
+        )
+
         self.current_page = 0  # 内部ページ番号は0始まり
         self._pref_dialog_active = False
         self._calib_all_pages_from_prefs = False
-        
-        self.current_text_font = "BIZ UDゴシック"
-        self.current_text_size = 12
-        self.current_text_color = "#ff0000"
-
-        # Shape tool defaults
-        self.current_shape_color = "#7c4dff"
-        self.current_fill_color = "#7c4dff"
-        self.current_fill_opacity = 30
-        self.current_line_width = 2
-        self.current_start_marker = ""
-        self.current_end_marker = ""
-        self.current_center_marker = ""
-        self._start_marker_values = ["", "circle", "arrow"]
-        self._end_marker_values = ["", "circle", "arrow"]
-        self._center_marker_values = ["", "circle", "cross", "x"]
-        self.current_arc_span = 30.0
-        self.current_arc_show_radial_line = False
-        
-        # Marker defaults
-        self.current_marker_style = "square"
-        self.current_marker_color = "#ff1744"
-        self.current_marker_opacity = 70
-        # Dirty state tracking
-        self.is_dirty = False
-        self.current_project_path = ""
 
         self.setup_ui()
         self._setup_menus()
@@ -72,27 +51,125 @@ class MainWindow(QMainWindow):
         self._setup_shortcuts()
         self._update_window_title()
 
+    # --- Document & Model Properties ---
+    @property
+    def model(self) -> DrawingModel:
+        return self.document_manager.model
+
+    @model.setter
+    def model(self, value: DrawingModel):
+        self.document_manager.model = value
+
+    @property
+    def is_dirty(self) -> bool:
+        return self.document_manager.is_dirty
+
+    @is_dirty.setter
+    def is_dirty(self, value: bool):
+        self.document_manager.set_dirty(value)
+
+    @property
+    def current_project_path(self) -> str:
+        return self.document_manager.current_project_path
+
+    @current_project_path.setter
+    def current_project_path(self, value: str):
+        self.document_manager.current_project_path = value
+
+    # --- Tool Setting Properties (Backward Compatibility) ---
+    @property
+    def current_shape_color(self) -> str: return self.tool_controller.current_shape_color
+    @current_shape_color.setter
+    def current_shape_color(self, v: str): self.tool_controller.current_shape_color = v
+
+    @property
+    def current_fill_color(self) -> str: return self.tool_controller.current_fill_color
+    @current_fill_color.setter
+    def current_fill_color(self, v: str): self.tool_controller.current_fill_color = v
+
+    @property
+    def current_fill_opacity(self) -> int: return self.tool_controller.current_fill_opacity
+    @current_fill_opacity.setter
+    def current_fill_opacity(self, v: int): self.tool_controller.current_fill_opacity = v
+
+    @property
+    def current_line_width(self) -> int: return self.tool_controller.current_line_width
+    @current_line_width.setter
+    def current_line_width(self, v: int): self.tool_controller.current_line_width = v
+
+    @property
+    def current_start_marker(self) -> str: return self.tool_controller.current_start_marker
+    @current_start_marker.setter
+    def current_start_marker(self, v: str): self.tool_controller.current_start_marker = v
+
+    @property
+    def current_end_marker(self) -> str: return self.tool_controller.current_end_marker
+    @current_end_marker.setter
+    def current_end_marker(self, v: str): self.tool_controller.current_end_marker = v
+
+    @property
+    def current_center_marker(self) -> str: return self.tool_controller.current_center_marker
+    @current_center_marker.setter
+    def current_center_marker(self, v: str): self.tool_controller.current_center_marker = v
+
+    @property
+    def current_arc_span(self) -> float: return self.tool_controller.current_arc_span
+    @current_arc_span.setter
+    def current_arc_span(self, v: float): self.tool_controller.current_arc_span = v
+
+    @property
+    def current_arc_show_radial_line(self) -> bool: return self.tool_controller.current_arc_show_radial_line
+    @current_arc_show_radial_line.setter
+    def current_arc_show_radial_line(self, v: bool): self.tool_controller.current_arc_show_radial_line = v
+
+    @property
+    def current_marker_style(self) -> str: return self.tool_controller.current_marker_style
+    @current_marker_style.setter
+    def current_marker_style(self, v: str): self.tool_controller.current_marker_style = v
+
+    @property
+    def current_marker_color(self) -> str: return self.tool_controller.current_marker_color
+    @current_marker_color.setter
+    def current_marker_color(self, v: str): self.tool_controller.current_marker_color = v
+
+    @property
+    def current_marker_opacity(self) -> int: return self.tool_controller.current_marker_opacity
+    @current_marker_opacity.setter
+    def current_marker_opacity(self, v: int): self.tool_controller.current_marker_opacity = v
+
+    @property
+    def current_text_font(self) -> str: return self.tool_controller.current_text_font
+    @current_text_font.setter
+    def current_text_font(self, v: str): self.tool_controller.current_text_font = v
+
+    @property
+    def current_text_size(self) -> int: return self.tool_controller.current_text_size
+    @current_text_size.setter
+    def current_text_size(self, v: int): self.tool_controller.current_text_size = v
+
+    @property
+    def current_text_color(self) -> str: return self.tool_controller.current_text_color
+    @current_text_color.setter
+    def current_text_color(self, v: str): self.tool_controller.current_text_color = v
+
     def set_dirty(self, dirty: bool = True):
         """ダーティ状態を設定し、タイトルバーの表示を更新する。"""
-        if self.is_dirty != dirty:
-            self.is_dirty = dirty
-            self._update_window_title()
+        self.document_manager.set_dirty(dirty)
+
+    def _on_dirty_changed(self, is_dirty: bool):
+        self._update_window_title()
 
     def _update_window_title(self):
         """プロジェクト/PDFファイル名および未保存マーク（*）を反映してウィンドウタイトルを更新する。"""
         base_title = "FireReviewPDF"
-        file_name = ""
-        if self.current_project_path:
-            file_name = os.path.basename(self.current_project_path)
-        elif self.model.pdf_path:
-            file_name = os.path.basename(self.model.pdf_path)
+        file_name = self.document_manager.get_active_document_name()
 
         if file_name:
             title = f"{base_title} - {file_name}"
         else:
             title = base_title
 
-        if self.is_dirty:
+        if self.document_manager.is_dirty:
             title += " *"
         self.setWindowTitle(title)
 
@@ -232,6 +309,26 @@ class MainWindow(QMainWindow):
 
         self.main_layout.addLayout(content_area)
 
+        # Wire up ToolController
+        self.tool_controller.canvas = self.canvas
+        self.tool_controller.options_bar = self.options_bar
+        self.tool_controller.toolbar = self.toolbar
+
+        # Canvas Controller
+        self.canvas_controller = CanvasController(
+            canvas=self.canvas,
+            document_manager=self.document_manager,
+            measurement_service=self.measurement_service,
+            tool_controller=self.tool_controller,
+            prop_panel=self.prop_panel,
+            navigator=self.navigator,
+            get_current_page_fn=lambda: self.current_page,
+            get_current_scale_factor_fn=self._get_current_scale_factor,
+            is_current_page_calibrated_fn=self._is_current_page_calibrated,
+            set_tool_fn=self.set_tool,
+            parent_widget=self,
+        )
+
         # 5. Status Bar
         self._setup_status_bar()
 
@@ -288,111 +385,64 @@ class MainWindow(QMainWindow):
 
     # --- Toolbar & Optionsbar callbacks ---
     def set_tool(self, mode, active_btn=None):
-        self.toolbar.set_tool_mode(mode)
-        self.canvas.set_tool_mode(mode)
-        self.options_bar.update_options_visibility(mode, self._is_current_page_calibrated())
-
-        is_shape_tool = mode in [ToolMode.DRAW_LINE, ToolMode.POLYGON_AREA, ToolMode.DRAW_CIRCLE_DRAG, ToolMode.DRAW_ARC]
-        if mode == ToolMode.TEXT:
-            self.canvas.set_text_defaults(self.current_text_font, self.current_text_size, self.current_text_color, self.options_bar.tool_continuous_check.isChecked())
-        elif mode == ToolMode.DRAW_MARKER:
-            self.canvas.set_shape_defaults(self.current_marker_color, 2, "")
-            self.canvas.set_shape_continuous(self.options_bar.tool_marker_continuous_check.isChecked())
-        elif is_shape_tool:
-            self._update_canvas_shape_defaults()
-            self.canvas.set_shape_continuous(self.options_bar.tool_shape_continuous_check.isChecked())
+        self.tool_controller.set_tool(mode, self._is_current_page_calibrated())
 
     def _on_options_line_width_changed(self, width):
-        self.current_line_width = width
-        self._update_canvas_shape_defaults()
+        self.tool_controller.on_options_line_width_changed(width)
 
     def _on_options_shape_color_changed(self, color):
-        self.current_shape_color = color
-        self._update_canvas_shape_defaults()
-        if hasattr(self, "canvas") and self.canvas.editing_item_id:
-            self.canvas.update_item_properties(self.canvas.editing_item_id, {"color": color})
+        self.tool_controller.on_options_shape_color_changed(color)
 
     def _on_options_fill_color_changed(self, color):
-        self.current_fill_color = color
-        self._update_canvas_shape_defaults()
+        self.tool_controller.on_options_fill_color_changed(color)
 
     def _on_options_fill_opacity_changed(self, opacity):
-        self.current_fill_opacity = opacity
-        if self.canvas.editing_item_id:
-            self.canvas.update_item_properties(self.canvas.editing_item_id, {"fill_opacity": opacity})
+        self.tool_controller.on_options_fill_opacity_changed(opacity)
 
     def _on_options_start_marker_changed(self, index):
-        self.current_start_marker = self._start_marker_values[index]
-        if self.canvas.editing_item_id:
-            self.canvas.update_item_properties(self.canvas.editing_item_id, {"start_marker": self.current_start_marker})
+        self.tool_controller.on_options_start_marker_changed(index)
 
     def _on_options_end_marker_changed(self, index):
-        self.current_end_marker = self._end_marker_values[index]
-        if self.canvas.editing_item_id:
-            self.canvas.update_item_properties(self.canvas.editing_item_id, {"end_marker": self.current_end_marker})
+        self.tool_controller.on_options_end_marker_changed(index)
 
     def _on_options_center_marker_changed(self, index):
-        self.current_center_marker = self._center_marker_values[index]
-        if self.canvas.editing_item_id:
-            self.canvas.update_item_properties(self.canvas.editing_item_id, {"center_marker": self.current_center_marker})
+        self.tool_controller.on_options_center_marker_changed(index)
 
     def _on_options_shape_continuous_changed(self, checked):
-        self.canvas.set_shape_continuous(checked)
+        self.tool_controller.on_options_shape_continuous_changed(checked)
 
     def _on_options_marker_style_changed(self, style):
-        self.current_marker_style = style
-        if self.canvas.editing_item_id:
-            self.canvas.update_item_properties(self.canvas.editing_item_id, {"marker_style": style})
-            self.update_object_panel()
-            self.update_marker_summary()
+        self.tool_controller.on_options_marker_style_changed(style)
 
     def _on_options_marker_continuous_changed(self, checked):
-        self.canvas.set_shape_continuous(checked)
+        self.tool_controller.on_options_marker_continuous_changed(checked)
 
     def _on_options_marker_opacity_changed(self, value):
-        self.current_marker_opacity = value
-        if self.canvas.editing_item_id:
-            self.canvas.update_item_properties(self.canvas.editing_item_id, {"stroke_opacity": value})
+        self.tool_controller.on_options_marker_opacity_changed(value)
 
     def _on_options_marker_color_changed(self, color):
-        self.current_marker_color = color
-        self.canvas.set_shape_defaults(color, 2, "")
-        if hasattr(self, "canvas") and self.canvas.editing_item_id:
-            self.canvas.update_item_properties(self.canvas.editing_item_id, {"color": color})
+        self.tool_controller.on_options_marker_color_changed(color)
 
     def _on_options_radius_changed(self, radius):
         pass
 
     def _on_options_font_changed(self, family):
-        self.current_text_font = family
-        self.canvas.set_text_defaults(self.current_text_font, self.current_text_size, self.current_text_color, self.options_bar.tool_continuous_check.isChecked())
-        if self.canvas.editing_item_id:
-            self.canvas.update_item_properties(self.canvas.editing_item_id, {"font_family": family})
+        self.tool_controller.on_options_font_changed(family)
 
     def _on_options_font_size_changed(self, size):
-        self.current_text_size = size
-        self.canvas.set_text_defaults(self.current_text_font, self.current_text_size, self.current_text_color, self.options_bar.tool_continuous_check.isChecked())
-        if self.canvas.editing_item_id:
-            self.canvas.update_item_properties(self.canvas.editing_item_id, {"font_size": size})
+        self.tool_controller.on_options_font_size_changed(size)
 
     def _on_options_text_color_changed(self, color):
-        self.current_text_color = color
-        self.canvas.set_text_defaults(self.current_text_font, self.current_text_size, self.current_text_color, self.options_bar.tool_continuous_check.isChecked())
-        if self.canvas.editing_item_id:
-            self.canvas.update_item_properties(self.canvas.editing_item_id, {"color": color})
+        self.tool_controller.on_options_text_color_changed(color)
 
     def _on_options_text_continuous_changed(self, checked):
-        self.canvas.set_text_defaults(self.current_text_font, self.current_text_size, self.current_text_color, checked)
+        self.tool_controller.on_options_text_continuous_changed(checked)
 
     def _on_options_arc_span_changed(self, value):
-        self.current_arc_span = value
-        if hasattr(self, "canvas"):
-            self.canvas.current_arc_span = value
+        self.tool_controller.on_options_arc_span_changed(value)
 
     def _on_options_arc_radial_line_changed(self, checked):
-        self.current_arc_show_radial_line = checked
-        if hasattr(self, "canvas"):
-            self.canvas.current_arc_show_radial_line = checked
+        self.tool_controller.on_options_arc_radial_line_changed(checked)
 
     def _on_zoom_combo_changed_from_toolbar(self, text):
         clean_text = text.replace("%", "").strip()
@@ -416,58 +466,23 @@ class MainWindow(QMainWindow):
         self.canvas.set_zoom_scale(target_canvas_scale)
 
     def _update_canvas_shape_defaults(self):
-        self.canvas.set_shape_defaults(self.current_shape_color, self.current_line_width, self.current_fill_color)
+        self.tool_controller.update_canvas_shape_defaults()
 
     def _calculate_annotation_values(self, ann, sf):
-        if ann.type in ("line", "polyline") and len(ann.points) >= 2:
-            total = sum(
-                math.sqrt((ann.points[i+1].x() - ann.points[i].x())**2 +
-                          (ann.points[i+1].y() - ann.points[i].y())**2)
-                * sf
-                for i in range(len(ann.points) - 1)
-            )
-            ann.real_value = total
-            ann.text = self._format_distance(total)
-        elif ann.type == "polygon" and len(ann.points) >= 3:
-            area_mm2 = self.model.calculate_real_area(ann.points, sf)
-            ann.real_value = area_mm2
-            ann.text = self._format_area(area_mm2)
-        elif ann.type == "circle":
-            radius_px = ann.radius_px if ann.radius_px > 0 else (ann.real_value / sf if ann.real_value > 0 else 0)
-            radius_mm = radius_px * sf
-            ann.real_value = radius_mm
-            ann.text = self._format_radius(radius_mm)
-        elif ann.type == "arc":
-            radius_px = getattr(ann, "radius_px", 0.0)
-            if radius_px <= 0 and ann.real_value > 0:
-                radius_px = ann.real_value / sf
-            radius_mm = radius_px * sf
-            ann.real_value = radius_mm
-            ann.text = self._format_radius(radius_mm)
+        self.measurement_service.calculate_annotation_values(ann, sf, self.model)
 
     def _recalculate_all_annotations(self):
-        for ann in self.model.annotations:
-            sf = self._get_scale_factor_for_page(ann.page_num)
-            if sf <= 0:
-                continue
-            if ann.is_calculated:
-                self._calculate_annotation_values(ann, sf)
+        self.measurement_service.recalculate_all_annotations(self.model)
 
     # --- 単位フォーマットヘルパー ---
     def _format_distance(self, value_mm):
-        if self.model.unit == 'm':
-            return f"{value_mm / 1000:.3f} m"
-        return f"{value_mm:.1f} mm"
+        return self.measurement_service.format_distance(value_mm, self.model.unit)
 
     def _format_area(self, value_mm2):
-        if self.model.unit == 'm':
-            return f"{value_mm2 / 1_000_000:.2f} m²"
-        return f"{value_mm2:.1f} mm²"
+        return self.measurement_service.format_area(value_mm2, self.model.unit)
 
     def _format_radius(self, value_mm):
-        if self.model.unit == 'm':
-            return f"R={value_mm / 1000:.3f} m"
-        return f"R={value_mm:.1f} mm"
+        return self.measurement_service.format_radius(value_mm, self.model.unit)
 
     def _get_scale_factor_for_page(self, page_num):
         return self.model.get_scale_factor(page_num)
@@ -482,14 +497,9 @@ class MainWindow(QMainWindow):
         return self._is_page_calibrated(self.current_page)
 
     def _format_scale_ratio(self, scale_factor):
-        mm_per_pixel_on_pdf = 25.4 / self.PDF_RENDER_DPI
-        if scale_factor <= 0 or mm_per_pixel_on_pdf <= 0:
-            return ""
-        ratio = scale_factor / mm_per_pixel_on_pdf
-        rounded = round(ratio)
-        if abs(ratio - rounded) < self.SCALE_RATIO_ROUNDING_TOLERANCE:
-            return f"1/{rounded}"
-        return f"1/{ratio:.1f}"
+        return self.measurement_service.format_scale_ratio(
+            scale_factor, self.PDF_RENDER_DPI, self.SCALE_RATIO_ROUNDING_TOLERANCE
+        )
 
     def _update_scale_status_label(self):
         if self._is_current_page_calibrated():
@@ -651,384 +661,70 @@ class MainWindow(QMainWindow):
             self._calib_all_pages_from_prefs = False
 
     def on_polygon_complete(self, points):
-        ann = self._add_to_model("polygon", points, real_value=0.0, text="")
-        ann.color = self.current_shape_color
-        ann.line_width = self.current_line_width
-        ann.fill_color = self.current_fill_color
-        ann.fill_opacity = self.current_fill_opacity
-        self.canvas.add_polygon_annotation(points, text="", color=ann.color, item_id=ann.id,
-                                           font_family=ann.font_family, font_size=ann.font_size,
-                                           line_width=ann.line_width, stroke_opacity=ann.stroke_opacity,
-                                           fill_opacity=ann.fill_opacity, fill_color=ann.fill_color)
-        self.update_object_panel()
+        self.canvas_controller.on_polygon_complete(points)
 
     def on_polyline_complete(self, points):
-        ann = self._add_to_model("polyline", points, real_value=0.0, text="")
-        ann.color = self.current_shape_color
-        ann.line_width = self.current_line_width
-        ann.start_marker = self.current_start_marker
-        ann.end_marker = self.current_end_marker
-        self.canvas.add_polyline_annotation(points, text="", color=ann.color, item_id=ann.id,
-                                            font_family=ann.font_family, font_size=ann.font_size,
-                                            line_width=ann.line_width,
-                                            start_marker=ann.start_marker,
-                                            end_marker=ann.end_marker)
-        self.update_object_panel()
+        self.canvas_controller.on_polyline_complete(points)
 
     def on_circle_drag_complete(self, center, radius_px):
-        current_scale_factor = self._get_current_scale_factor()
-        if radius_px < 3:
-            if self._is_current_page_calibrated() and current_scale_factor > 0:
-                if self.model.unit == 'm':
-                    radius_mm = self.options_bar.tool_radius_spin.value() * 1000
-                else:
-                    radius_mm = self.options_bar.tool_radius_spin.value()
-                radius_px = radius_mm / current_scale_factor
-            else:
-                QMessageBox.warning(self, "警告", "半径を指定して円を描画するには、先にキャリブレーションを行ってください。")
-                return
-
-        ann = self._add_to_model("circle", [center], real_value=0.0, text="")
-        ann.color = self.current_shape_color
-        ann.line_width = self.current_line_width
-        ann.fill_color = self.current_fill_color
-        ann.fill_opacity = self.current_fill_opacity
-        ann.radius_px = radius_px
-        ann.center_marker = self.current_center_marker
-        self.canvas.add_circle_annotation(center, radius_px, text="", color=ann.color, item_id=ann.id,
-                                          font_family=ann.font_family, font_size=ann.font_size,
-                                          line_width=ann.line_width, stroke_opacity=ann.stroke_opacity,
-                                          fill_opacity=ann.fill_opacity, fill_color=ann.fill_color,
-                                          center_marker=ann.center_marker)
-        self.update_object_panel()
+        self.canvas_controller.on_circle_drag_complete(center, radius_px)
 
     def on_arc_drag_complete(self, center, radius_px, drag_angle):
-        ann = self._add_to_model("arc", [center], real_value=0.0, text="")
-        ann.color = self.current_shape_color
-        ann.line_width = self.current_line_width
-        ann.radius_px = radius_px
-        ann.center_marker = self.current_center_marker
-        ann.drag_angle = drag_angle
-        ann.arc_span = self.current_arc_span
-        ann.show_radial_line = self.current_arc_show_radial_line
-        
-        self.canvas.add_arc_annotation(center, radius_px, drag_angle, ann.arc_span,
-                                       text="", color=ann.color, item_id=ann.id,
-                                       font_family=ann.font_family, font_size=ann.font_size,
-                                       line_width=ann.line_width, stroke_opacity=ann.stroke_opacity,
-                                       center_marker=ann.center_marker,
-                                       show_radial_line=ann.show_radial_line)
-        self.update_object_panel()
+        self.canvas_controller.on_arc_drag_complete(center, radius_px, drag_angle)
 
     def on_marker_complete(self, pos):
-        ann = self._add_to_model("marker", [pos])
-        ann.color = self.current_marker_color
-        ann.marker_style = self.current_marker_style
-        ann.stroke_opacity = self.current_marker_opacity
-        
-        self.canvas.add_marker_annotation(pos, marker_style=ann.marker_style, color=ann.color,
-                                           stroke_opacity=ann.stroke_opacity, item_id=ann.id)
-                                           
-        if not self.options_bar.tool_marker_continuous_check.isChecked():
-            self.set_tool(ToolMode.SELECT)
-            
-        self.update_marker_summary()
-        self.update_object_panel()
+        self.canvas_controller.on_marker_complete(pos)
 
     def on_legend_complete(self, pos):
-        ann = self._add_to_model("legend", [pos])
-        ann.font_family = self.current_text_font
-        ann.font_size = self.current_text_size
-        ann.color = self.current_text_color
-        
-        self.canvas.add_legend_annotation(pos, item_id=ann.id,
-                                           font_family=ann.font_family,
-                                           font_size=ann.font_size,
-                                           color=ann.color)
-        
-        self.set_tool(ToolMode.SELECT)
-        
-        self.update_marker_summary()
-        self.update_object_panel()
+        self.canvas_controller.on_legend_complete(pos)
 
     def on_color_name_changed(self, page_num, color_hex, new_name):
-        if not hasattr(self.model, 'page_color_names'):
-            self.model.page_color_names = {}
-        if page_num not in self.model.page_color_names:
-            self.model.page_color_names[page_num] = {}
-            
-        color_key = color_hex.lower()
-        old_name = self.model.page_color_names[page_num].get(color_key, "")
-        if old_name == new_name:
-            return
-            
-        self.model.page_color_names[page_num][color_key] = new_name
-        
-        # Update canvas legends
-        if hasattr(self, "canvas"):
-            marker_counts = {}
-            for ann in self.model.annotations:
-                if ann.page_num == self.current_page and ann.type == 'marker':
-                    style = getattr(ann, 'marker_style', 'square')
-                    color = (ann.color or "#7c4dff").lower()
-                    key = (style, color)
-                    marker_counts[key] = marker_counts.get(key, 0) + 1
-            
-            self.canvas.update_legends(marker_counts, self.model.page_color_names[page_num])
-            
-        self.update_object_panel()
-        self.set_dirty(True)
+        self.canvas_controller.on_color_name_changed(page_num, color_hex, new_name)
 
     def update_marker_summary(self):
-        if hasattr(self, "navigator") and hasattr(self, "model"):
-            # Compute current page marker counts
-            marker_counts = {}
-            total_markers = 0
-            for ann in self.model.annotations:
-                if ann.page_num == self.current_page:
-                    if ann.type == 'marker':
-                        style = getattr(ann, 'marker_style', 'square')
-                        color = (ann.color or "#7c4dff").lower()
-                        key = (style, color)
-                        marker_counts[key] = marker_counts.get(key, 0) + 1
-                        total_markers += 1
-            
-            # Fetch custom color names for current page
-            page_names = self.model.page_color_names.get(self.current_page, {})
-            
-            self.navigator.update_marker_summary(self.model.annotations, self.current_page, page_names)
-            
-            if hasattr(self, "canvas"):
-                self.canvas.update_legends(marker_counts, page_names)
-                
-            # Enable/disable legend tool based on marker existence
-            has_markers = (total_markers > 0)
-            self.toolbar.set_tool_enabled(ToolMode.DRAW_LEGEND, has_markers)
-            
-            # If active tool is Legend but no markers, fallback to Select
-            if not has_markers and self.canvas.tool_mode == ToolMode.DRAW_LEGEND:
-                self.set_tool(ToolMode.SELECT)
+        self.canvas_controller.update_marker_summary()
 
     def on_calculate_requested(self, item_id):
-        if not self._is_current_page_calibrated():
-            QMessageBox.warning(self, "警告", "キャリブレーションが完了していません。先にキャリブレーションを行ってください。")
-            return
-        current_scale_factor = self._get_current_scale_factor()
-        if current_scale_factor <= 0:
-            return
-        for ann in self.model.annotations:
-            if ann.id == item_id:
-                self._calculate_annotation_values(ann, current_scale_factor)
-                ann.is_calculated = True
-                self.canvas.update_item_properties(item_id, {"text": ann.text})
-                self.prop_panel.set_item_data(ann.id, ann.type, ann.text, ann.color,
-                                              ann.font_family, ann.font_size, ann.line_width,
-                                              stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity,
-                                              fill_color=ann.fill_color,
-                                              center_marker=ann.center_marker, start_marker=ann.start_marker, end_marker=ann.end_marker,
-                                              arc_span=getattr(ann, "arc_span", 30.0),
-                                              show_radial_line=getattr(ann, "show_radial_line", False))
-                
-                if self.canvas.editing_node_item_id == ann.id:
-                    self.prop_panel.set_node_edit_active(True)
-                self.update_object_panel()
-                self.set_dirty(True)
-                break
+        self.canvas_controller.on_calculate_requested(item_id)
 
     def on_request_tool_change(self, mode):
         self.set_tool(mode, None)
 
     def on_text_editing_finished(self, pos, text, item_id, font_family, font_size, color):
-        if not item_id:
-            ann = self._add_to_model("text", [pos], text=text)
-            ann.font_family = font_family
-            ann.font_size = font_size
-            ann.color = color
-            self.canvas.add_text_annotation(pos, text, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, color=ann.color)
-            self.update_object_panel()
+        self.canvas_controller.on_text_editing_finished(pos, text, item_id, font_family, font_size, color)
 
     def on_existing_text_edited(self, item_id, new_text):
-        for ann in self.model.annotations:
-            if ann.id == item_id:
-                ann.text = new_text
-                break
-        
-        if hasattr(self.prop_panel, 'current_item_id') and self.prop_panel.current_item_id == item_id:
-            self.prop_panel._block_signals = True
-            if hasattr(self.prop_panel.text_edit, 'setPlainText'):
-                self.prop_panel.text_edit.setPlainText(new_text)
-            else:
-                self.prop_panel.text_edit.setText(new_text)
-            self.prop_panel._block_signals = False
-        self.set_dirty(True)
+        self.canvas_controller.on_existing_text_edited(item_id, new_text)
 
     def _add_to_model(self, type, points, real_value=0.0, text=""):
-        ann = Annotation(type)
-        ann.points = points
-        ann.real_value = real_value
-        ann.text = text
-        ann.page_num = self.current_page
-        self.model.annotations.append(ann)
-        self.set_dirty(True)
-        return ann
+        return self.canvas_controller.add_to_model(type, points, real_value=real_value, text=text)
 
     def on_item_selected(self, item_id):
-        for ann in self.model.annotations:
-            if ann.id == item_id:
-                self.prop_panel.set_item_data(ann.id, ann.type, ann.text, ann.color,
-                                              ann.font_family, ann.font_size, ann.line_width,
-                                              stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity,
-                                              fill_color=ann.fill_color,
-                                              center_marker=ann.center_marker, start_marker=ann.start_marker, end_marker=ann.end_marker,
-                                              has_border=getattr(ann, "has_border", False),
-                                              border_color=getattr(ann, "border_color", "#ff0000"),
-                                              border_width=getattr(ann, "border_width", 2),
-                                              has_leader=getattr(ann, "has_leader", False),
-                                              marker_style=getattr(ann, "marker_style", "square"),
-                                              arc_span=getattr(ann, "arc_span", 30.0),
-                                              show_radial_line=getattr(ann, "show_radial_line", False))
-                self.navigator.set_selected_object(item_id)
-                break
+        self.canvas_controller.on_item_selected(item_id)
 
     def on_selection_cleared(self):
-        self.prop_panel.clear_panel()
-        self.navigator.set_selected_object(None)
+        self.canvas_controller.on_selection_cleared()
 
     def on_property_changed(self, item_id, attrs):
-        for ann in self.model.annotations:
-            if ann.id == item_id:
-                if "text" in attrs: ann.text = attrs["text"]
-                if "color" in attrs:
-                    ann.color = attrs["color"]
-                    if ann.type == "marker":
-                        self.current_marker_color = attrs["color"]
-                    else:
-                        self.current_shape_color = attrs["color"]
-                if "fill_color" in attrs: ann.fill_color = attrs["fill_color"]
-                if "font_family" in attrs: ann.font_family = attrs["font_family"]
-                if "font_size" in attrs: ann.font_size = attrs["font_size"]
-                if "line_width" in attrs: ann.line_width = attrs["line_width"]
-                if "stroke_opacity" in attrs: ann.stroke_opacity = attrs["stroke_opacity"]
-                if "fill_opacity" in attrs: ann.fill_opacity = attrs["fill_opacity"]
-                if "center_marker" in attrs: ann.center_marker = attrs["center_marker"]
-                if "start_marker" in attrs: ann.start_marker = attrs["start_marker"]
-                if "end_marker" in attrs: ann.end_marker = attrs["end_marker"]
-                if "marker_style" in attrs: ann.marker_style = attrs["marker_style"]
-                if "drag_angle" in attrs: ann.drag_angle = attrs["drag_angle"]
-                if "arc_span" in attrs: ann.arc_span = attrs["arc_span"]
-                if "show_radial_line" in attrs: ann.show_radial_line = attrs["show_radial_line"]
-                
-                # Border & Leader settings
-                if "has_border" in attrs: ann.has_border = attrs["has_border"]
-                if "border_color" in attrs: ann.border_color = attrs["border_color"]
-                if "border_width" in attrs: ann.border_width = attrs["border_width"]
-                
-                if "has_leader" in attrs:
-                    if attrs["has_leader"] and not getattr(ann, "has_leader", False):
-                        from PySide6.QtCore import QPointF
-                        if len(ann.points) == 0:
-                            ann.points = [QPointF(0, 0), QPointF(50, 50)]
-                        elif len(ann.points) == 1:
-                            end_pt = ann.points[0] + QPointF(50, 50)
-                            ann.points.append(end_pt)
-                        
-                        if len(ann.points) >= 2:
-                            attrs["leader_end_point"] = ann.points[1]
-                    elif not attrs["has_leader"] and getattr(ann, "has_leader", False):
-                        if len(ann.points) >= 1:
-                            ann.points = [ann.points[0]]
-                    ann.has_leader = attrs["has_leader"]
-                    
-                if any(k in attrs for k in ("start_marker", "end_marker", "center_marker")):
-                    attrs["start_marker"] = ann.start_marker
-                    attrs["end_marker"] = ann.end_marker
-                    attrs["center_marker"] = ann.center_marker
-                if "color" in attrs:
-                    attrs["fill_color"] = ann.fill_color
-                
-                # Dynamic update guards to prevent costly widget recreations during drag/sliders events
-                needs_list_update = any(k in attrs for k in ("text", "color", "marker_style"))
-                needs_summary_update = any(k in attrs for k in ("color", "marker_style"))
-
-                self.canvas.update_item_properties(item_id, attrs)
-                
-                if needs_list_update:
-                    self.update_object_panel()
-                if needs_summary_update:
-                    self.update_marker_summary()
-                self.set_dirty(True)
-                break
+        self.canvas_controller.on_property_changed(item_id, attrs)
 
     def on_item_moved(self, item_id, delta):
-        for ann in self.model.annotations:
-            if ann.id == item_id:
-                if ann.type == "text":
-                    if len(ann.points) >= 1:
-                        ann.points[0] = ann.points[0] + delta
-                else:
-                    ann.points = [p + delta for p in ann.points]
-                
-                attrs = {}
-                if hasattr(ann, 'start_marker') and ann.start_marker is not None:
-                    attrs['start_marker'] = ann.start_marker
-                if hasattr(ann, 'end_marker') and ann.end_marker is not None:
-                    attrs['end_marker'] = ann.end_marker
-                if hasattr(ann, 'center_marker') and ann.center_marker is not None:
-                    attrs['center_marker'] = ann.center_marker
-                
-                if attrs:
-                    self.canvas.update_item_properties(item_id, attrs)
-                self.set_dirty(True)
-                break
+        self.canvas_controller.on_item_moved(item_id, delta)
 
     def on_label_moved(self, item_id, delta):
-        for ann in self.model.annotations:
-            if ann.id == item_id:
-                offset = getattr(ann, "label_offset", None) or [0.0, 0.0]
-                ann.label_offset = [offset[0] + delta.x(), offset[1] + delta.y()]
-                self.set_dirty(True)
-                break
+        self.canvas_controller.on_label_moved(item_id, delta)
 
     def on_node_edit_toggled(self, item_id, active):
-        if active:
-            self.canvas.start_node_editing(item_id)
-        else:
-            self.canvas.end_node_editing()
+        self.canvas_controller.on_node_edit_toggled(item_id, active)
 
     def on_canvas_node_edit_ended(self, item_id):
-        self.prop_panel.set_node_edit_active(False)
+        self.canvas_controller.on_canvas_node_edit_ended(item_id)
 
     def on_canvas_item_points_updated(self, item_id, points):
-        for ann in self.model.annotations:
-            if ann.id == item_id:
-                ann.points = points
-                
-                if self._is_current_page_calibrated() and ann.is_calculated:
-                    self.on_calculate_requested(item_id)
-                
-                if ann.type == "polyline":
-                    self.canvas.update_item_properties(item_id, {"start_marker": ann.start_marker, "end_marker": ann.end_marker})
-                self.update_object_panel()
-                self.set_dirty(True)
-                break
+        self.canvas_controller.on_canvas_item_points_updated(item_id, points)
 
     def on_delete_item(self, item_id):
-        if hasattr(self.canvas, 'active_edit_mode') and self.canvas.active_edit_mode and self.canvas.editing_item_id == item_id:
-            self.on_object_edit_toggled_from_panel(item_id, False)
-            
-        is_selected = False
-        if hasattr(self.prop_panel, 'current_item_id') and self.prop_panel.current_item_id == item_id:
-            is_selected = True
-
-        self.model.annotations = [a for a in self.model.annotations if a.id != item_id]
-        self.canvas.remove_annotation(item_id)
-        
-        if is_selected:
-            self.on_selection_cleared()
-            
-        self.update_object_panel()
-        self.update_marker_summary()
-        self.set_dirty(True)
+        self.canvas_controller.on_delete_item(item_id)
 
     def open_pdf(self):
         if not self.maybe_save_changes():
@@ -1036,15 +732,11 @@ class MainWindow(QMainWindow):
 
         file_path, _ = QFileDialog.getOpenFileName(self, "PDF図面を開く", "", "PDF Files (*.pdf)")
         if file_path:
-            if self.pdf_handler.open_file(file_path):
-                self.model = DrawingModel()
-                self.model.pdf_path = file_path
+            if self.document_manager.open_pdf(file_path):
                 self.current_page = 0
-                self.current_project_path = ""
                 self._load_thumbnails()
                 self.update_page_view()
                 self.canvas.reset_view()
-                self.set_dirty(False)
             else:
                 QMessageBox.critical(
                     self,
@@ -1055,10 +747,8 @@ class MainWindow(QMainWindow):
     def swap_pdf(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "背景PDFを差し替え", "", "PDF Files (*.pdf)")
         if file_path:
-            if self.pdf_handler.open_file(file_path):
-                self.model.pdf_path = file_path
+            if self.document_manager.swap_pdf(file_path):
                 self.update_page_view()
-                self.set_dirty(True)
             else:
                 QMessageBox.critical(
                     self,
@@ -1067,18 +757,12 @@ class MainWindow(QMainWindow):
                 )
 
     def save_project(self) -> bool:
-        default_path = self.current_project_path
-        if not default_path and self.model.pdf_path:
-            base, _ = os.path.splitext(self.model.pdf_path)
-            default_path = base + ".json"
-
+        default_path = self.document_manager.get_suggested_save_path()
         file_path, _ = QFileDialog.getSaveFileName(self, "プロジェクトを保存", default_path, "JSON Files (*.json)")
         if not file_path:
             return False
         try:
-            save_project_file(self.model, file_path)
-            self.current_project_path = file_path
-            self.set_dirty(False)
+            self.document_manager.save_project(file_path)
             QMessageBox.information(self, "保存", "プロジェクトを保存しました。")
             return True
         except Exception as e:
@@ -1094,7 +778,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            loaded_model = load_project_file(file_path)
+            loaded_model = self.document_manager.load_project(file_path)
         except Exception as e:
             QMessageBox.critical(self, "エラー", f"プロジェクトファイルの読み込みに失敗しました:\n{e}")
             return
@@ -1127,13 +811,11 @@ class MainWindow(QMainWindow):
                 return
             loaded_model.pdf_path = alt_path
 
-        self.model = loaded_model
-        self.current_project_path = file_path
+        self.document_manager.apply_loaded_project(loaded_model, file_path)
         self.current_page = 0
         self._load_thumbnails()
         self.update_page_view()
         self.canvas.reset_view()
-        self.set_dirty(False)
 
     def export_pdf(self):
         if not self.pdf_handler.doc or not self.model.pdf_path:
@@ -1144,7 +826,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            export_pdf_document(self.model, file_path)
+            self.document_manager.export_pdf(file_path)
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -1164,55 +846,9 @@ class MainWindow(QMainWindow):
         pixmap = self.pdf_handler.get_page_pixmap(self.current_page)
         if pixmap:
             self.canvas.set_page_image(pixmap)
-            for ann in self.model.annotations:
-                if ann.page_num == self.current_page:
-                    if ann.type == "line":
-                        self.canvas.add_line_annotation(ann.points[0], ann.points[1], text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity, label_offset=getattr(ann, "label_offset", [0.0, 0.0]))
-                    elif ann.type == "polyline":
-                        self.canvas.add_polyline_annotation(ann.points, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity, start_marker=ann.start_marker, end_marker=ann.end_marker, label_offset=getattr(ann, "label_offset", [0.0, 0.0]))
-                    elif ann.type == "polygon":
-                        self.canvas.add_polygon_annotation(ann.points, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity, fill_color=ann.fill_color, label_offset=getattr(ann, "label_offset", [0.0, 0.0]))
-                    elif ann.type == "circle":
-                        current_scale_factor = self._get_current_scale_factor()
-                        if ann.radius_px > 0:
-                            radius_px = ann.radius_px
-                        elif ann.real_value > 0 and current_scale_factor > 0:
-                            radius_px = ann.real_value / current_scale_factor
-                        else:
-                            radius_px = 0
-                        self.canvas.add_circle_annotation(ann.points[0], radius_px, text=ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, line_width=ann.line_width, stroke_opacity=ann.stroke_opacity, fill_opacity=ann.fill_opacity, fill_color=ann.fill_color, center_marker=ann.center_marker, label_offset=getattr(ann, "label_offset", [0.0, 0.0]))
-                    elif ann.type == "arc":
-                        current_scale_factor = self._get_current_scale_factor()
-                        if getattr(ann, "radius_px", 0.0) > 0:
-                            radius_px = ann.radius_px
-                        elif ann.real_value > 0 and current_scale_factor > 0:
-                            radius_px = ann.real_value / current_scale_factor
-                        else:
-                            radius_px = 0
-                        self.canvas.add_arc_annotation(
-                            ann.points[0], radius_px, getattr(ann, "drag_angle", 0.0),
-                            getattr(ann, "arc_span", 30.0), text=ann.text, color=ann.color,
-                            item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size,
-                            line_width=ann.line_width, stroke_opacity=ann.stroke_opacity,
-                            center_marker=ann.center_marker,
-                            show_radial_line=getattr(ann, "show_radial_line", False),
-                            label_offset=getattr(ann, "label_offset", [0.0, 0.0])
-                        )
-                    elif ann.type == "text":
-                        leader_end = ann.points[1] if len(ann.points) >= 2 else None
-                        self.canvas.add_text_annotation(ann.points[0], ann.text, color=ann.color, item_id=ann.id, font_family=ann.font_family, font_size=ann.font_size, stroke_opacity=ann.stroke_opacity,
-                                                        has_border=getattr(ann, "has_border", False),
-                                                        border_color=getattr(ann, "border_color", "#ff0000"),
-                                                        border_width=getattr(ann, "border_width", 2),
-                                                        has_leader=getattr(ann, "has_leader", False),
-                                                        leader_end_point=leader_end)
-                    elif ann.type == "marker":
-                        self.canvas.add_marker_annotation(ann.points[0], marker_style=getattr(ann, "marker_style", "square"), color=ann.color, stroke_opacity=ann.stroke_opacity, item_id=ann.id)
-                    elif ann.type == "legend":
-                        self.canvas.add_legend_annotation(ann.points[0], item_id=ann.id,
-                                                           font_family=getattr(ann, "font_family", "Arial"),
-                                                           font_size=getattr(ann, "font_size", 12),
-                                                           color=getattr(ann, "color", "#7c4dff"))
+            self.canvas_controller.render_page_annotations(
+                self.current_page, self._get_current_scale_factor()
+            )
             self._update_scale_status_label()
             self._update_pdf_size_label()
             self.update_object_panel()
@@ -1225,32 +861,10 @@ class MainWindow(QMainWindow):
             self.on_request_tool_change(ToolMode.SELECT)
 
     def update_object_panel(self):
-        page_anns = [ann for ann in self.model.annotations if ann.page_num == self.current_page]
-        page_names = self.model.page_color_names.get(self.current_page, {})
-        self.navigator.update_objects(page_anns, page_names)
+        self.canvas_controller.update_object_panel()
 
     def on_object_selected_from_panel(self, item_id):
-        self.canvas.scene.clearSelection()
-        target_item = None
-        for item in self.canvas.scene.items():
-            if item.data(0) == item_id:
-                target_item = item
-                break
-        if target_item:
-            target_item.setSelected(True)
-            self.on_item_selected(item_id)
+        self.canvas_controller.on_object_selected_from_panel(item_id)
 
     def on_object_edit_toggled_from_panel(self, item_id, active):
-        self.canvas.set_active_edit_item(item_id, active)
-        self.navigator.set_editing_object(item_id, active)
-        
-        if active:
-            self.on_request_tool_change(ToolMode.SELECT)
-            
-        for btn in self.tool_btns:
-            mode = btn.property("tool_mode")
-            if mode != ToolMode.SELECT:
-                btn.setEnabled(not active)
-                
-        if hasattr(self.prop_panel, 'node_edit_btn'):
-            self.prop_panel.node_edit_btn.setEnabled(not active)
+        self.canvas_controller.on_object_edit_toggled_from_panel(item_id, active)
