@@ -236,7 +236,7 @@ class MainWindow(QMainWindow):
         self.main_layout.addWidget(self.toolbar)
 
         # 3. Tool Options Bar
-        self.options_bar = ToolOptionsBar()
+        self.options_bar = ToolOptionsBar(unit=self.model.unit)
         
         self.options_bar.line_width_changed.connect(self._on_options_line_width_changed)
         self.options_bar.shape_color_changed.connect(self._on_options_shape_color_changed)
@@ -733,6 +733,7 @@ class MainWindow(QMainWindow):
         file_path, _ = QFileDialog.getOpenFileName(self, "PDF図面を開く", "", "PDF Files (*.pdf)")
         if file_path:
             if self.document_manager.open_pdf(file_path):
+                self.options_bar.set_unit(self.model.unit)
                 self.current_page = 0
                 self._load_thumbnails()
                 self.update_page_view()
@@ -812,6 +813,7 @@ class MainWindow(QMainWindow):
             loaded_model.pdf_path = alt_path
 
         self.document_manager.apply_loaded_project(loaded_model, file_path)
+        self.options_bar.set_unit(self.model.unit)
         self.current_page = 0
         self._load_thumbnails()
         self.update_page_view()

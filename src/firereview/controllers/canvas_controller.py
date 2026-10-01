@@ -94,7 +94,9 @@ class CanvasController:
             if spin_radius_val is None and self.tool_controller and self.tool_controller.options_bar:
                 spin_radius_val = self.tool_controller.options_bar.tool_radius_spin.value()
             if self.is_current_page_calibrated_fn() and current_scale_factor > 0 and spin_radius_val is not None:
-                if self.model.unit == 'm':
+                options_bar = getattr(self.tool_controller, "options_bar", None) if self.tool_controller else None
+                radius_unit = getattr(options_bar, "unit", self.model.unit) if options_bar else self.model.unit
+                if radius_unit == 'm':
                     radius_mm = spin_radius_val * 1000
                 else:
                     radius_mm = spin_radius_val
