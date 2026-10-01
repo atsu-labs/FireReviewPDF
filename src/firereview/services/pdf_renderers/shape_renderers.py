@@ -15,7 +15,7 @@ class LinePdfRenderer(BasePdfRenderer):
             p1,
             p2,
             color=ctx.color,
-            width=ann.line_width,
+            width=ann.line_width * ctx.dpi_factor,
             stroke_opacity=ctx.stroke_opacity,
         )
         if ann.text:
@@ -48,7 +48,7 @@ class PolylinePdfRenderer(BasePdfRenderer):
                 pts[i],
                 pts[i + 1],
                 color=ctx.color,
-                width=ann.line_width,
+                width=ann.line_width * ctx.dpi_factor,
                 stroke_opacity=ctx.stroke_opacity,
             )
         if len(pts) >= 2:
@@ -91,7 +91,7 @@ class PolygonPdfRenderer(BasePdfRenderer):
             pts + [pts[0]],
             color=ctx.color,
             fill=_pdf_fill,
-            width=ann.line_width,
+            width=ann.line_width * ctx.dpi_factor,
             stroke_opacity=ctx.stroke_opacity,
             fill_opacity=ctx.fill_opacity if _pdf_fill else None,
         )
@@ -137,7 +137,7 @@ class CirclePdfRenderer(BasePdfRenderer):
                 radius,
                 color=ctx.color,
                 fill=_pdf_fill,
-                width=ann.line_width,
+                width=ann.line_width * ctx.dpi_factor,
                 stroke_opacity=ctx.stroke_opacity,
                 fill_opacity=ctx.fill_opacity if _pdf_fill else None,
             )
@@ -203,7 +203,7 @@ class ArcPdfRenderer(BasePdfRenderer):
                     segment_points[i],
                     segment_points[i + 1],
                     color=ctx.color,
-                    width=ann.line_width,
+                    width=ann.line_width * ctx.dpi_factor,
                     stroke_opacity=ctx.stroke_opacity,
                 )
 
@@ -217,7 +217,7 @@ class ArcPdfRenderer(BasePdfRenderer):
                     center,
                     mid_pt,
                     color=ctx.color,
-                    width=ann.line_width,
+                    width=ann.line_width * ctx.dpi_factor,
                     stroke_opacity=ctx.stroke_opacity,
                 )
 
