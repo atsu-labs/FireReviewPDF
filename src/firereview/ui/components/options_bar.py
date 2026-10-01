@@ -29,7 +29,7 @@ class ToolOptionsBar(QFrame):
     arc_radial_line_changed = Signal(bool)
 
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, unit="m"):
         super().__init__(parent)
         self.setObjectName("ToolOptionsBar")
         self.setMinimumHeight(40)
@@ -43,7 +43,7 @@ class ToolOptionsBar(QFrame):
         self.current_text_size = 12
         self.current_text_color = "#ff0000"
         self.current_marker_color = "#ff1744"
-        self.unit = "mm"
+        self.unit = unit
 
         self._start_marker_values = ["", "circle", "arrow"]
         self._end_marker_values = ["", "circle", "arrow"]
@@ -319,6 +319,13 @@ class ToolOptionsBar(QFrame):
             self.text_options_widget.hide()
             self.marker_options_widget.hide()
 
+    def set_unit(self, unit: str):
+        """現在のモデルの単位を設定し、スピンボックスの表示・初期値を同期する"""
+        if unit not in ('m', 'mm'):
+            return
+        self.unit = unit
+        self._update_radius_spinner_ranges()
+
     def apply_unit_change(self, new_unit, old_unit):
         self.unit = new_unit
         current_val = self.tool_radius_spin.value()
@@ -336,6 +343,7 @@ class ToolOptionsBar(QFrame):
         self.tool_radius_spin.blockSignals(False)
 
     def _update_radius_spinner_ranges(self):
+        self.tool_radius_spin.blockSignals(True)
         if self.unit == 'm':
             self.tool_radius_spin.setRange(0.001, 1000)
             self.tool_radius_spin.setDecimals(3)
@@ -346,6 +354,7 @@ class ToolOptionsBar(QFrame):
             self.tool_radius_spin.setDecimals(1)
             self.tool_radius_spin.setSuffix(" mm")
             self.tool_radius_spin.setValue(15000.0)
+        self.tool_radius_spin.blockSignals(False)
 
     # --- Option Change Handlers ---
     def _on_line_width_changed(self, width):
