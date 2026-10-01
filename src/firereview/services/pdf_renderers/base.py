@@ -59,7 +59,7 @@ class PdfRenderContext:
                 self.marker_size / 2,
                 color=self.color,
                 fill=self.color,
-                width=1,
+                width=1 * self.dpi_factor,
                 stroke_opacity=self.stroke_opacity,
                 fill_opacity=self.stroke_opacity,
             )
@@ -101,7 +101,7 @@ class PdfRenderContext:
                 size,
                 color=self.color,
                 fill=self.color,
-                width=1,
+                width=1 * self.dpi_factor,
                 stroke_opacity=self.stroke_opacity,
                 fill_opacity=self.stroke_opacity,
             )
@@ -110,14 +110,14 @@ class PdfRenderContext:
                 fitz.Point(center.x - size, center.y),
                 fitz.Point(center.x + size, center.y),
                 color=self.color,
-                width=1.5,
+                width=1.5 * self.dpi_factor,
                 stroke_opacity=self.stroke_opacity,
             )
             self.page.draw_line(
                 fitz.Point(center.x, center.y - size),
                 fitz.Point(center.x, center.y + size),
                 color=self.color,
-                width=1.5,
+                width=1.5 * self.dpi_factor,
                 stroke_opacity=self.stroke_opacity,
             )
         elif marker_type == "x":
@@ -125,14 +125,14 @@ class PdfRenderContext:
                 fitz.Point(center.x - size, center.y - size),
                 fitz.Point(center.x + size, center.y + size),
                 color=self.color,
-                width=1.5,
+                width=1.5 * self.dpi_factor,
                 stroke_opacity=self.stroke_opacity,
             )
             self.page.draw_line(
                 fitz.Point(center.x + size, center.y - size),
                 fitz.Point(center.x - size, center.y + size),
                 color=self.color,
-                width=1.5,
+                width=1.5 * self.dpi_factor,
                 stroke_opacity=self.stroke_opacity,
             )
 
