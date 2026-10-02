@@ -103,17 +103,11 @@ class LegendPdfRenderer(BasePdfRenderer):
 
                 ctx.page.draw_polyline(
                     [ic0, ic1, ic2, ic3, ic0],
-                    color=(1.0, 1.0, 1.0),
+                    color=c_rgb,
                     fill=c_rgb,
                     width=2 * ctx.dpi_factor * scale,
                     stroke_opacity=1.0,
                     fill_opacity=1.0,
-                )
-                ctx.page.draw_polyline(
-                    [ic0, ic1, ic2, ic3, ic0],
-                    color=c_rgb,
-                    width=1.5 * ctx.dpi_factor * scale,
-                    stroke_opacity=1.0,
                 )
             elif style == "check":
                 ctx.page.draw_circle(
