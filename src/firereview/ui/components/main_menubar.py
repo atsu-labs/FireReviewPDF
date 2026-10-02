@@ -6,6 +6,7 @@ class MainMenuBar(QMenuBar):
     open_pdf_requested = Signal()
     swap_pdf_requested = Signal()
     save_project_requested = Signal()
+    save_project_as_requested = Signal()
     load_project_requested = Signal()
     export_pdf_requested = Signal()
 
@@ -35,6 +36,11 @@ class MainMenuBar(QMenuBar):
         save_action.setShortcut("Ctrl+S")
         save_action.triggered.connect(self.save_project_requested.emit)
         file_menu.addAction(save_action)
+
+        save_as_action = QAction("名前を付けて保存...", self)
+        save_as_action.setShortcut("Ctrl+Shift+S")
+        save_as_action.triggered.connect(self.save_project_as_requested.emit)
+        file_menu.addAction(save_as_action)
 
         load_action = QAction("プロジェクトを読み込み", self)
         load_action.setShortcut("Ctrl+L")
