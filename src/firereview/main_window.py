@@ -210,6 +210,7 @@ class MainWindow(QMainWindow):
         self.menubar.open_pdf_requested.connect(self.open_pdf)
         self.menubar.swap_pdf_requested.connect(self.swap_pdf)
         self.menubar.save_project_requested.connect(self.save_project)
+        self.menubar.save_project_as_requested.connect(self.save_project_as)
         self.menubar.load_project_requested.connect(self.load_project)
         self.menubar.export_pdf_requested.connect(self.export_pdf)
 
@@ -759,8 +760,21 @@ class MainWindow(QMainWindow):
                 )
 
     def save_project(self) -> bool:
+        """現在のプロジェクトファイルへ上書き保存する。未設定の場合は名前を付けて保存を呼び出す。"""
+        if not self.current_project_path:
+            return self.save_project_as()
+        try:
+            self.document_manager.save_project(self.current_project_path)
+            QMessageBox.information(self, "保存", "プロジェクトを保存しました。")
+            return True
+        except Exception as e:
+            QMessageBox.critical(self, "エラー", f"プロジェクトの保存に失敗しました:\n{e}")
+            return False
+
+    def save_project_as(self) -> bool:
+        """ファイル保存ダイアログを表示して、名前を付けてプロジェクトを保存する。"""
         default_path = self.document_manager.get_suggested_save_path()
-        file_path, _ = QFileDialog.getSaveFileName(self, "プロジェクトを保存", default_path, "JSON Files (*.json)")
+        file_path, _ = QFileDialog.getSaveFileName(self, "名前を付けて保存", default_path, "JSON Files (*.json)")
         if not file_path:
             return False
         try:

@@ -172,41 +172,113 @@ class TestCloseEvent:
 
 
 class TestSaveProject:
-    def test_save_project_default_path_from_pdf(self, window, monkeypatch, tmp_path):
+    def test_save_project_when_no_path_prompts_save_as(self, window, monkeypatch, tmp_path):
+        """プロジェクトパス未設定の場合、save_projectはsave_project_asへフォールバックしてダイアログを表示する"""
         captured_dir = None
+        target_file = str(tmp_path / "out.json")
 
         from PySide6.QtWidgets import QFileDialog
-        monkeypatch.setattr(
-            QFileDialog,
-            "getSaveFileName",
-            lambda parent, caption, dir, filter: (str(tmp_path / "out.json"), "")
-        )
 
         def fake_get_save_file_name(parent, caption, dir, filter):
             nonlocal captured_dir
             captured_dir = dir
-            return (str(tmp_path / "out.json"), "")
+            return (target_file, "")
 
         monkeypatch.setattr(QFileDialog, "getSaveFileName", fake_get_save_file_name)
 
         window.model.pdf_path = os.path.join("some", "path", "drawing.pdf")
+        window.current_project_path = ""
+        window.set_dirty(True)
+
         assert window.save_project() is True
         assert captured_dir == os.path.join("some", "path", "drawing.json")
+        assert window.current_project_path == target_file
+        assert window.is_dirty is False
+        assert os.path.exists(target_file)
 
-    def test_save_project_default_path_from_current_project(self, window, monkeypatch, tmp_path):
+    def test_save_project_overwrites_existing_path_without_dialog(self, window, monkeypatch, tmp_path):
+        """プロジェクトパスが設定済みの場合は、ダイアログを開かずに既存パスへ上書き保存する"""
+        from PySide6.QtWidgets import QFileDialog
+
+        def unexpected_dialog(*args, **kwargs):
+            raise AssertionError("QFileDialog.getSaveFileName should not be called on overwrite save")
+
+        monkeypatch.setattr(QFileDialog, "getSaveFileName", unexpected_dialog)
+
+        existing_file = str(tmp_path / "existing_project.json")
+        window.current_project_path = existing_file
+        window.set_dirty(True)
+
+        assert window.save_project() is True
+        assert window.is_dirty is False
+        assert os.path.exists(existing_file)
+
+    def test_save_project_as_always_prompts_file_dialog(self, window, monkeypatch, tmp_path):
+        """save_project_asは常にダイアログを表示し、既存パスがあっても新しいパスへ保存・更新する"""
         captured_dir = None
+        captured_caption = None
+        new_file = str(tmp_path / "new_project.json")
 
         from PySide6.QtWidgets import QFileDialog
 
         def fake_get_save_file_name(parent, caption, dir, filter):
-            nonlocal captured_dir
+            nonlocal captured_dir, captured_caption
             captured_dir = dir
-            return (str(tmp_path / "out.json"), "")
+            captured_caption = caption
+            return (new_file, "")
 
         monkeypatch.setattr(QFileDialog, "getSaveFileName", fake_get_save_file_name)
 
-        window.model.pdf_path = os.path.join("some", "path", "drawing.pdf")
-        window.current_project_path = os.path.join("projects", "my_project.json")
-        assert window.save_project() is True
-        assert captured_dir == os.path.join("projects", "my_project.json")
+        initial_file = str(tmp_path / "initial.json")
+        window.current_project_path = initial_file
+        window.set_dirty(True)
+
+        assert window.save_project_as() is True
+        assert captured_caption == "名前を付けて保存"
+        assert captured_dir == initial_file
+        assert window.current_project_path == new_file
+        assert window.is_dirty is False
+        assert os.path.exists(new_file)
+
+    def test_save_project_as_cancelled_keeps_dirty(self, window, monkeypatch, tmp_path):
+        """ダイアログでキャンセルされた場合は保存せず、ダーティ状態とパスを維持する"""
+        from PySide6.QtWidgets import QFileDialog
+
+        monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args, **kwargs: ("", ""))
+
+        initial_file = str(tmp_path / "initial.json")
+        window.current_project_path = initial_file
+        window.set_dirty(True)
+
+        assert window.save_project_as() is False
+        assert window.current_project_path == initial_file
+        assert window.is_dirty is True
+
+    def test_save_project_error_handling(self, window, monkeypatch):
+        """保存処理で例外が発生した場合はエラーダイアログを表示しFalseを返す"""
+        window.current_project_path = "/invalid_dir/forbidden/project.json"
+        window.set_dirty(True)
+
+        assert window.save_project() is False
+        assert window.is_dirty is True
+
+    def test_menubar_save_actions_and_shortcuts(self, window):
+        """メニューバーに上書き保存(Ctrl+S)と名前を付けて保存(Ctrl+Shift+S)が存在することを確認"""
+        actions = window.menubar.actions()
+        file_menu = None
+        for action in actions:
+            if action.menu() and action.text() == "ファイル":
+                file_menu = action.menu()
+                break
+
+        assert file_menu is not None
+        menu_actions = file_menu.actions()
+        action_map = {a.text(): a for a in menu_actions}
+
+        assert "プロジェクトを保存" in action_map
+        assert action_map["プロジェクトを保存"].shortcut().toString() == "Ctrl+S"
+
+        assert "名前を付けて保存..." in action_map
+        assert action_map["名前を付けて保存..."].shortcut().toString() == "Ctrl+Shift+S"
+
 
