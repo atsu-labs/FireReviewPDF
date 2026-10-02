@@ -10,27 +10,19 @@ class MarkerPdfRenderer(BasePdfRenderer):
             return
 
         pos = ctx.to_pdf_pt(ann.points[0])
-        size = 24 * ctx.dpi_factor
+        size = 20 * ctx.dpi_factor
         half = size / 2
         marker_style = getattr(ann, "marker_style", "square")
 
         if marker_style == "square":
             rect = fitz.Rect(pos.x - half, pos.y - half, pos.x + half, pos.y + half)
-            # 1. White border glow
             ctx.page.draw_rect(
                 rect,
-                color=(1.0, 1.0, 1.0),
+                color=ctx.color,
                 fill=ctx.color,
                 width=2 * ctx.dpi_factor,
                 stroke_opacity=ctx.stroke_opacity,
                 fill_opacity=ctx.stroke_opacity,
-            )
-            # 2. Main color border
-            ctx.page.draw_rect(
-                rect,
-                color=ctx.color,
-                width=1.5 * ctx.dpi_factor,
-                stroke_opacity=ctx.stroke_opacity,
             )
         elif marker_style == "check":
             # 1. White background disk

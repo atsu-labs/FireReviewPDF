@@ -181,15 +181,9 @@ class MarkerItem(QGraphicsItem):
         c.setAlpha(round(self.opacity / 100.0 * 255))
         
         if self.marker_style == "square":
-            # 1. White border/glow for contrast
-            painter.setPen(QPen(QColor("#ffffff"), 2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-            painter.setBrush(c)
-            painter.drawRoundedRect(QRectF(-10, -10, 20, 20), 3, 3)
-            
-            # 2. Inside solid line border
             painter.setPen(QPen(c, 2))
-            painter.setBrush(Qt.NoBrush)
-            painter.drawRoundedRect(QRectF(-10, -10, 20, 20), 3, 3)
+            painter.setBrush(c)
+            painter.drawRect(QRectF(-10, -10, 20, 20))
             
         elif self.marker_style == "check":
             # Round background disk for visibility
@@ -312,14 +306,9 @@ class LegendItem(QGraphicsItem):
                 
                 if style == "square":
                     ms = 20 * scale
-                    painter.setPen(QPen(QColor("#ffffff"), 2 * scale, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-                    painter.setBrush(c)
-                    painter.drawRoundedRect(QRectF(-ms/2, -ms/2, ms, ms), 3 * scale, 3 * scale)
-                    
-                    # Inside solid border
                     painter.setPen(QPen(c, 2 * scale))
-                    painter.setBrush(Qt.NoBrush)
-                    painter.drawRoundedRect(QRectF(-ms/2, -ms/2, ms, ms), 3 * scale, 3 * scale)
+                    painter.setBrush(c)
+                    painter.drawRect(QRectF(-ms/2, -ms/2, ms, ms))
                     
                 elif style == "check":
                     bg_disk = QColor("#ffffff")
