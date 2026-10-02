@@ -14,6 +14,8 @@ class NavigatorPanel(QWidget):
         super().__init__(parent)
         self.active_edit_id = None
         self.selected_id = None
+        self.selected_page_index = None
+        self.page_thumbnails = []
         self.rows = {}
         self.setup_ui()
 
@@ -311,12 +313,29 @@ class NavigatorPanel(QWidget):
     def update_thumbnails(self, pixmaps):
         # Clear existing
         for i in reversed(range(self.thumbnails_layout.count())): 
-            self.thumbnails_layout.itemAt(i).widget().setParent(None)
+            widget = self.thumbnails_layout.itemAt(i).widget()
+            if widget:
+                widget.setParent(None)
+                widget.deleteLater()
         
+        self.page_thumbnails = []
         for i, pix in enumerate(pixmaps):
             thumb = PageThumbnail(i, pix)
-            thumb.clicked.connect(self.page_changed.emit)
+            thumb.clicked.connect(self._on_thumbnail_clicked)
             self.thumbnails_layout.addWidget(thumb)
+            self.page_thumbnails.append(thumb)
+
+        if self.selected_page_index is not None and 0 <= self.selected_page_index < len(self.page_thumbnails):
+            self.page_thumbnails[self.selected_page_index].set_selected(True)
+
+    def _on_thumbnail_clicked(self, page_index: int):
+        self.set_selected_page(page_index)
+        self.page_changed.emit(page_index)
+
+    def set_selected_page(self, page_index: int):
+        self.selected_page_index = page_index
+        for i, thumb in enumerate(self.page_thumbnails):
+            thumb.set_selected(i == page_index)
 
     def update_objects(self, annotations, color_names=None):
         # 1. Update the objects count label
@@ -398,8 +417,9 @@ class PageThumbnail(QFrame):
     def __init__(self, index, pixmap, parent=None):
         super().__init__(parent)
         self.index = index
+        self._is_selected = False
         self.setFixedSize(180, 140)
-        self.setStyleSheet("QFrame { background-color: #2a2a3d; border: 2px solid transparent; border-radius: 4px; }")
+        self._update_style()
         
         layout = QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
@@ -417,10 +437,20 @@ class PageThumbnail(QFrame):
         footer.addWidget(idx_label)
         layout.addLayout(footer)
 
+    def _update_style(self):
+        if self._is_selected:
+            self.setStyleSheet("QFrame { background-color: #2a2a3d; border: 2px solid #7c4dff; border-radius: 4px; }")
+        else:
+            self.setStyleSheet("QFrame { background-color: #2a2a3d; border: 2px solid transparent; border-radius: 4px; }")
+
+    def set_selected(self, selected: bool):
+        if self._is_selected != selected:
+            self._is_selected = selected
+            self._update_style()
+
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.clicked.emit(self.index)
-            self.setStyleSheet("QFrame { background-color: #2a2a3d; border: 2px solid #7c4dff; border-radius: 4px; }")
 
 class ObjectItemRow(QFrame):
     clicked = Signal(str)  # item_id

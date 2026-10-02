@@ -629,6 +629,7 @@ class MainWindow(QMainWindow):
 
     def go_to_page(self, page_idx):
         self.current_page = page_idx
+        self.navigator.set_selected_page(page_idx)
         self.update_page_view()
         self.canvas.reset_view()
 
@@ -843,6 +844,7 @@ class MainWindow(QMainWindow):
             pixmaps.append(self.pdf_handler.get_page_pixmap(i, dpi=30))
         self.navigator.set_page_count(count)
         self.navigator.update_thumbnails(pixmaps)
+        self.navigator.set_selected_page(self.current_page)
 
     def update_page_view(self):
         pixmap = self.pdf_handler.get_page_pixmap(self.current_page)
