@@ -178,7 +178,7 @@ class BaseAnnotation:
         self.color = data.get("color", "#7c4dff")
         self.fill_color = data.get("fill_color", "")
         self.text = data.get("text", "")
-        self.font_family = data.get("font_family", "Arial")
+        self.font_family = data.get("font_family", "BIZ UDゴシック")
         self.font_size = data.get("font_size", 12)
         self.line_width = data.get("line_width", 2)
         _legacy_opacity = data.get("opacity", 100)  # backward compat

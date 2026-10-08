@@ -144,3 +144,39 @@ def test_export_pdf_document_text_and_circle_integration(tmp_path):
     assert "二行目" in page_text
     assert "R40" in page_text
     out_doc.close()
+
+
+def test_alphanumeric_text_uses_biz_ud_gothic():
+    """英数字テキスト（R=15mなど）でもBIZ UDゴシックが選択され、画面とPDFの文字幅が一致することを検証"""
+    from firereview.services.pdf_renderers.fonts import get_or_register_font, get_font_object
+    from PySide6.QtGui import QFont, QFontMetrics
+
+    doc = fitz.open()
+    page = doc.new_page()
+    reg_fonts = {}
+    font_name = get_or_register_font(page, 0, "BIZ UDゴシック", "R=15m", "text", reg_fonts)
+    assert font_name == "bizudgothic"
+
+    # 幅の検証
+    font_size = 14
+    dpi_factor = 72.0 / 150.0
+    font_qt = QFont("BIZ UDゴシック")
+    font_qt.setPixelSize(font_size)
+    fm = QFontMetrics(font_qt)
+    qt_w = fm.horizontalAdvance("R=15m")
+
+    font_pdf = get_font_object("bizudgothic")
+    pdf_w = font_pdf.text_length("R=15m", fontsize=font_size * dpi_factor) / dpi_factor
+
+    assert pytest.approx(qt_w, abs=1.0) == pdf_w
+    doc.close()
+
+
+def test_update_item_properties_uses_pixel_size(qtbot):
+    """update_item_propertiesでfont_sizeが更新された際、pixelSizeが正しく適用されることを検証"""
+    view = PDFCanvas()
+    qtbot.addWidget(view)
+    item = view._add_text_item("テスト", 0, 0, "#000000", font_size=12)
+    view.update_item_properties(item.data(0), {"font_size": 18})
+    assert item.font().pixelSize() == 18
+

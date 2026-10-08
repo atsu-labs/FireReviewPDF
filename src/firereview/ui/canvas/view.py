@@ -969,7 +969,7 @@ class PDFCanvas(QGraphicsView):
                     if "font_size" in attrs:
                         fs = attrs["font_size"]
                         if fs > 0:
-                            font.setPointSize(fs)
+                            font.setPixelSize(fs)
                     txt.setFont(font)
 
                     if "text" in attrs:
