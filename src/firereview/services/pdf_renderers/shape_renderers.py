@@ -152,7 +152,7 @@ class CirclePdfRenderer(BasePdfRenderer):
             fontsize = ann.font_size * ctx.dpi_factor
             dy = ctx.get_baseline_shift(ann.font_size)
             dy_pt = fitz.Point(0, dy) * ctx.rot_matrix
-            text_rel_pt = fitz.Point(0, -radius - 5 * ctx.dpi_factor) * ctx.rot_matrix
+            text_rel_pt = fitz.Point(0, -radius - 10 * ctx.dpi_factor) * ctx.rot_matrix
             ctx.page.insert_text(
                 center + text_rel_pt + offset_pt + dy_pt,
                 ann.text,

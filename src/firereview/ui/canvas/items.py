@@ -7,6 +7,7 @@ class CustomTextItem(QGraphicsTextItem):
     
     def __init__(self, text, parent=None):
         super().__init__(text, parent)
+        self.document().setDocumentMargin(0)
         self.has_border = False
         self.border_color = QColor("#ff0000")
         self.border_width = 2

@@ -47,9 +47,16 @@ class PdfRenderContext:
         pt = fitz.Point(qp.x() * self.dpi_factor, qp.y() * self.dpi_factor)
         return pt * self.derot_matrix
 
-    def get_baseline_shift(self, font_size: float) -> float:
+    def get_baseline_shift(self, font_size: float, page_font: str = None) -> float:
         """Y軸ベースラインシフト補正量を計算します"""
-        return (4 + font_size * 0.85) * self.dpi_factor
+        font_name = page_font or getattr(self, "page_font", "helv")
+        try:
+            from .fonts import get_font_object
+            font_obj = get_font_object(font_name)
+            ascender = font_obj.ascender
+        except Exception:
+            ascender = 0.88
+        return font_size * self.dpi_factor * ascender
 
     def draw_endpoint_marker(self, point: fitz.Point, neighbor: fitz.Point, marker_type: str):
         """線の端点マーカー（円または矢印）を描画します"""
