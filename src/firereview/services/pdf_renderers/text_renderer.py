@@ -15,7 +15,13 @@ class TextPdfRenderer(BasePdfRenderer):
         fontsize = ann.font_size * ctx.dpi_factor
         dy = ctx.get_baseline_shift(ann.font_size)
         lines = (ann.text or "").split('\n')
-        line_height = fontsize * 1.2
+        font_obj = get_font_object(ctx.page_font)
+        line_spacing_ratio = (
+            (font_obj.ascender - font_obj.descender)
+            if hasattr(font_obj, "ascender") and hasattr(font_obj, "descender") and (font_obj.ascender - font_obj.descender) > 0
+            else 1.0
+        )
+        line_height = fontsize * line_spacing_ratio
 
         for i, line in enumerate(lines):
             dy_pt = fitz.Point(0, dy + i * line_height) * ctx.rot_matrix
@@ -40,8 +46,6 @@ class TextPdfRenderer(BasePdfRenderer):
                 b_color_value.blue() / 255.0,
             )
             b_width = getattr(ann, "border_width", 2) * ctx.dpi_factor
-
-            font_obj = get_font_object(ctx.page_font)
 
             num_lines = max(1, len(lines))
             text_w = max(font_obj.text_length(line, fontsize=fontsize) for line in lines) if lines else 0

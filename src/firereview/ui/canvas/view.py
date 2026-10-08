@@ -412,7 +412,8 @@ class PDFCanvas(QGraphicsView):
         self.editing_text_item = CustomTextItem("")
         self.editing_text_item.setPos(pos)
         self.editing_text_item.setDefaultTextColor(QColor(self.current_text_color))
-        font = QFont(self.current_text_font, self.current_text_size)
+        font = QFont(self.current_text_font)
+        font.setPixelSize(self.current_text_size)
         self.editing_text_item.setFont(font)
         
         self.scene.addItem(self.editing_text_item)
@@ -771,7 +772,8 @@ class PDFCanvas(QGraphicsView):
         if font_size <= 0:
             font_size = 12
         # フォントファミリーを「BIZ UDゴシック」に完全強制一本化します
-        font = QFont("BIZ UDゴシック", font_size)
+        font = QFont("BIZ UDゴシック")
+        font.setPixelSize(font_size)
         text_item.setFont(font)
         
         text_item.setPos(x, y)
@@ -967,7 +969,7 @@ class PDFCanvas(QGraphicsView):
                     if "font_size" in attrs:
                         fs = attrs["font_size"]
                         if fs > 0:
-                            font.setPointSize(fs)
+                            font.setPixelSize(fs)
                     txt.setFont(font)
 
                     if "text" in attrs:

@@ -22,7 +22,7 @@ def export_pdf_document(model, output_path: str) -> None:
 
             page = export_doc[ann.page_num]
 
-            font_family_str = getattr(ann, "font_family", "Arial")
+            font_family_str = getattr(ann, "font_family", "BIZ UDゴシック")
             page_font = get_or_register_font(
                 page, ann.page_num, font_family_str, getattr(ann, "text", ""), ann.type, registered_page_fonts
             )

@@ -75,19 +75,14 @@ def get_or_register_font(page_obj, page_idx: int, family_name: str, text_content
     if page_idx not in registered_page_fonts:
         registered_page_fonts[page_idx] = {}
 
-    family_lower = (family_name or "Arial").lower().strip()
+    family_lower = (family_name or "BIZ UDゴシック").lower().strip()
     has_japanese_text = False
     if text_content:
         has_japanese_text = any(char > '\u007f' for char in text_content)
 
-    is_legend = (ann_type == "legend")
-    need_japanese = (
-        has_japanese_text
-        or is_legend
-        or any(x in family_lower for x in ["gothic", "ゴシック", "meiryo", "メイリオ", "yu", "游", "mincho", "明朝", "biz", "noto", "sans", "jp"])
-    )
-
-    if not need_japanese:
+    # 明示的に欧文基本フォントが指定され、かつ日本語を含まない場合のみ helv を使用
+    is_explicit_western = any(family_lower == x for x in ["helv", "helvetica", "times", "courier"])
+    if is_explicit_western and not has_japanese_text and ann_type != "legend":
         return "helv"
 
     pdf_name = "bizudgothic"
