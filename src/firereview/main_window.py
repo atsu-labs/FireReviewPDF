@@ -243,6 +243,7 @@ class MainWindow(QMainWindow):
         self.options_bar.shape_color_changed.connect(self._on_options_shape_color_changed)
         self.options_bar.fill_color_changed.connect(self._on_options_fill_color_changed)
         self.options_bar.fill_opacity_changed.connect(self._on_options_fill_opacity_changed)
+        self.options_bar.color_link_changed.connect(self._on_options_color_link_changed)
         self.options_bar.start_marker_changed.connect(self._on_options_start_marker_changed)
         self.options_bar.end_marker_changed.connect(self._on_options_end_marker_changed)
         self.options_bar.center_marker_changed.connect(self._on_options_center_marker_changed)
@@ -399,6 +400,9 @@ class MainWindow(QMainWindow):
 
     def _on_options_fill_opacity_changed(self, opacity):
         self.tool_controller.on_options_fill_opacity_changed(opacity)
+
+    def _on_options_color_link_changed(self, linked):
+        self.tool_controller.on_options_color_link_changed(linked)
 
     def _on_options_start_marker_changed(self, index):
         self.tool_controller.on_options_start_marker_changed(index)
