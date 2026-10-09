@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QWidget, QSpinBox,
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFont
 from ..canvas import ToolMode
+from .color_picker_popup import ColorPickerPopup
 
 class ToolOptionsBar(QFrame):
     # Signals to notify the orchestrator (MainWindow/Canvas) about option changes
@@ -11,6 +12,7 @@ class ToolOptionsBar(QFrame):
     shape_color_changed = Signal(str)
     fill_color_changed = Signal(str)
     fill_opacity_changed = Signal(int)
+    color_link_changed = Signal(bool)
     radius_changed = Signal(float)
     start_marker_changed = Signal(int)
     end_marker_changed = Signal(int)
@@ -39,6 +41,7 @@ class ToolOptionsBar(QFrame):
         self.current_shape_color = "#7c4dff"
         self.current_fill_color = "#7c4dff"
         self.current_fill_opacity = 30
+        self.is_color_linked = True
         self.current_text_font = "BIZ UDゴシック"
         self.current_text_size = 12
         self.current_text_color = "#ff0000"
@@ -72,13 +75,12 @@ class ToolOptionsBar(QFrame):
 
         shape_layout.addWidget(QLabel("線の色:"))
         self.tool_shape_color_preview = QFrame()
-        self.tool_shape_color_preview.setFixedSize(20, 20)
-        self.tool_shape_color_preview.setStyleSheet(f"background-color: {self.current_shape_color}; border-radius: 4px;")
+        self.tool_shape_color_preview.setFixedSize(22, 22)
+        self.tool_shape_color_preview.setCursor(Qt.PointingHandCursor)
+        self.tool_shape_color_preview.setToolTip("クリックして色を選択")
+        self.tool_shape_color_preview.setStyleSheet(f"background-color: {self.current_shape_color}; border: 1px solid #666; border-radius: 4px;")
+        self.tool_shape_color_preview.mousePressEvent = lambda e: self._on_shape_color_clicked()
         shape_layout.addWidget(self.tool_shape_color_preview)
-        
-        self.tool_shape_color_btn = QPushButton("変更")
-        self.tool_shape_color_btn.clicked.connect(self._on_shape_color_clicked)
-        shape_layout.addWidget(self.tool_shape_color_btn)
 
         # Fill color
         self.tool_fill_container = QWidget()
@@ -86,17 +88,19 @@ class ToolOptionsBar(QFrame):
         fill_layout.setContentsMargins(0, 0, 0, 0)
         fill_layout.addWidget(QLabel("塗りの色:"))
         self.tool_fill_color_preview = QFrame()
-        self.tool_fill_color_preview.setFixedSize(20, 20)
+        self.tool_fill_color_preview.setFixedSize(22, 22)
+        self.tool_fill_color_preview.setCursor(Qt.PointingHandCursor)
+        self.tool_fill_color_preview.setToolTip("クリックして色を選択")
         self.tool_fill_color_preview.setStyleSheet(f"background-color: {self.current_fill_color}; border: 1px solid #888; border-radius: 4px;")
+        self.tool_fill_color_preview.mousePressEvent = lambda e: self._on_fill_color_clicked()
         fill_layout.addWidget(self.tool_fill_color_preview)
-        
-        self.tool_fill_color_btn = QPushButton("変更")
-        self.tool_fill_color_btn.clicked.connect(self._on_fill_color_clicked)
-        fill_layout.addWidget(self.tool_fill_color_btn)
-        
-        self.tool_fill_clear_btn = QPushButton("なし")
-        self.tool_fill_clear_btn.clicked.connect(self._on_fill_color_cleared)
-        fill_layout.addWidget(self.tool_fill_clear_btn)
+
+        self.tool_fill_link_check = QCheckBox("線の色と連動")
+        self.tool_fill_link_check.setChecked(self.is_color_linked)
+        self.tool_fill_link_check.setStyleSheet("color: white;")
+        self.tool_fill_link_check.setToolTip("線の色を変更したときに塗りの色も同色に自動同期します")
+        self.tool_fill_link_check.toggled.connect(self._on_fill_link_toggled)
+        fill_layout.addWidget(self.tool_fill_link_check)
         
         fill_layout.addWidget(QLabel("不透明度:"))
         self.tool_fill_opacity_spin = QSpinBox()
@@ -208,13 +212,12 @@ class ToolOptionsBar(QFrame):
         
         text_layout.addWidget(QLabel("色:"))
         self.tool_color_preview = QFrame()
-        self.tool_color_preview.setFixedSize(20, 20)
-        self.tool_color_preview.setStyleSheet(f"background-color: {self.current_text_color}; border-radius: 4px;")
+        self.tool_color_preview.setFixedSize(22, 22)
+        self.tool_color_preview.setCursor(Qt.PointingHandCursor)
+        self.tool_color_preview.setToolTip("クリックして色を選択")
+        self.tool_color_preview.setStyleSheet(f"background-color: {self.current_text_color}; border: 1px solid #666; border-radius: 4px;")
+        self.tool_color_preview.mousePressEvent = lambda e: self._on_text_color_clicked()
         text_layout.addWidget(self.tool_color_preview)
-        
-        self.tool_color_btn = QPushButton("変更")
-        self.tool_color_btn.clicked.connect(self._on_text_color_clicked)
-        text_layout.addWidget(self.tool_color_btn)
         
         self.tool_continuous_check = QCheckBox("連続入力")
         self.tool_continuous_check.setChecked(False)
@@ -362,18 +365,19 @@ class ToolOptionsBar(QFrame):
         self.line_width_changed.emit(width)
 
     def _on_shape_color_clicked(self):
-        color = QColorDialog.getColor(QColor(self.current_shape_color), self)
-        if color.isValid():
-            self.current_shape_color = color.name()
-            self.tool_shape_color_preview.setStyleSheet(f"background-color: {self.current_shape_color}; border-radius: 4px;")
-            self._update_fill_preview()
-            self.shape_color_changed.emit(self.current_shape_color)
+        popup = ColorPickerPopup(self, current_color=self.current_shape_color, allow_none=False, title="線の色")
+        popup.color_selected.connect(self._apply_shape_color)
+        popup.show_below(self.tool_shape_color_preview)
 
-    def _on_fill_color_clicked(self):
-        initial = QColor(self.current_fill_color) if self.current_fill_color else QColor(self.current_shape_color)
-        color = QColorDialog.getColor(initial, self)
-        if color.isValid():
-            self.current_fill_color = color.name()
+    def _apply_shape_color(self, hex_color: str):
+        if not hex_color:
+            return
+        self.current_shape_color = hex_color
+        self.tool_shape_color_preview.setStyleSheet(f"background-color: {self.current_shape_color}; border: 1px solid #666; border-radius: 4px;")
+        self.shape_color_changed.emit(self.current_shape_color)
+
+        if self.is_color_linked:
+            self.current_fill_color = hex_color
             if self.tool_fill_opacity_spin.value() == 0:
                 self.tool_fill_opacity_spin.setValue(30)
                 self.current_fill_opacity = 30
@@ -382,14 +386,57 @@ class ToolOptionsBar(QFrame):
             self._update_fill_preview()
             self.fill_color_changed.emit(self.current_fill_color)
             self.fill_opacity_changed.emit(self.current_fill_opacity)
+        else:
+            self._update_fill_preview()
+
+    def _on_fill_color_clicked(self):
+        initial = self.current_fill_color if self.current_fill_color else self.current_shape_color
+        popup = ColorPickerPopup(self, current_color=initial, allow_none=True, title="塗りの色")
+        popup.color_selected.connect(self._apply_fill_color)
+        popup.show_below(self.tool_fill_color_preview)
+
+    def _apply_fill_color(self, hex_color: str):
+        if not hex_color:
+            self._on_fill_color_cleared()
+            return
+        
+        # ユーザーが塗りの色を線の色と異なる色に明示変更した場合、連動を解除
+        if self.is_color_linked and hex_color.lower() != self.current_shape_color.lower():
+            self.tool_fill_link_check.setChecked(False)
+
+        self.current_fill_color = hex_color
+        if self.tool_fill_opacity_spin.value() == 0:
+            self.tool_fill_opacity_spin.setValue(30)
+            self.current_fill_opacity = 30
+        else:
+            self.current_fill_opacity = self.tool_fill_opacity_spin.value()
+        self._update_fill_preview()
+        self.fill_color_changed.emit(self.current_fill_color)
+        self.fill_opacity_changed.emit(self.current_fill_opacity)
 
     def _on_fill_color_cleared(self):
+        if self.is_color_linked:
+            self.tool_fill_link_check.setChecked(False)
         self.current_fill_color = ""
         self.current_fill_opacity = 0
         self.tool_fill_opacity_spin.setValue(0)
         self._update_fill_preview()
         self.fill_color_changed.emit("")
         self.fill_opacity_changed.emit(0)
+
+    def _on_fill_link_toggled(self, checked: bool):
+        self.is_color_linked = checked
+        self.color_link_changed.emit(checked)
+        if checked:
+            self.current_fill_color = self.current_shape_color
+            if self.tool_fill_opacity_spin.value() == 0:
+                self.tool_fill_opacity_spin.setValue(30)
+                self.current_fill_opacity = 30
+            else:
+                self.current_fill_opacity = self.tool_fill_opacity_spin.value()
+            self._update_fill_preview()
+            self.fill_color_changed.emit(self.current_fill_color)
+            self.fill_opacity_changed.emit(self.current_fill_opacity)
 
     def _on_fill_opacity_changed(self, value):
         self.current_fill_opacity = value
@@ -413,11 +460,16 @@ class ToolOptionsBar(QFrame):
         self.font_size_changed.emit(size)
 
     def _on_text_color_clicked(self):
-        color = QColorDialog.getColor(QColor(self.current_text_color), self)
-        if color.isValid():
-            self.current_text_color = color.name()
-            self.tool_color_preview.setStyleSheet(f"background-color: {self.current_text_color}; border-radius: 4px;")
-            self.text_color_changed.emit(self.current_text_color)
+        popup = ColorPickerPopup(self, current_color=self.current_text_color, allow_none=False, title="文字の色")
+        popup.color_selected.connect(self._apply_text_color)
+        popup.show_below(self.tool_color_preview)
+
+    def _apply_text_color(self, hex_color: str):
+        if not hex_color:
+            return
+        self.current_text_color = hex_color
+        self.tool_color_preview.setStyleSheet(f"background-color: {self.current_text_color}; border-radius: 4px;")
+        self.text_color_changed.emit(self.current_text_color)
 
     def _on_marker_style_combo_changed(self, index):
         style = "square" if index == 0 else "check"

@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QLineEdit,
                              QCheckBox, QScrollArea)
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QColor, QFont
+from ..components.color_picker_popup import ColorPickerPopup
 
 class PropertyPanel(QWidget):
     attribute_changed = Signal(str, dict) # id, {attr: value}
@@ -56,62 +57,86 @@ class PropertyPanel(QWidget):
 
         # --- Appearance Section (Common) ---
         self.appearance_container = QWidget()
+        # --- Appearance Section (線と塗りを左右並列に配置) ---
         app_layout = QVBoxLayout(self.appearance_container)
         app_layout.setContentsMargins(0, 0, 0, 0)
+        app_layout.setSpacing(6)
         app_layout.addWidget(self._create_section_label("外観"))
-        
-        app_layout.addWidget(QLabel("線の不透明度"))
-        opacity_layout = QHBoxLayout()
-        self.opacity_slider = QSlider(Qt.Horizontal)
-        self.opacity_slider.setRange(0, 100)
-        self.opacity_slider.setValue(100)
-        self.opacity_slider.valueChanged.connect(self._on_opacity_changed)
-        opacity_layout.addWidget(self.opacity_slider)
-        self.opacity_label = QLabel("100%")
-        opacity_layout.addWidget(self.opacity_label)
-        app_layout.addLayout(opacity_layout)
 
-        app_layout.addWidget(QLabel("カラー"))
-        color_layout = QHBoxLayout()
+        # 左右並列カラーレイアウト（左: 線の色、右: 塗りの色）
+        colors_row = QHBoxLayout()
+        colors_row.setContentsMargins(0, 0, 0, 0)
+        colors_row.setSpacing(10)
+
+        # 左: 線の色
+        self.stroke_color_widget = QWidget()
+        stroke_color_layout = QVBoxLayout(self.stroke_color_widget)
+        stroke_color_layout.setContentsMargins(0, 0, 0, 0)
+        stroke_color_layout.setSpacing(4)
+        stroke_color_layout.addWidget(QLabel("線の色"))
+
+        stroke_chip_layout = QHBoxLayout()
+        stroke_chip_layout.setContentsMargins(0, 0, 0, 0)
+        stroke_chip_layout.setSpacing(6)
         self.color_preview = QFrame()
         self.color_preview.setFixedSize(24, 24)
-        self.color_preview.setStyleSheet("background-color: #7c4dff; border-radius: 4px;")
-        color_layout.addWidget(self.color_preview)
-        self.color_hex_label = QLabel("#7C4DFF")
-        self.color_hex_label.setStyleSheet("color: #ffffff; font-family: monospace;")
-        color_layout.addWidget(self.color_hex_label)
-        color_layout.addStretch()
-        self.color_btn = QPushButton("✎")
-        self.color_btn.setFixedSize(30, 30)
-        self.color_btn.clicked.connect(self._on_color_clicked)
-        color_layout.addWidget(self.color_btn)
-        app_layout.addLayout(color_layout)
-        self.main_layout.addWidget(self.appearance_container)
+        self.color_preview.setCursor(Qt.PointingHandCursor)
+        self.color_preview.setToolTip("クリックして色を選択")
+        self.color_preview.setStyleSheet("background-color: #7c4dff; border: 1px solid #666; border-radius: 4px;")
+        self.color_preview.mousePressEvent = lambda e: self._on_color_clicked()
+        stroke_chip_layout.addWidget(self.color_preview)
 
-        # --- Fill Color Section (For Shapes with Fill) ---
-        self.fill_container = QWidget()
-        fill_layout = QVBoxLayout(self.fill_container)
-        fill_layout.setContentsMargins(0, 0, 0, 0)
-        fill_layout.addWidget(self._create_section_label("塗りの色"))
-        fill_color_layout = QHBoxLayout()
+        self.color_hex_label = QLabel("#7C4DFF")
+        self.color_hex_label.setCursor(Qt.PointingHandCursor)
+        self.color_hex_label.setToolTip("クリックして色を選択")
+        self.color_hex_label.setStyleSheet("color: #ffffff; font-family: monospace;")
+        self.color_hex_label.mousePressEvent = lambda e: self._on_color_clicked()
+        stroke_chip_layout.addWidget(self.color_hex_label)
+        stroke_chip_layout.addStretch()
+        stroke_color_layout.addLayout(stroke_chip_layout)
+        colors_row.addWidget(self.stroke_color_widget)
+
+        # 右: 塗りの色（has_fill時のみ表示）
+        self.fill_color_widget = QWidget()
+        fill_color_layout = QVBoxLayout(self.fill_color_widget)
+        fill_color_layout.setContentsMargins(0, 0, 0, 0)
+        fill_color_layout.setSpacing(4)
+        fill_color_layout.addWidget(QLabel("塗りの色"))
+
+        fill_chip_layout = QHBoxLayout()
+        fill_chip_layout.setContentsMargins(0, 0, 0, 0)
+        fill_chip_layout.setSpacing(6)
         self.fill_color_preview = QFrame()
         self.fill_color_preview.setFixedSize(24, 24)
+        self.fill_color_preview.setCursor(Qt.PointingHandCursor)
+        self.fill_color_preview.setToolTip("クリックして色を選択")
         self.fill_color_preview.setStyleSheet("background-color: transparent; border: 1px solid #3d3d5c; border-radius: 4px;")
-        fill_color_layout.addWidget(self.fill_color_preview)
+        self.fill_color_preview.mousePressEvent = lambda e: self._on_fill_color_clicked()
+        fill_chip_layout.addWidget(self.fill_color_preview)
+
         self.fill_color_hex_label = QLabel("なし")
+        self.fill_color_hex_label.setCursor(Qt.PointingHandCursor)
+        self.fill_color_hex_label.setToolTip("クリックして色を選択")
         self.fill_color_hex_label.setStyleSheet("color: #ffffff; font-family: monospace;")
-        fill_color_layout.addWidget(self.fill_color_hex_label)
-        fill_color_layout.addStretch()
-        self.fill_color_btn = QPushButton("✎")
-        self.fill_color_btn.setFixedSize(30, 30)
-        self.fill_color_btn.clicked.connect(self._on_fill_color_clicked)
-        fill_color_layout.addWidget(self.fill_color_btn)
-        self.fill_clear_btn = QPushButton("✕")
-        self.fill_clear_btn.setFixedSize(30, 30)
-        self.fill_clear_btn.setToolTip("塗りなし")
-        self.fill_clear_btn.clicked.connect(self._on_fill_color_cleared)
-        fill_color_layout.addWidget(self.fill_clear_btn)
-        fill_layout.addLayout(fill_color_layout)
+        self.fill_color_hex_label.mousePressEvent = lambda e: self._on_fill_color_clicked()
+        fill_chip_layout.addWidget(self.fill_color_hex_label)
+        fill_chip_layout.addStretch()
+        fill_color_layout.addLayout(fill_chip_layout)
+        colors_row.addWidget(self.fill_color_widget)
+
+        app_layout.addLayout(colors_row)
+
+        # 塗り用追加オプション（連動チェック ＆ 塗りの不透明度）
+        self.fill_container = QWidget()
+        fill_layout = QVBoxLayout(self.fill_container)
+        fill_layout.setContentsMargins(0, 2, 0, 0)
+        fill_layout.setSpacing(6)
+
+        self.fill_link_check = QCheckBox("線の色と連動")
+        self.fill_link_check.setStyleSheet("color: white;")
+        self.fill_link_check.setToolTip("線の色を変更したときに塗りの色も同色に自動同期します")
+        self.fill_link_check.toggled.connect(self._on_fill_link_toggled)
+        fill_layout.addWidget(self.fill_link_check)
 
         fill_layout.addWidget(QLabel("塗りの不透明度"))
         fill_opacity_layout = QHBoxLayout()
@@ -123,8 +148,21 @@ class PropertyPanel(QWidget):
         self.fill_opacity_label = QLabel("30%")
         fill_opacity_layout.addWidget(self.fill_opacity_label)
         fill_layout.addLayout(fill_opacity_layout)
+        app_layout.addWidget(self.fill_container)
 
-        self.main_layout.addWidget(self.fill_container)
+        # 線の不透明度
+        app_layout.addWidget(QLabel("線の不透明度"))
+        opacity_layout = QHBoxLayout()
+        self.opacity_slider = QSlider(Qt.Horizontal)
+        self.opacity_slider.setRange(0, 100)
+        self.opacity_slider.setValue(100)
+        self.opacity_slider.valueChanged.connect(self._on_opacity_changed)
+        opacity_layout.addWidget(self.opacity_slider)
+        self.opacity_label = QLabel("100%")
+        opacity_layout.addWidget(self.opacity_label)
+        app_layout.addLayout(opacity_layout)
+
+        self.main_layout.addWidget(self.appearance_container)
 
         # --- Marker Section ---
         self.marker_container = QWidget()
@@ -404,6 +442,7 @@ class PropertyPanel(QWidget):
         
         self.line_container.setVisible(is_shape)
         self.fill_container.setVisible(has_fill)
+        self.fill_color_widget.setVisible(has_fill)
         self.arc_container.setVisible(is_arc)
         self.calc_container.setVisible(can_calc)
         self.text_container.setVisible((is_text or has_label) and not is_marker)
@@ -450,6 +489,12 @@ class PropertyPanel(QWidget):
  
         self.fill_opacity_slider.setValue(fill_opacity)
         self.fill_opacity_label.setText(f"{fill_opacity}%")
+
+        # 線と塗りの連動チェック状態
+        is_linked = bool(has_fill and fill_opacity > 0 and (not fill_color or fill_color.lower() == color_hex.lower()))
+        self.fill_link_check.blockSignals(True)
+        self.fill_link_check.setChecked(is_linked)
+        self.fill_link_check.blockSignals(False)
  
         # Markers
         sm_idx = self._start_marker_values.index(start_marker) if start_marker in self._start_marker_values else 0
@@ -507,6 +552,7 @@ class PropertyPanel(QWidget):
         self.color_preview.setStyleSheet("background-color: transparent; border: 1px solid #3d3d5c;")
         self.appearance_container.setVisible(False)
         self.fill_container.setVisible(False)
+        self.fill_color_widget.setVisible(False)
         self.marker_container.setVisible(False)
         self.line_container.setVisible(False)
         self.arc_container.setVisible(False)
@@ -550,32 +596,74 @@ class PropertyPanel(QWidget):
             self.attribute_changed.emit(self.current_item_id, {"fill_opacity": opacity})
 
     def _on_color_clicked(self):
-        if not self.current_item_id: return
-        color = QColorDialog.getColor(QColor(self.current_color))
-        if color.isValid():
-            hex_color = color.name()
-            self.color_preview.setStyleSheet(f"background-color: {hex_color}; border-radius: 4px;")
-            self.color_hex_label.setText(hex_color.upper())
-            self.current_color = hex_color
-            self.attribute_changed.emit(self.current_item_id, {"color": hex_color})
+        if not self.current_item_id:
+            return
+        popup = ColorPickerPopup(self, current_color=self.current_color, allow_none=False, title="カラー")
+        popup.color_selected.connect(self._apply_color)
+        popup.show_below(self.color_preview)
 
-    def _on_fill_color_clicked(self):
-        if not self.current_item_id: return
-        initial = QColor(self.current_fill_color) if self.current_fill_color else QColor("#7c4dff")
-        color = QColorDialog.getColor(initial)
-        if color.isValid():
-            hex_color = color.name()
+    def _apply_color(self, hex_color: str):
+        if not hex_color or not self.current_item_id:
+            return
+        self.color_preview.setStyleSheet(f"background-color: {hex_color}; border: 1px solid #666; border-radius: 4px;")
+        self.color_hex_label.setText(hex_color.upper())
+        self.current_color = hex_color
+
+        attrs = {"color": hex_color}
+        # 塗り対応図形かつ連動チェックがONの場合、塗りの色も同期
+        if self.fill_link_check.isChecked() and self.current_item_type in ["polygon", "circle"]:
+            self.current_fill_color = hex_color
             self.fill_color_preview.setStyleSheet(f"background-color: {hex_color}; border-radius: 4px;")
             self.fill_color_hex_label.setText(hex_color.upper())
-            self.current_fill_color = hex_color
-            attrs = {"fill_color": hex_color}
+            attrs["fill_color"] = hex_color
             if self.fill_opacity_slider.value() == 0:
+                self._block_signals = True
                 self.fill_opacity_slider.setValue(30)
+                self.fill_opacity_label.setText("30%")
+                self._block_signals = False
                 attrs["fill_opacity"] = 30
-            self.attribute_changed.emit(self.current_item_id, attrs)
+        self.attribute_changed.emit(self.current_item_id, attrs)
+
+    def _on_fill_color_clicked(self):
+        if not self.current_item_id:
+            return
+        initial = self.current_fill_color if self.current_fill_color else self.current_color
+        popup = ColorPickerPopup(self, current_color=initial, allow_none=True, title="塗りの色")
+        popup.color_selected.connect(self._apply_fill_color)
+        popup.show_below(self.fill_color_preview)
+
+    def _apply_fill_color(self, hex_color: str):
+        if not self.current_item_id:
+            return
+        if not hex_color:
+            self._on_fill_color_cleared()
+            return
+
+        # 線の色と異なる色に手動変更した場合、連動を解除
+        if self.fill_link_check.isChecked() and hex_color.lower() != self.current_color.lower():
+            self.fill_link_check.blockSignals(True)
+            self.fill_link_check.setChecked(False)
+            self.fill_link_check.blockSignals(False)
+
+        self.fill_color_preview.setStyleSheet(f"background-color: {hex_color}; border-radius: 4px;")
+        self.fill_color_hex_label.setText(hex_color.upper())
+        self.current_fill_color = hex_color
+        attrs = {"fill_color": hex_color}
+        if self.fill_opacity_slider.value() == 0:
+            self._block_signals = True
+            self.fill_opacity_slider.setValue(30)
+            self.fill_opacity_label.setText("30%")
+            self._block_signals = False
+            attrs["fill_opacity"] = 30
+        self.attribute_changed.emit(self.current_item_id, attrs)
 
     def _on_fill_color_cleared(self):
-        if not self.current_item_id: return
+        if not self.current_item_id:
+            return
+        if self.fill_link_check.isChecked():
+            self.fill_link_check.blockSignals(True)
+            self.fill_link_check.setChecked(False)
+            self.fill_link_check.blockSignals(False)
         self.current_fill_color = ""
         self.fill_color_preview.setStyleSheet("background-color: transparent; border: 1px solid #3d3d5c; border-radius: 4px;")
         self.fill_color_hex_label.setText("なし")
@@ -584,6 +672,22 @@ class PropertyPanel(QWidget):
         self.fill_opacity_label.setText("0%")
         self._block_signals = False
         self.attribute_changed.emit(self.current_item_id, {"fill_color": "", "fill_opacity": 0})
+
+    def _on_fill_link_toggled(self, checked: bool):
+        if not self.current_item_id:
+            return
+        if checked:
+            self.current_fill_color = self.current_color
+            self.fill_color_preview.setStyleSheet(f"background-color: {self.current_color}; border-radius: 4px;")
+            self.fill_color_hex_label.setText(self.current_color.upper())
+            attrs = {"fill_color": self.current_color}
+            if self.fill_opacity_slider.value() == 0:
+                self._block_signals = True
+                self.fill_opacity_slider.setValue(30)
+                self.fill_opacity_label.setText("30%")
+                self._block_signals = False
+                attrs["fill_opacity"] = 30
+            self.attribute_changed.emit(self.current_item_id, attrs)
 
     def _on_start_marker_changed(self, index):
         if not self._block_signals and self.current_item_id:

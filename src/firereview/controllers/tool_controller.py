@@ -26,6 +26,7 @@ class ToolController:
         self.current_shape_color = "#7c4dff"
         self.current_fill_color = "#7c4dff"
         self.current_fill_opacity = 30
+        self.is_color_linked = True
         self.current_line_width = 2
         self.current_start_marker = ""
         self.current_end_marker = ""
@@ -86,15 +87,26 @@ class ToolController:
             )
 
     # --- オプションバーからの各種シグナルハンドラ ---
+    def on_options_color_link_changed(self, linked: bool):
+        self.is_color_linked = linked
+
     def on_options_line_width_changed(self, width: int):
         self.current_line_width = width
         self.update_canvas_shape_defaults()
 
     def on_options_shape_color_changed(self, color: str):
         self.current_shape_color = color
+        if self.is_color_linked:
+            self.current_fill_color = color
         self.update_canvas_shape_defaults()
         if self.canvas and self.canvas.editing_item_id:
-            self.canvas.update_item_properties(self.canvas.editing_item_id, {"color": color})
+            props = {"color": color}
+            if self.is_color_linked:
+                props["fill_color"] = color
+                if self.current_fill_opacity == 0:
+                    self.current_fill_opacity = 30
+                    props["fill_opacity"] = 30
+            self.canvas.update_item_properties(self.canvas.editing_item_id, props)
 
     def on_options_fill_color_changed(self, color: str):
         self.current_fill_color = color
