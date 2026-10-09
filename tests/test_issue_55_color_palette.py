@@ -248,3 +248,44 @@ class TestToolControllerColorLinking:
         assert controller.current_shape_color == "#00e5ff"
         # fill should remain unchanged
         assert controller.current_fill_color == "#ff9100"
+
+
+class TestCleanedColorUI:
+    def test_options_bar_no_redundant_buttons(self, qtbot):
+        bar = ToolOptionsBar()
+        qtbot.addWidget(bar)
+        assert not hasattr(bar, "tool_shape_color_btn")
+        assert not hasattr(bar, "tool_fill_color_btn")
+        assert not hasattr(bar, "tool_fill_clear_btn")
+        assert not hasattr(bar, "tool_color_btn")
+        # プレビュー枠が直接クリック可能であること
+        assert bar.tool_shape_color_preview.cursor().shape() == Qt.PointingHandCursor
+        assert bar.tool_fill_color_preview.cursor().shape() == Qt.PointingHandCursor
+
+    def test_property_panel_no_redundant_buttons(self, qtbot):
+        panel = PropertyPanel()
+        qtbot.addWidget(panel)
+        assert not hasattr(panel, "color_btn")
+        assert not hasattr(panel, "fill_color_btn")
+        assert not hasattr(panel, "fill_clear_btn")
+        # プレビュー枠が直接クリック可能であること
+        assert panel.color_preview.cursor().shape() == Qt.PointingHandCursor
+        assert panel.fill_color_preview.cursor().shape() == Qt.PointingHandCursor
+
+    def test_property_panel_parallel_layout_visibility(self, qtbot):
+        panel = PropertyPanel()
+        qtbot.addWidget(panel)
+        panel.show()
+
+        # 1. 塗り対応図形（polygon）
+        panel.set_item_data("item-1", "polygon", "", "#7c4dff", fill_color="#7c4dff", fill_opacity=30)
+        assert panel.stroke_color_widget.isVisible() is True
+        assert panel.fill_color_widget.isVisible() is True
+        assert panel.fill_container.isVisible() is True
+
+        # 2. 塗り非対応図形（line）
+        panel.set_item_data("item-2", "line", "", "#ff1744")
+        assert panel.stroke_color_widget.isVisible() is True
+        assert panel.fill_color_widget.isVisible() is False
+        assert panel.fill_container.isVisible() is False
+
