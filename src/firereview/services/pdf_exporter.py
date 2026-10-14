@@ -1,3 +1,6 @@
+import os
+import tempfile
+from typing import Callable, Optional
 import fitz
 from .pdf_renderers import (
     PdfRenderContext,
@@ -6,14 +9,96 @@ from .pdf_renderers import (
 )
 
 
-def export_pdf_document(model, output_path: str) -> None:
-    """描画モデル内の注釈を元PDFに焼き込み、指定パスへ出力します。"""
+class PdfExportError(Exception):
+    """PDFエクスポート処理における基底例外クラス"""
+    pass
+
+
+class PdfFileLockedError(PdfExportError):
+    """出力先ファイルが他のプロセスによりロックされている場合の例外"""
+    pass
+
+
+def check_writable(output_path: str) -> None:
+    """出力先ファイルおよびディレクトリが書き込み可能かを事前に検証する (Fast-Fail)。
+
+    Raises:
+        PdfFileLockedError: ファイルが他プロセスで開かれている等の理由で上書きできない場合。
+        PdfExportError: 出力先ディレクトリが存在しない、または作成・書き込みできない場合。
+    """
+    abs_output_path = os.path.abspath(output_path)
+
+    # 1. 既存ファイルがある場合
+    if os.path.exists(abs_output_path):
+        try:
+            with open(abs_output_path, "r+b"):
+                pass
+        except PermissionError as e:
+            raise PdfFileLockedError(
+                f"指定されたファイルは別のプログラム（Adobe Acrobat Reader、Webブラウザなど）で開かれているため上書きできません。\n"
+                f"ファイルを閉じるか、別のファイル名を指定して再度お試しください。\n"
+                f"ファイル: {abs_output_path}"
+            ) from e
+        except OSError as e:
+            raise PdfFileLockedError(f"ファイルに書き込むことができません: {e}") from e
+    else:
+        # 2. ファイルがまだない場合、親ディレクトリの書き込み可否を検証
+        output_dir = os.path.dirname(abs_output_path)
+        if not os.path.exists(output_dir):
+            try:
+                os.makedirs(output_dir, exist_ok=True)
+            except Exception as e:
+                raise PdfExportError(f"出力先フォルダを作成できません: {output_dir}") from e
+
+        test_file = os.path.join(output_dir, f".firereview_probe_{os.getpid()}_{id(output_path)}.tmp")
+        try:
+            with open(test_file, "wb") as f:
+                f.write(b"")
+            os.remove(test_file)
+        except Exception as e:
+            raise PdfExportError(f"出力先フォルダへの書き込み権限がありません: {output_dir}") from e
+
+
+def export_pdf_document(
+    model,
+    output_path: str,
+    before_replace: Optional[Callable[[], None]] = None,
+    after_replace: Optional[Callable[[], None]] = None,
+) -> None:
+    """描画モデル内の注釈を元PDFに焼き込み、アトミック保存により指定パスへ安全に出力します。
+
+    Args:
+        model: DrawingModel インスタンス
+        output_path: 出力先PDFファイルパス
+        before_replace: 一時ファイルから正式パスへの置換直前に実行するコールバック（ロック解除等）
+        after_replace: 置換直後に実行するコールバック（再オープン等）
+
+    Raises:
+        PdfFileLockedError: 出力先ファイルがロックされている場合
+        PdfExportError: エクスポート処理中にエラーが発生した場合
+    """
+    if not model.pdf_path or not os.path.exists(model.pdf_path):
+        raise PdfExportError(f"元PDFファイルが見つかりません: {getattr(model, 'pdf_path', '')}")
+
+    abs_output_path = os.path.abspath(output_path)
+    output_dir = os.path.dirname(abs_output_path)
+
+    # 1. 事前書き込みチェック (Fast-Fail)
+    check_writable(abs_output_path)
+
+    # 2. 同一ディレクトリ内にアトミック保存用の一時ファイルを作成
+    temp_fd, temp_path = tempfile.mkstemp(
+        dir=output_dir,
+        prefix=".firereview_export_",
+        suffix=".tmp.pdf"
+    )
+    os.close(temp_fd)
+
     dpi_factor = 72.0 / 150.0
     export_doc = None
 
     try:
         export_doc = fitz.open(model.pdf_path)
-        # Track registered fonts per page to avoid redundant inserts: {page_num: {font_name_in_pdf: name}}
         registered_page_fonts = {}
 
         for ann in model.annotations:
@@ -41,14 +126,44 @@ def export_pdf_document(model, output_path: str) -> None:
             )
             renderer.render(ctx, ann)
 
-        # フォントをサブセット化して不要な文字グリフを排除し、PDFサイズを劇的に軽量化します（数MBから数KB程度に削減）
+        # フォントをサブセット化
         try:
             export_doc.subset_fonts()
         except Exception:
             pass
 
-        export_doc.save(output_path, garbage=4, deflate=True)
+        # 一時ファイルへ書き出し
+        export_doc.save(temp_path, garbage=4, deflate=True)
+        export_doc.close()
+        export_doc = None
+
+        # 置換直前フック（同一ファイル上書き時の既存ハンドルクローズ等）
+        if before_replace is not None:
+            before_replace()
+
+        try:
+            # アトミック置換
+            os.replace(temp_path, abs_output_path)
+        except PermissionError as e:
+            raise PdfFileLockedError(
+                f"指定されたファイルは別のプログラム（Adobe Acrobat Reader、Webブラウザなど）で開かれているため上書きできません。\n"
+                f"ファイルを閉じるか、別のファイル名を指定して再度お試しください。\n"
+                f"ファイル: {abs_output_path}"
+            ) from e
+        finally:
+            # 置換後フック（リオープン等）
+            if after_replace is not None:
+                after_replace()
 
     finally:
         if export_doc is not None:
-            export_doc.close()
+            try:
+                export_doc.close()
+            except Exception:
+                pass
+        # 置換に失敗し一時ファイルが残っている場合は確実に削除
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass

@@ -9,6 +9,7 @@ import qtawesome as qta
 
 from .services.pdf_handler import PDFHandler
 from .services import DocumentManager, MeasurementService
+from .services.pdf_exporter import PdfExportError, PdfFileLockedError
 from .controllers import ToolController, CanvasController
 from .ui.canvas import PDFCanvas, ToolMode
 from .ui.preferences_dialog import PreferencesDialog
@@ -846,14 +847,46 @@ class MainWindow(QMainWindow):
         if not file_path:
             return
 
+        is_same = self.document_manager.is_same_as_current_pdf(file_path)
+
         try:
             self.document_manager.export_pdf(file_path)
+        except PdfFileLockedError as e:
+            QMessageBox.critical(
+                self,
+                "ファイルを上書きできません",
+                f"指定されたファイルは別のプログラム（Adobe Acrobat Reader、Webブラウザなど）で開かれているため上書きできません。\n"
+                f"ファイルを閉じるか、別のファイル名を指定して再度お試しください。\n\n"
+                f"ファイル: {file_path}",
+            )
+            return
+        except PermissionError as e:
+            QMessageBox.critical(
+                self,
+                "ファイルを上書きできません",
+                f"指定されたファイルへのアクセス権限がないか、別のプログラムで使用されています。\n\n"
+                f"ファイルを閉じるか、別の保存先を選択してください。\n\n"
+                f"ファイル: {file_path}",
+            )
+            return
+        except PdfExportError as e:
+            QMessageBox.critical(
+                self,
+                "PDF書き出しエラー",
+                f"PDFの書き出し処理中にエラーが発生しました:\n{e}",
+            )
+            return
         except Exception as e:
             import traceback
             traceback.print_exc()
             QMessageBox.critical(self, "エラー", f"PDFを書き出せませんでした: {e}")
             return
-        QMessageBox.information(self, "書き出し", f"PDFを書き出しました: {file_path}")
+
+        if is_same:
+            self._load_thumbnails()
+            self.update_page_view()
+
+        QMessageBox.information(self, "書き出し完了", f"PDFを書き出しました:\n{file_path}")
 
     def _load_thumbnails(self):
         pixmaps = []
