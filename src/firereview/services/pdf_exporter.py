@@ -26,7 +26,12 @@ def check_writable(output_path: str) -> None:
         PdfFileLockedError: ファイルが他プロセスで開かれている等の理由で上書きできない場合。
         PdfExportError: 出力先ディレクトリが存在しない、または作成・書き込みできない場合。
     """
+    if not output_path or not str(output_path).strip():
+        raise PdfExportError("出力先パスが指定されていません。")
+
     abs_output_path = os.path.abspath(output_path)
+    if os.path.isdir(abs_output_path):
+        raise PdfExportError(f"指定された出力先はフォルダ（ディレクトリ）です: {abs_output_path}")
 
     # 1. 既存ファイルがある場合
     if os.path.exists(abs_output_path):
@@ -54,9 +59,14 @@ def check_writable(output_path: str) -> None:
         try:
             with open(test_file, "wb") as f:
                 f.write(b"")
-            os.remove(test_file)
         except Exception as e:
             raise PdfExportError(f"出力先フォルダへの書き込み権限がありません: {output_dir}") from e
+        finally:
+            if os.path.exists(test_file):
+                try:
+                    os.remove(test_file)
+                except Exception:
+                    pass
 
 
 def export_pdf_document(
@@ -144,7 +154,7 @@ def export_pdf_document(
         try:
             # アトミック置換
             os.replace(temp_path, abs_output_path)
-        except PermissionError as e:
+        except (PermissionError, OSError) as e:
             raise PdfFileLockedError(
                 f"指定されたファイルは別のプログラム（Adobe Acrobat Reader、Webブラウザなど）で開かれているため上書きできません。\n"
                 f"ファイルを閉じるか、別のファイル名を指定して再度お試しください。\n"
@@ -153,7 +163,10 @@ def export_pdf_document(
         finally:
             # 置換後フック（リオープン等）
             if after_replace is not None:
-                after_replace()
+                try:
+                    after_replace()
+                except Exception:
+                    pass
 
     finally:
         if export_doc is not None:

@@ -204,7 +204,7 @@ class TestPdfAtomicExportAndLocking:
         assert len(doc) == 1
         doc.close()
 
-    def test_document_manager_export_same_file(self, base_pdf_path):
+    def test_document_manager_export_same_file(self, qapp, base_pdf_path):
         """DocumentManager 経由で同一ファイルへエクスポートした際に、pdf_handlerが正常に再オープンされること"""
         from firereview.services.document_manager import DocumentManager
         from firereview.services.pdf_handler import PDFHandler
@@ -229,3 +229,50 @@ class TestPdfAtomicExportAndLocking:
         pixmap = handler.get_page_pixmap(0)
         assert pixmap is not None
         handler.close()
+
+    def test_check_writable_empty_path(self):
+        from firereview.services.pdf_exporter import check_writable, PdfExportError
+
+        with pytest.raises(PdfExportError, match="出力先パスが指定されていません"):
+            check_writable("")
+        with pytest.raises(PdfExportError, match="出力先パスが指定されていません"):
+            check_writable("   ")
+
+    def test_check_writable_directory(self, tmp_path):
+        from firereview.services.pdf_exporter import check_writable, PdfExportError
+
+        with pytest.raises(PdfExportError, match="フォルダ（ディレクトリ）です"):
+            check_writable(str(tmp_path))
+
+    def test_check_writable_probe_cleanup_on_failure(self, tmp_path):
+        from firereview.services.pdf_exporter import check_writable, PdfExportError
+        from unittest.mock import patch
+
+        target_file = str(tmp_path / "new_dir" / "out.pdf")
+
+        # ディレクトリ作成後のプローブ書き込み失敗時に一時ファイルが残らないこと
+        with patch("builtins.open", side_effect=PermissionError("Cannot write to directory")):
+            with pytest.raises(PdfExportError, match="書き込み権限がありません"):
+                check_writable(target_file)
+
+        # プローブファイルが残っていないこと
+        parent_dir = str(tmp_path / "new_dir")
+        if os.path.exists(parent_dir):
+            probe_files = [f for f in os.listdir(parent_dir) if f.startswith(".firereview_probe_")]
+            assert len(probe_files) == 0
+
+    def test_export_pdf_after_replace_exception_safety(self, base_pdf_path, tmp_path):
+        """after_replace フックで例外が発生しても、エクスポート完了自体は成功すること"""
+        from firereview.services.pdf_exporter import export_pdf_document
+
+        model = DrawingModel()
+        model.pdf_path = base_pdf_path
+        out_path = str(tmp_path / "out_hook_test.pdf")
+
+        def failing_after_replace():
+            raise RuntimeError("Hook failure")
+
+        # 例外が握りつぶされて正常終了（ファイル置換は完了）すること
+        export_pdf_document(model, out_path, after_replace=failing_after_replace)
+        assert os.path.exists(out_path)
+
