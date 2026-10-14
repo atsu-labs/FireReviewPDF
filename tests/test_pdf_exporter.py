@@ -120,3 +120,159 @@ class TestPdfExportEndToEnd:
         out_doc = fitz.open(output_path)
         assert len(out_doc) == 1
         out_doc.close()
+
+
+class TestPdfAtomicExportAndLocking:
+    @pytest.fixture
+    def base_pdf_path(self, tmp_path):
+        pdf_path = str(tmp_path / "source.pdf")
+        doc = fitz.open()
+        doc.new_page(width=595, height=842)
+        doc.save(pdf_path)
+        doc.close()
+        return pdf_path
+
+    def test_check_writable_file_locked(self, tmp_path):
+        from firereview.services.pdf_exporter import check_writable, PdfFileLockedError
+        from unittest.mock import patch
+
+        test_file = str(tmp_path / "locked.pdf")
+        with open(test_file, "wb") as f:
+            f.write(b"%PDF-1.4 dummy")
+
+        with patch("builtins.open", side_effect=PermissionError("Permission denied")):
+            with pytest.raises(PdfFileLockedError):
+                check_writable(test_file)
+
+    def test_export_pdf_atomic_save_success(self, base_pdf_path, tmp_path):
+        from firereview.services.pdf_exporter import export_pdf_document
+
+        model = DrawingModel()
+        model.pdf_path = base_pdf_path
+
+        out_path = str(tmp_path / "output.pdf")
+        export_pdf_document(model, out_path)
+
+        assert os.path.exists(out_path)
+        # 一時ファイルが残っていないことを確認
+        temp_files = [f for f in os.listdir(tmp_path) if f.startswith(".firereview_export_")]
+        assert len(temp_files) == 0
+
+    def test_export_pdf_atomic_failure_keeps_original(self, base_pdf_path, tmp_path):
+        from firereview.services.pdf_exporter import export_pdf_document
+        from unittest.mock import patch
+
+        model = DrawingModel()
+        model.pdf_path = base_pdf_path
+
+        out_path = str(tmp_path / "existing.pdf")
+        original_content = b"%PDF-1.4 original intact content"
+        with open(out_path, "wb") as f:
+            f.write(original_content)
+
+        # レンダリングまたは保存処理中の例外発生をシミュレート
+        with patch("fitz.open", side_effect=RuntimeError("Simulated rendering crash")):
+            with pytest.raises(RuntimeError):
+                export_pdf_document(model, out_path)
+
+        # 既存ファイルが壊れず元の内容のままであること
+        assert os.path.exists(out_path)
+        with open(out_path, "rb") as f:
+            assert f.read() == original_content
+
+        # 一時ファイルも残っていないこと
+        temp_files = [f for f in os.listdir(tmp_path) if f.startswith(".firereview_export_")]
+        assert len(temp_files) == 0
+
+    def test_export_pdf_overwrite_original_pdf(self, base_pdf_path):
+        """元PDFファイル（model.pdf_path）と同一パスへのエクスポートが安全に成功することを確認"""
+        from firereview.services.pdf_exporter import export_pdf_document
+
+        model = DrawingModel()
+        model.pdf_path = base_pdf_path
+
+        # 注釈を追加
+        line = Annotation("line")
+        line.points = [QPointF(10, 10), QPointF(100, 100)]
+        model.annotations.append(line)
+
+        # 元ファイルと同じパスに出力
+        export_pdf_document(model, base_pdf_path)
+
+        assert os.path.exists(base_pdf_path)
+        doc = fitz.open(base_pdf_path)
+        assert len(doc) == 1
+        doc.close()
+
+    def test_document_manager_export_same_file(self, qapp, base_pdf_path):
+        """DocumentManager 経由で同一ファイルへエクスポートした際に、pdf_handlerが正常に再オープンされること"""
+        from firereview.services.document_manager import DocumentManager
+        from firereview.services.pdf_handler import PDFHandler
+
+        handler = PDFHandler()
+        manager = DocumentManager(pdf_handler=handler)
+        opened = manager.open_pdf(base_pdf_path)
+        assert opened is True
+        assert handler.doc is not None
+
+        # 注釈を追加
+        line = Annotation("line")
+        line.points = [QPointF(20, 20), QPointF(80, 80)]
+        manager.model.annotations.append(line)
+
+        # 同一パスへエクスポート
+        manager.export_pdf(base_pdf_path)
+
+        # エクスポート後もpdf_handlerが開かれており、ページ取得等ができること
+        assert handler.doc is not None
+        assert handler.get_page_count() == 1
+        pixmap = handler.get_page_pixmap(0)
+        assert pixmap is not None
+        handler.close()
+
+    def test_check_writable_empty_path(self):
+        from firereview.services.pdf_exporter import check_writable, PdfExportError
+
+        with pytest.raises(PdfExportError, match="出力先パスが指定されていません"):
+            check_writable("")
+        with pytest.raises(PdfExportError, match="出力先パスが指定されていません"):
+            check_writable("   ")
+
+    def test_check_writable_directory(self, tmp_path):
+        from firereview.services.pdf_exporter import check_writable, PdfExportError
+
+        with pytest.raises(PdfExportError, match="フォルダ（ディレクトリ）です"):
+            check_writable(str(tmp_path))
+
+    def test_check_writable_probe_cleanup_on_failure(self, tmp_path):
+        from firereview.services.pdf_exporter import check_writable, PdfExportError
+        from unittest.mock import patch
+
+        target_file = str(tmp_path / "new_dir" / "out.pdf")
+
+        # ディレクトリ作成後のプローブ書き込み失敗時に一時ファイルが残らないこと
+        with patch("builtins.open", side_effect=PermissionError("Cannot write to directory")):
+            with pytest.raises(PdfExportError, match="書き込み権限がありません"):
+                check_writable(target_file)
+
+        # プローブファイルが残っていないこと
+        parent_dir = str(tmp_path / "new_dir")
+        if os.path.exists(parent_dir):
+            probe_files = [f for f in os.listdir(parent_dir) if f.startswith(".firereview_probe_")]
+            assert len(probe_files) == 0
+
+    def test_export_pdf_after_replace_exception_safety(self, base_pdf_path, tmp_path):
+        """after_replace フックで例外が発生しても、エクスポート完了自体は成功すること"""
+        from firereview.services.pdf_exporter import export_pdf_document
+
+        model = DrawingModel()
+        model.pdf_path = base_pdf_path
+        out_path = str(tmp_path / "out_hook_test.pdf")
+
+        def failing_after_replace():
+            raise RuntimeError("Hook failure")
+
+        # 例外が握りつぶされて正常終了（ファイル置換は完了）すること
+        export_pdf_document(model, out_path, after_replace=failing_after_replace)
+        assert os.path.exists(out_path)
+

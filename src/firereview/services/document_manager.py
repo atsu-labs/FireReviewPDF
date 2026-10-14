@@ -83,6 +83,34 @@ class DocumentManager(QObject):
         self.set_dirty(False)
         self.document_changed.emit()
 
+    def is_same_as_current_pdf(self, file_path: str) -> bool:
+        """指定されたパスが現在開いている元PDFと同一ファイルかを判定する"""
+        if not self.model.pdf_path or not file_path:
+            return False
+        abs_target = os.path.abspath(file_path)
+        abs_source = os.path.abspath(self.model.pdf_path)
+        if os.path.exists(abs_target) and os.path.exists(abs_source):
+            try:
+                return os.path.samefile(abs_source, abs_target)
+            except OSError:
+                pass
+        return os.path.normcase(os.path.realpath(abs_source)) == os.path.normcase(os.path.realpath(abs_target))
+
     def export_pdf(self, output_path: str) -> None:
         """現在の注釈を元PDFに合成してエクスポートする"""
-        export_pdf_document(self.model, output_path)
+        is_same = self.is_same_as_current_pdf(output_path)
+
+        def before_replace():
+            if is_same and self.pdf_handler:
+                self.pdf_handler.close()
+
+        def after_replace():
+            if is_same and self.pdf_handler:
+                self.pdf_handler.open_file(output_path)
+
+        export_pdf_document(
+            self.model,
+            output_path,
+            before_replace=before_replace,
+            after_replace=after_replace,
+        )
