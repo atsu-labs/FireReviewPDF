@@ -1,5 +1,6 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QScrollArea, 
-                              QFrame, QHBoxLayout, QPushButton, QStackedWidget, QLineEdit)
+                              QFrame, QHBoxLayout, QPushButton, QStackedWidget, QLineEdit,
+                              QSlider, QCheckBox)
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap, QColor
 import qtawesome as qta
@@ -9,6 +10,8 @@ class NavigatorPanel(QWidget):
     object_selected = Signal(str)  # item_id
     object_edit_toggled = Signal(str, bool)  # item_id, active
     color_name_changed = Signal(int, str, str)  # page_num, color_hex, new_name
+    bg_opacity_changed = Signal(float)  # 0.1 - 1.0
+    bg_grayscale_changed = Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -175,6 +178,77 @@ class NavigatorPanel(QWidget):
         summary_layout.addWidget(self.sum_scroll)
         
         self.stacked_widget.addWidget(summary_widget)
+
+        # --- Background PDF Settings Area (Issue #64) ---
+        bg_frame = QFrame()
+        bg_frame.setObjectName("BgSettingsFrame")
+        bg_frame.setStyleSheet("QFrame#BgSettingsFrame { background-color: #232334; border-top: 1px solid #3d3d5c; padding: 6px; }")
+        bg_layout = QVBoxLayout(bg_frame)
+        bg_layout.setContentsMargins(10, 8, 10, 8)
+        bg_layout.setSpacing(6)
+
+        bg_title_layout = QHBoxLayout()
+        bg_title = QLabel("背景PDF表示設定")
+        bg_title.setStyleSheet("color: #a0a0b8; font-size: 11px; font-weight: bold;")
+        self.bg_reset_btn = QPushButton("リセット")
+        self.bg_reset_btn.setStyleSheet(
+            "QPushButton { background-color: #3d3d5c; color: #ffffff; border-radius: 3px; font-size: 10px; padding: 2px 6px; border: none; } "
+            "QPushButton:hover { background-color: #555577; }"
+        )
+        bg_title_layout.addWidget(bg_title)
+        bg_title_layout.addStretch()
+        bg_title_layout.addWidget(self.bg_reset_btn)
+        bg_layout.addLayout(bg_title_layout)
+
+        # Opacity slider layout
+        opacity_layout = QHBoxLayout()
+        opacity_layout.setSpacing(8)
+        opacity_lbl = QLabel("濃度:")
+        opacity_lbl.setStyleSheet("color: #888899; font-size: 11px;")
+        self.bg_opacity_slider = QSlider(Qt.Horizontal)
+        self.bg_opacity_slider.setRange(10, 100)
+        self.bg_opacity_slider.setValue(100)
+        self.bg_opacity_value_lbl = QLabel("100%")
+        self.bg_opacity_value_lbl.setStyleSheet("color: #ffffff; font-size: 11px; min-width: 32px;")
+        opacity_layout.addWidget(opacity_lbl)
+        opacity_layout.addWidget(self.bg_opacity_slider)
+        opacity_layout.addWidget(self.bg_opacity_value_lbl)
+        bg_layout.addLayout(opacity_layout)
+
+        # Grayscale checkbox
+        self.bg_grayscale_check = QCheckBox("白黒（モノクロ）表示")
+        self.bg_grayscale_check.setStyleSheet("QCheckBox { color: #cccccc; font-size: 11px; }")
+        bg_layout.addWidget(self.bg_grayscale_check)
+
+        layout.addWidget(bg_frame)
+
+        # Connect signals
+        self.bg_opacity_slider.valueChanged.connect(self._on_opacity_slider_changed)
+        self.bg_grayscale_check.toggled.connect(self._on_grayscale_toggled)
+        self.bg_reset_btn.clicked.connect(self._on_reset_bg_clicked)
+
+    def _on_opacity_slider_changed(self, value):
+        self.bg_opacity_value_lbl.setText(f"{value}%")
+        self.bg_opacity_changed.emit(value / 100.0)
+
+    def _on_grayscale_toggled(self, checked):
+        self.bg_grayscale_changed.emit(checked)
+
+    def _on_reset_bg_clicked(self):
+        self.set_bg_settings(1.0, False)
+        self.bg_opacity_changed.emit(1.0)
+        self.bg_grayscale_changed.emit(False)
+
+    def set_bg_settings(self, opacity: float, grayscale: bool):
+        val = int(round(max(0.1, min(1.0, float(opacity))) * 100))
+        self.bg_opacity_slider.blockSignals(True)
+        self.bg_opacity_slider.setValue(val)
+        self.bg_opacity_slider.blockSignals(False)
+        self.bg_opacity_value_lbl.setText(f"{val}%")
+
+        self.bg_grayscale_check.blockSignals(True)
+        self.bg_grayscale_check.setChecked(bool(grayscale))
+        self.bg_grayscale_check.blockSignals(False)
 
     def show_page_tab(self):
         self.page_tab_btn.setChecked(True)

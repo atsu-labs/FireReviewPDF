@@ -111,6 +111,18 @@ def export_pdf_document(
         export_doc = fitz.open(model.pdf_path)
         registered_page_fonts = {}
 
+        # 背景不透明度の適用（1.0未満の場合、白マスクを重畳して背景をフェード）
+        bg_opacity = getattr(model, "bg_opacity", 1.0)
+        if bg_opacity < 0.999:
+            white_opacity = max(0.0, min(1.0, 1.0 - bg_opacity))
+            for page in export_doc:
+                page.draw_rect(
+                    page.rect,
+                    fill=(1, 1, 1),
+                    fill_opacity=white_opacity,
+                    stroke_opacity=0,
+                )
+
         for ann in model.annotations:
             if ann.page_num >= len(export_doc):
                 continue

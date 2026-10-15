@@ -283,6 +283,8 @@ class MainWindow(QMainWindow):
         self.navigator.object_selected.connect(self.on_object_selected_from_panel)
         self.navigator.object_edit_toggled.connect(self.on_object_edit_toggled_from_panel)
         self.navigator.color_name_changed.connect(self.on_color_name_changed)
+        self.navigator.bg_opacity_changed.connect(self.on_bg_opacity_changed)
+        self.navigator.bg_grayscale_changed.connect(self.on_bg_grayscale_changed)
         content_area.addWidget(self.navigator)
 
         # Canvas (Center)
@@ -728,6 +730,18 @@ class MainWindow(QMainWindow):
     def on_color_name_changed(self, page_num, color_hex, new_name):
         self.canvas_controller.on_color_name_changed(page_num, color_hex, new_name)
 
+    def on_bg_opacity_changed(self, opacity: float):
+        if abs(getattr(self.model, "bg_opacity", 1.0) - opacity) > 1e-4:
+            self.model.bg_opacity = opacity
+            self.canvas.set_background_opacity(opacity)
+            self.set_dirty(True)
+
+    def on_bg_grayscale_changed(self, grayscale: bool):
+        if getattr(self.model, "bg_grayscale", False) != grayscale:
+            self.model.bg_grayscale = grayscale
+            self.update_page_view()
+            self.set_dirty(True)
+
     def update_marker_summary(self):
         self.canvas_controller.update_marker_summary()
 
@@ -781,6 +795,11 @@ class MainWindow(QMainWindow):
         if file_path:
             if self.document_manager.open_pdf(file_path):
                 self.options_bar.set_unit(self.model.unit)
+                self.navigator.set_bg_settings(
+                    getattr(self.model, "bg_opacity", 1.0),
+                    getattr(self.model, "bg_grayscale", False)
+                )
+                self.canvas.set_background_opacity(getattr(self.model, "bg_opacity", 1.0))
                 self.current_page = 0
                 self._load_thumbnails()
                 self.update_page_view()
@@ -874,6 +893,11 @@ class MainWindow(QMainWindow):
 
         self.document_manager.apply_loaded_project(loaded_model, file_path)
         self.options_bar.set_unit(self.model.unit)
+        self.navigator.set_bg_settings(
+            getattr(self.model, "bg_opacity", 1.0),
+            getattr(self.model, "bg_grayscale", False)
+        )
+        self.canvas.set_background_opacity(getattr(self.model, "bg_opacity", 1.0))
         self.current_page = 0
         self._load_thumbnails()
         self.update_page_view()
@@ -938,7 +962,8 @@ class MainWindow(QMainWindow):
         self.navigator.set_selected_page(self.current_page)
 
     def update_page_view(self):
-        pixmap = self.pdf_handler.get_page_pixmap(self.current_page)
+        grayscale = getattr(self.model, "bg_grayscale", False)
+        pixmap = self.pdf_handler.get_page_pixmap(self.current_page, grayscale=grayscale)
         if pixmap:
             self.canvas.set_page_image(pixmap)
             self.canvas_controller.render_page_annotations(
