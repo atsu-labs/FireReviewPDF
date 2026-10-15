@@ -50,6 +50,7 @@ class PDFCanvas(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         
         self.background_item = None
+        self.bg_opacity = 1.0
         self.tool_mode = ToolMode.NONE
         
         # Interaction state
@@ -238,6 +239,11 @@ class PDFCanvas(QGraphicsView):
         self.temp_arc = _safe_remove(self.temp_arc)
         self.drag_start = None
 
+    def set_background_opacity(self, opacity: float):
+        self.bg_opacity = max(0.1, min(1.0, float(opacity)))
+        if self.background_item:
+            self.background_item.setOpacity(self.bg_opacity)
+
     def set_page_image(self, pixmap):
         self.temp_line = None
         self.temp_poly = None
@@ -247,6 +253,7 @@ class PDFCanvas(QGraphicsView):
         self.scene.clear()
         self.background_item = QGraphicsPixmapItem(pixmap)
         self.background_item.setZValue(-1)
+        self.background_item.setOpacity(self.bg_opacity)
         self.scene.addItem(self.background_item)
         self.scene.setSceneRect(self.background_item.boundingRect())
 

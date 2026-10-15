@@ -10,6 +10,8 @@ class DrawingModel:
         self.annotations = [] # List of annotation objects
         self.pdf_path = ""
         self.unit = 'm'  # 表示単位: 'm' または 'mm'
+        self.bg_opacity = 1.0  # 背景PDFの不透明度 (0.1 - 1.0)
+        self.bg_grayscale = False  # 背景PDFのグレースケール表示
 
     def _apply_scale_to_pages(self, page_num, all_pages, total_pages):
         if all_pages:
@@ -80,6 +82,8 @@ class DrawingModel:
             "page_color_names": {str(k): v for k, v in self.page_color_names.items()},
             "pdf_path": self.pdf_path,
             "unit": self.unit,
+            "bg_opacity": self.bg_opacity,
+            "bg_grayscale": self.bg_grayscale,
             "annotations": [a.to_dict() for a in self.annotations]
         }
 
@@ -94,6 +98,8 @@ class DrawingModel:
         model.page_color_names = {int(k): v for k, v in raw_page_color_names.items()}
         model.pdf_path = data.get("pdf_path", "")
         model.unit = data.get("unit", "m")
+        model.bg_opacity = float(data.get("bg_opacity", 1.0))
+        model.bg_grayscale = bool(data.get("bg_grayscale", False))
         for a_data in data.get("annotations", []):
             model.annotations.append(Annotation.from_dict(a_data))
         return model

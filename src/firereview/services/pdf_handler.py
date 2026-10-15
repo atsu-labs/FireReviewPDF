@@ -35,11 +35,11 @@ class PDFHandler:
     def get_page_count(self):
         return len(self.doc) if self.doc else 0
 
-    def get_page_pixmap(self, page_num, dpi=150):
+    def get_page_pixmap(self, page_num, dpi=150, grayscale=False):
         if not self.doc or page_num < 0 or page_num >= len(self.doc):
             return None
         
-        cache_key = (page_num, dpi)
+        cache_key = (page_num, dpi, grayscale)
         if cache_key in self._pixmap_cache:
             # Move to end (most recently used)
             pixmap = self._pixmap_cache.pop(cache_key)
@@ -49,10 +49,13 @@ class PDFHandler:
         page = self.doc[page_num]
         zoom = dpi / 72  # 72 is the default PDF DPI
         mat = fitz.Matrix(zoom, zoom)
-        pix = page.get_pixmap(matrix=mat)
-        
-        # Convert pixmap to QImage (use .copy() to ensure safe memory ownership)
-        img = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format_RGB888).copy()
+        if grayscale:
+            pix = page.get_pixmap(matrix=mat, colorspace=fitz.csGRAY)
+            img = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format_Grayscale8).copy()
+        else:
+            pix = page.get_pixmap(matrix=mat)
+            # Convert pixmap to QImage (use .copy() to ensure safe memory ownership)
+            img = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format_RGB888).copy()
         pixmap = QPixmap.fromImage(img)
         
         # Insert and enforce size limit
