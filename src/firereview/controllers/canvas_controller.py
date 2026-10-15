@@ -439,14 +439,23 @@ class CanvasController:
                 break
 
     def on_object_selected_from_panel(self, item_id: str):
-        self.canvas.scene.clearSelection()
+        if hasattr(self.canvas, "scene") and self.canvas.scene:
+            self.canvas.scene.clearSelection()
+
         target_item = None
-        for item in self.canvas.scene.items():
-            if item.data(0) == item_id:
-                target_item = item
-                break
+        if hasattr(self.canvas, "annotation_items") and isinstance(self.canvas.annotation_items, dict):
+            target_item = self.canvas.annotation_items.get(item_id)
+
+        if not target_item and hasattr(self.canvas, "scene") and self.canvas.scene:
+            for item in self.canvas.scene.items():
+                if item.data(0) == item_id:
+                    target_item = item
+                    break
+
         if target_item:
             target_item.setSelected(True)
+            if hasattr(self.canvas, "centerOn"):
+                self.canvas.centerOn(target_item)
             self.on_item_selected(item_id)
 
     def on_object_edit_toggled_from_panel(self, item_id: str, active: bool):
