@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import Optional, List
 from PySide6.QtCore import QObject, Signal
 from firereview.models import DrawingModel
 from firereview.services.pdf_handler import PDFHandler
@@ -96,7 +96,12 @@ class DocumentManager(QObject):
                 pass
         return os.path.normcase(os.path.realpath(abs_source)) == os.path.normcase(os.path.realpath(abs_target))
 
-    def export_pdf(self, output_path: str) -> None:
+    def export_pdf(
+        self,
+        output_path: str,
+        page_indices: Optional[List[int]] = None,
+        apply_bg_opacity: bool = True,
+    ) -> None:
         """現在の注釈を元PDFに合成してエクスポートする"""
         is_same = self.is_same_as_current_pdf(output_path)
 
@@ -111,6 +116,8 @@ class DocumentManager(QObject):
         export_pdf_document(
             self.model,
             output_path,
+            page_indices=page_indices,
+            apply_bg_opacity=apply_bg_opacity,
             before_replace=before_replace,
             after_replace=after_replace,
         )

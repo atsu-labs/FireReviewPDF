@@ -2,7 +2,7 @@ import os
 from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, 
                              QLabel, QHBoxLayout, QWidget, QVBoxLayout, 
                              QInputDialog, QMessageBox, QPushButton, 
-                             QFrame)
+                             QFrame, QDialog)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QShortcut, QKeySequence
 import qtawesome as qta
@@ -13,6 +13,7 @@ from .services.pdf_exporter import PdfExportError, PdfFileLockedError
 from .controllers import ToolController, CanvasController
 from .ui.canvas import PDFCanvas, ToolMode
 from .ui.preferences_dialog import PreferencesDialog
+from .ui.dialogs import ExportPdfDialog
 from .models import DrawingModel, Annotation
 from .ui.panels.property_panel import PropertyPanel
 from .ui.panels.navigator_panel import NavigatorPanel
@@ -907,6 +908,24 @@ class MainWindow(QMainWindow):
         if not self.pdf_handler.doc or not self.model.pdf_path:
             return
         
+        total_pages = self.pdf_handler.get_page_count()
+        annotated_pages = sorted(list(set(
+            a.page_num for a in self.model.annotations if 0 <= a.page_num < total_pages
+        )))
+
+        # 1. エクスポート設定ダイアログを表示 (Issue #65)
+        dialog = ExportPdfDialog(
+            self,
+            total_pages=total_pages,
+            annotated_pages=annotated_pages,
+            bg_opacity=getattr(self.model, "bg_opacity", 1.0),
+        )
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        settings = dialog.get_export_settings()
+
+        # 2. ファイル保存先を選択
         file_path, _ = QFileDialog.getSaveFileName(self, "PDFを書き出し", "", "PDF Files (*.pdf)")
         if not file_path:
             return
@@ -914,7 +933,11 @@ class MainWindow(QMainWindow):
         is_same = self.document_manager.is_same_as_current_pdf(file_path)
 
         try:
-            self.document_manager.export_pdf(file_path)
+            self.document_manager.export_pdf(
+                file_path,
+                page_indices=settings["page_indices"],
+                apply_bg_opacity=settings["apply_bg_opacity"],
+            )
         except PdfFileLockedError as e:
             QMessageBox.critical(
                 self,
@@ -950,7 +973,12 @@ class MainWindow(QMainWindow):
             self._load_thumbnails()
             self.update_page_view()
 
-        QMessageBox.information(self, "書き出し完了", f"PDFを書き出しました:\n{file_path}")
+        # 3. 完了通知メッセージの改善 (Issue #65)
+        if settings["is_annotated_only"]:
+            msg = f"{settings['page_count']}/{total_pages} ページ ({settings['page_summary']}) を書き出しました:\n{file_path}"
+        else:
+            msg = f"全 {total_pages} ページ を書き出しました:\n{file_path}"
+        QMessageBox.information(self, "書き出し完了", msg)
 
     def _load_thumbnails(self):
         pixmaps = []

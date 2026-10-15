@@ -1,6 +1,6 @@
 import os
 import tempfile
-from typing import Callable, Optional
+from typing import Callable, Optional, List
 import fitz
 from .pdf_renderers import (
     PdfRenderContext,
@@ -72,6 +72,8 @@ def check_writable(output_path: str) -> None:
 def export_pdf_document(
     model,
     output_path: str,
+    page_indices: Optional[List[int]] = None,
+    apply_bg_opacity: bool = True,
     before_replace: Optional[Callable[[], None]] = None,
     after_replace: Optional[Callable[[], None]] = None,
 ) -> None:
@@ -80,6 +82,8 @@ def export_pdf_document(
     Args:
         model: DrawingModel インスタンス
         output_path: 出力先PDFファイルパス
+        page_indices: 出力対象とする0始まりのページ番号リスト（Noneの場合は全ページ出力）
+        apply_bg_opacity: 背景不透明度（白マスク重畳）を適用するかどうか
         before_replace: 一時ファイルから正式パスへの置換直前に実行するコールバック（ロック解除等）
         after_replace: 置換直後に実行するコールバック（再オープン等）
 
@@ -111,9 +115,9 @@ def export_pdf_document(
         export_doc = fitz.open(model.pdf_path)
         registered_page_fonts = {}
 
-        # 背景不透明度の適用（1.0未満の場合、白マスクを重畳して背景をフェード）
+        # 背景不透明度の適用（1.0未満 かつ apply_bg_opacity がTrueの場合、白マスクを重畳して背景をフェード）
         bg_opacity = getattr(model, "bg_opacity", 1.0)
-        if bg_opacity < 0.999:
+        if apply_bg_opacity and bg_opacity < 0.999:
             white_opacity = max(0.0, min(1.0, 1.0 - bg_opacity))
             for page in export_doc:
                 page.draw_rect(
@@ -147,6 +151,14 @@ def export_pdf_document(
                 ann=ann,
             )
             renderer.render(ctx, ann)
+
+        # 指定ページのみの抽出（Issue #65）
+        if page_indices is not None:
+            valid_indices = [p for p in page_indices if 0 <= p < len(export_doc)]
+            if valid_indices:
+                export_doc.select(valid_indices)
+            else:
+                raise PdfExportError("指定された出力対象ページが存在しません。")
 
         # フォントをサブセット化
         try:
