@@ -216,6 +216,14 @@ class MainWindow(QMainWindow):
         self.menubar.export_pdf_requested.connect(self.export_pdf)
         self.menubar.preferences_requested.connect(self._open_preferences_dialog)
 
+        # 表示メニューのシグナル接続
+        self.menubar.zoom_in_requested.connect(self.zoom_in)
+        self.menubar.zoom_out_requested.connect(self.zoom_out)
+        self.menubar.fit_to_page_requested.connect(self.fit_to_page)
+        self.menubar.actual_size_requested.connect(self.reset_zoom_to_100)
+        self.menubar.prev_page_requested.connect(self.go_to_prev_page)
+        self.menubar.next_page_requested.connect(self.go_to_next_page)
+
     def setup_ui(self):
         # Central Widget
         self.central_widget = QWidget()
@@ -293,6 +301,7 @@ class MainWindow(QMainWindow):
         self.canvas.label_moved.connect(self.on_label_moved)
         self.canvas.text_editing_finished.connect(self.on_text_editing_finished)
         self.canvas.request_tool_change.connect(self.on_request_tool_change)
+        self.canvas.request_delete.connect(self.on_delete_item)
         self.canvas.existing_text_edited.connect(self.on_existing_text_edited)
         self.canvas.zoom_changed.connect(self._update_zoom_label)
         content_area.addWidget(self.canvas)
@@ -511,8 +520,72 @@ class MainWindow(QMainWindow):
         self.zoom_combo.blockSignals(False)
 
     def _setup_shortcuts(self):
-        self.shortcut_zoom_reset = QShortcut(QKeySequence("Ctrl+0"), self)
-        self.shortcut_zoom_reset.activated.connect(self._reset_zoom_to_100)
+        self.shortcut_zoom_in_plus = QShortcut(QKeySequence("Ctrl++"), self)
+        self.shortcut_zoom_in_plus.activated.connect(self.zoom_in)
+        self.shortcut_zoom_in_equal = QShortcut(QKeySequence("Ctrl+="), self)
+        self.shortcut_zoom_in_equal.activated.connect(self.zoom_in)
+
+        self.shortcut_zoom_out = QShortcut(QKeySequence("Ctrl+-"), self)
+        self.shortcut_zoom_out.activated.connect(self.zoom_out)
+
+        self.shortcut_fit_to_page = QShortcut(QKeySequence("Ctrl+0"), self)
+        self.shortcut_fit_to_page.activated.connect(self.fit_to_page)
+
+        self.shortcut_actual_size = QShortcut(QKeySequence("Ctrl+1"), self)
+        self.shortcut_actual_size.activated.connect(self.reset_zoom_to_100)
+
+        self.shortcut_page_up = QShortcut(QKeySequence("PageUp"), self)
+        self.shortcut_page_up.activated.connect(self.go_to_prev_page)
+
+        self.shortcut_page_down = QShortcut(QKeySequence("PageDown"), self)
+        self.shortcut_page_down.activated.connect(self.go_to_next_page)
+
+    def zoom_in(self):
+        """表示倍率を段階的に拡大する"""
+        self.canvas.zoom_in()
+
+    def zoom_out(self):
+        """表示倍率を段階的に縮小する"""
+        self.canvas.zoom_out()
+
+    def fit_to_page(self):
+        """ページ全体を表示領域に収める (Fit to Page)"""
+        self.canvas.reset_view()
+
+    def reset_zoom_to_100(self):
+        """物理DPIベースの100%実寸大表示にリセットする"""
+        self._reset_zoom_to_100()
+
+    def go_to_prev_page(self):
+        """前のページへ移動する"""
+        if self.current_page > 0:
+            self.go_to_page(self.current_page - 1)
+
+    def go_to_next_page(self):
+        """次のページへ移動する"""
+        total = self.pdf_handler.get_page_count() if self.pdf_handler else 0
+        if self.current_page < total - 1:
+            self.go_to_page(self.current_page + 1)
+
+    def keyPressEvent(self, event):
+        from PySide6.QtWidgets import QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox
+        focus = QApplication.focusWidget()
+        if not isinstance(focus, (QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox)):
+            if event.modifiers() == Qt.NoModifier:
+                key_map = {
+                    Qt.Key_V: ToolMode.SELECT,
+                    Qt.Key_H: ToolMode.NONE,
+                    Qt.Key_L: ToolMode.DRAW_LINE,
+                    Qt.Key_R: ToolMode.POLYGON_AREA,
+                    Qt.Key_C: ToolMode.DRAW_CIRCLE_DRAG,
+                    Qt.Key_T: ToolMode.TEXT,
+                    Qt.Key_M: ToolMode.DRAW_MARKER,
+                }
+                if event.key() in key_map:
+                    self.set_tool(key_map[event.key()])
+                    event.accept()
+                    return
+        super().keyPressEvent(event)
 
     def _reset_zoom_to_100(self):
         physical_dpi = self._get_physical_dpi()

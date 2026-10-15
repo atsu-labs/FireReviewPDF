@@ -46,14 +46,14 @@ class MainToolBar(QFrame):
         t_layout.addWidget(sep)
 
         tools = [
-            ('fa5s.mouse-pointer', "選択", ToolMode.SELECT),
-            ('fa5s.hand-paper', "パン", ToolMode.NONE),
-            ('fa5s.pencil-alt', "直線（折れ線）", ToolMode.DRAW_LINE),
-            ('fa5s.square', "矩形", ToolMode.POLYGON_AREA),
-            ('fa5s.circle', "円", ToolMode.DRAW_CIRCLE_DRAG),
+            ('fa5s.mouse-pointer', "選択 (V)", ToolMode.SELECT),
+            ('fa5s.hand-paper', "パン (H)", ToolMode.NONE),
+            ('fa5s.pencil-alt', "直線（折れ線） (L)", ToolMode.DRAW_LINE),
+            ('fa5s.square', "矩形 (R)", ToolMode.POLYGON_AREA),
+            ('fa5s.circle', "円 (C)", ToolMode.DRAW_CIRCLE_DRAG),
             ('fa5s.circle-notch', "円弧", ToolMode.DRAW_ARC),
-            ('fa5s.font', "テキスト", ToolMode.TEXT),
-            ('fa5s.map-marker-alt', "マーカー", ToolMode.DRAW_MARKER),
+            ('fa5s.font', "テキスト (T)", ToolMode.TEXT),
+            ('fa5s.map-marker-alt', "マーカー (M)", ToolMode.DRAW_MARKER),
             ('fa5s.list-alt', "凡例", ToolMode.DRAW_LEGEND),
         ]
 

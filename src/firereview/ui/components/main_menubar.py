@@ -13,6 +13,14 @@ class MainMenuBar(QMenuBar):
     export_pdf_requested = Signal()
     preferences_requested = Signal()
 
+    # ビュー・ページ操作シグナル
+    zoom_in_requested = Signal()
+    zoom_out_requested = Signal()
+    fit_to_page_requested = Signal()
+    actual_size_requested = Signal()
+    prev_page_requested = Signal()
+    next_page_requested = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet(
@@ -56,6 +64,43 @@ class MainMenuBar(QMenuBar):
         export_action.setShortcut("Ctrl+E")
         export_action.triggered.connect(self.export_pdf_requested.emit)
         file_menu.addAction(export_action)
+
+        # 表示メニュー
+        view_menu = self.addMenu("表示")
+
+        zoom_in_action = QAction("拡大", self)
+        zoom_in_action.setShortcut("Ctrl++")
+        zoom_in_action.triggered.connect(self.zoom_in_requested.emit)
+        view_menu.addAction(zoom_in_action)
+
+        zoom_out_action = QAction("縮小", self)
+        zoom_out_action.setShortcut("Ctrl+-")
+        zoom_out_action.triggered.connect(self.zoom_out_requested.emit)
+        view_menu.addAction(zoom_out_action)
+
+        view_menu.addSeparator()
+
+        fit_page_action = QAction("ページ全体を表示", self)
+        fit_page_action.setShortcut("Ctrl+0")
+        fit_page_action.triggered.connect(self.fit_to_page_requested.emit)
+        view_menu.addAction(fit_page_action)
+
+        actual_size_action = QAction("100% 実寸大表示", self)
+        actual_size_action.setShortcut("Ctrl+1")
+        actual_size_action.triggered.connect(self.actual_size_requested.emit)
+        view_menu.addAction(actual_size_action)
+
+        view_menu.addSeparator()
+
+        prev_page_action = QAction("前のページ", self)
+        prev_page_action.setShortcut("PageUp")
+        prev_page_action.triggered.connect(self.prev_page_requested.emit)
+        view_menu.addAction(prev_page_action)
+
+        next_page_action = QAction("次のページ", self)
+        next_page_action.setShortcut("PageDown")
+        next_page_action.triggered.connect(self.next_page_requested.emit)
+        view_menu.addAction(next_page_action)
 
         # 設定メニュー
         settings_menu = self.addMenu("設定")

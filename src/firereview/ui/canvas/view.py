@@ -79,6 +79,11 @@ class PDFCanvas(QGraphicsView):
         self._mid_pan_active = False
         self._mid_pan_last = None
 
+        # Spaceキー押下中の一時パン状態管理
+        self._space_held = False
+        self._space_pan_active = False
+        self._space_pan_last = None
+
         # 頂点編集用の状態管理
         self.editing_node_item_id = None
         self.vertex_handles = []
@@ -334,6 +339,14 @@ class PDFCanvas(QGraphicsView):
                 event.accept()
                 return
 
+        # Space押下時の一時パン
+        if getattr(self, '_space_held', False) and event.button() == Qt.LeftButton:
+            self._space_pan_active = True
+            self._space_pan_last = event.pos()
+            self.setCursor(Qt.ClosedHandCursor)
+            event.accept()
+            return
+
         # Delegate event handling to current tool
         tool = self._get_active_tool()
         if tool and tool.mouse_press(event, self.scene):
@@ -343,6 +356,14 @@ class PDFCanvas(QGraphicsView):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if getattr(self, '_space_pan_active', False):
+            delta = event.pos() - self._space_pan_last
+            self._space_pan_last = event.pos()
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
+            self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
+            event.accept()
+            return
+
         if self._mid_pan_active:
             delta = event.pos() - self._mid_pan_last
             self._mid_pan_last = event.pos()
@@ -359,13 +380,20 @@ class PDFCanvas(QGraphicsView):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if getattr(self, '_space_pan_active', False) and event.button() == Qt.LeftButton:
+            self._space_pan_active = False
+            self._space_pan_last = None
+            if getattr(self, '_space_held', False):
+                self.setCursor(Qt.OpenHandCursor)
+            else:
+                self._update_cursor_for_tool()
+            event.accept()
+            return
+
         if event.button() == Qt.MiddleButton and self._mid_pan_active:
             self._mid_pan_active = False
             self._mid_pan_last = None
-            if self.tool_mode in [ToolMode.SELECT, ToolMode.NONE]:
-                self.setCursor(Qt.ArrowCursor)
-            else:
-                self.setCursor(Qt.CrossCursor)
+            self._update_cursor_for_tool()
             event.accept()
             return
 
@@ -376,6 +404,22 @@ class PDFCanvas(QGraphicsView):
 
         super().mouseReleaseEvent(event)
 
+    def _update_cursor_for_tool(self):
+        if self.tool_mode in [ToolMode.SELECT, ToolMode.NONE]:
+            self.setCursor(Qt.ArrowCursor)
+        else:
+            self.setCursor(Qt.CrossCursor)
+
+    def zoom_in(self, factor=1.25):
+        """キャンバス表示倍率を段階的に拡大する"""
+        self.scale(factor, factor)
+        self._emit_zoom_changed()
+
+    def zoom_out(self, factor=1.25):
+        """キャンバス表示倍率を段階的に縮小する"""
+        self.scale(1.0 / factor, 1.0 / factor)
+        self._emit_zoom_changed()
+
     def mouseDoubleClickEvent(self, event):
         tool = self._get_active_tool()
         if tool and tool.double_click(event, self.scene):
@@ -384,25 +428,113 @@ class PDFCanvas(QGraphicsView):
         super().mouseDoubleClickEvent(event)
 
     def keyPressEvent(self, event):
-        if self.tool_mode == ToolMode.SELECT:
-            if self.editing_node_item_id:
-                if event.key() in [Qt.Key_Delete, Qt.Key_Backspace]:
-                    selected = self.scene.selectedItems()
-                    for sel in selected:
-                        if isinstance(sel, VertexHandleItem):
-                            self.on_vertex_double_clicked(sel.parent_item, sel.index)
-                            event.accept()
-                            return
-                elif event.key() == Qt.Key_Escape:
-                    self.end_node_editing()
-                    event.accept()
-                    return
-            elif self.editing_label_item_id:
-                if event.key() == Qt.Key_Escape:
-                    self.end_label_editing()
-                    event.accept()
-                    return
+        # 1. Spaceキー押下中の一時パン（テキスト入力中以外）
+        if event.key() == Qt.Key_Space and not event.isAutoRepeat():
+            if not getattr(self, "editing_text_item", None):
+                self._space_held = True
+                self.setCursor(Qt.OpenHandCursor)
+                event.accept()
+                return
+
+        # 2. Escape（多段階キャンセル）
+        if event.key() == Qt.Key_Escape:
+            # (1) 頂点編集（ノード編集）中
+            if getattr(self, "editing_node_item_id", None):
+                self.end_node_editing()
+                event.accept()
+                return
+
+            # (2) ラベル移動中
+            if getattr(self, "editing_label_item_id", None):
+                self.end_label_editing()
+                event.accept()
+                return
+
+            # (3) インラインテキスト編集中
+            if getattr(self, "editing_text_item", None):
+                self.scene.removeItem(self.editing_text_item)
+                self.editing_text_item = None
+                event.accept()
+                return
+
+            # (4) 作図途中（ポリライン・多角形の頂点配置中やドラッグ中など）
+            has_temp_points = bool(hasattr(self, "temp_points") and len(self.temp_points) > 0)
+            has_drag = bool(getattr(self, "drag_start", None) is not None)
+            if has_temp_points or has_drag:
+                self._clear_temp_items()
+                self.temp_points = []
+                self.drag_start = None
+                self.viewport().update()
+                event.accept()
+                return
+
+            # (5) オブジェクト選択中なら選択解除
+            if self.scene.selectedItems():
+                self.scene.clearSelection()
+                self.selection_cleared.emit()
+                event.accept()
+                return
+
+            # (6) 描画ツール選択中なら選択ツールへ復帰
+            if self.tool_mode != ToolMode.SELECT:
+                self._finish_tool(ToolMode.SELECT)
+                event.accept()
+                return
+
+        # 3. Delete / Backspace によるオブジェクト削除
+        elif event.key() in [Qt.Key_Delete, Qt.Key_Backspace]:
+            if getattr(self, "editing_text_item", None):
+                super().keyPressEvent(event)
+                return
+
+            if getattr(self, "editing_node_item_id", None):
+                selected = self.scene.selectedItems()
+                for sel in selected:
+                    if isinstance(sel, VertexHandleItem):
+                        self.on_vertex_double_clicked(sel.parent_item, sel.index)
+                        event.accept()
+                        return
+
+            selected_items = [item for item in self.scene.selectedItems() if item != self.background_item]
+            if selected_items:
+                ids_to_delete = []
+                for item in selected_items:
+                    item_id = item.data(0)
+                    if item_id and item_id not in ids_to_delete:
+                        ids_to_delete.append(item_id)
+                for item_id in ids_to_delete:
+                    self.request_delete.emit(item_id)
+                event.accept()
+                return
+
+        # 4. 主要ツールのシングルキー切替（修飾キーなし＆テキスト入力中以外）
+        if event.modifiers() == Qt.NoModifier and not getattr(self, "editing_text_item", None):
+            key_map = {
+                Qt.Key_V: ToolMode.SELECT,
+                Qt.Key_H: ToolMode.NONE,  # パン
+                Qt.Key_L: ToolMode.DRAW_LINE,
+                Qt.Key_R: ToolMode.POLYGON_AREA,
+                Qt.Key_C: ToolMode.DRAW_CIRCLE_DRAG,
+                Qt.Key_T: ToolMode.TEXT,
+                Qt.Key_M: ToolMode.DRAW_MARKER,
+            }
+            if event.key() in key_map:
+                self.request_tool_change.emit(key_map[event.key()])
+                event.accept()
+                return
+
         super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        if event.key() == Qt.Key_Space and not event.isAutoRepeat():
+            if getattr(self, '_space_held', False):
+                self._space_held = False
+                self._space_pan_active = False
+                self._space_pan_last = None
+                self._update_cursor_for_tool()
+                event.accept()
+                return
+        super().keyReleaseEvent(event)
 
     def _start_inline_text_editing(self, pos):
         if self.editing_text_item:
