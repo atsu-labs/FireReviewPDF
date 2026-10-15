@@ -1,6 +1,8 @@
 from PySide6.QtWidgets import QMenuBar
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Signal
+import qtawesome as qta
+
 
 class MainMenuBar(QMenuBar):
     open_pdf_requested = Signal()
@@ -9,6 +11,7 @@ class MainMenuBar(QMenuBar):
     save_project_as_requested = Signal()
     load_project_requested = Signal()
     export_pdf_requested = Signal()
+    preferences_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -20,7 +23,7 @@ class MainMenuBar(QMenuBar):
 
     def _setup_menus(self):
         file_menu = self.addMenu("ファイル")
-        
+
         open_action = QAction("PDF図面を開く", self)
         open_action.setShortcut("Ctrl+O")
         open_action.triggered.connect(self.open_pdf_requested.emit)
@@ -53,3 +56,11 @@ class MainMenuBar(QMenuBar):
         export_action.setShortcut("Ctrl+E")
         export_action.triggered.connect(self.export_pdf_requested.emit)
         file_menu.addAction(export_action)
+
+        # 設定メニュー
+        settings_menu = self.addMenu("設定")
+        pref_action = QAction(qta.icon('fa5s.cog', color='white'), "環境設定...", self)
+        pref_action.setShortcut("Ctrl+,")
+        pref_action.triggered.connect(self.preferences_requested.emit)
+        settings_menu.addAction(pref_action)
+
