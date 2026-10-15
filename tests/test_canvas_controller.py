@@ -7,12 +7,49 @@ from firereview.services.measurement_service import MeasurementService
 from firereview.ui.canvas.enums import ToolMode
 
 
+class DummyItem:
+    def __init__(self, item_id):
+        self.item_id = item_id
+        self._selected = False
+
+    def setSelected(self, selected):
+        self._selected = selected
+
+    def isSelected(self):
+        return self._selected
+
+    def data(self, role):
+        if role == 0:
+            return self.item_id
+        return None
+
+
+class DummyScene:
+    def __init__(self):
+        self.selection_cleared = False
+        self.items_list = []
+
+    def clearSelection(self):
+        self.selection_cleared = True
+        for item in self.items_list:
+            item.setSelected(False)
+
+    def items(self):
+        return self.items_list
+
+
 class DummyCanvas:
     def __init__(self):
         self.annotations = []
+        self.annotation_items = {}
+        self.scene = DummyScene()
+        self.centered_item = None
         self.tool_mode = ToolMode.SELECT
         self.editing_item_id = None
         self.active_edit_mode = False
+
+    def centerOn(self, item):
+        self.centered_item = item
 
     def add_polygon_annotation(self, *args, **kwargs):
         self.annotations.append(("polygon", args, kwargs))
@@ -158,3 +195,19 @@ class TestCanvasController:
         cc.on_selection_cleared()
         assert navigator.selected_object is None
         assert prop_panel.cleared is True
+
+    def test_on_object_selected_from_panel_autocenter(self, setup_controller):
+        from tests.test_canvas_controller import DummyItem
+        cc, dm, canvas, navigator, prop_panel = setup_controller
+        ann = cc.add_to_model("marker", [QPointF(100, 200)])
+
+        item = DummyItem(ann.id)
+        canvas.annotation_items[ann.id] = item
+        canvas.scene.items_list.append(item)
+
+        cc.on_object_selected_from_panel(ann.id)
+
+        assert item.isSelected() is True
+        assert canvas.centered_item is item
+        assert navigator.selected_object == ann.id
+        assert prop_panel.item_data is not None
