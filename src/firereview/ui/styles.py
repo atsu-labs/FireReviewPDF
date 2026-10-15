@@ -13,6 +13,7 @@ def _asset(filename: str) -> str:
 def _build_style() -> str:
     up_arrow = _asset("arrow_up.svg")
     down_arrow = _asset("arrow_down.svg")
+    check_icon = _asset("check.svg")
     return f"""
 QMainWindow {{
     background-color: #151521;
@@ -192,6 +193,81 @@ QSlider::handle:horizontal {{
     height: 14px;
     margin: -5px 0;
     border-radius: 7px;
+}}
+
+/* RadioButton */
+QRadioButton {{
+    color: #ffffff;
+    font-size: 12px;
+    spacing: 8px;
+}}
+
+QRadioButton:hover {{
+    color: #ffffff;
+}}
+
+QRadioButton:disabled {{
+    color: #666677;
+}}
+
+QRadioButton::indicator {{
+    width: 16px;
+    height: 16px;
+    border-radius: 9px;
+    border: 2px solid #777799;
+    background-color: #242436;
+}}
+
+QRadioButton::indicator:hover {{
+    border-color: #9999cc;
+}}
+
+QRadioButton::indicator:checked {{
+    border: 2px solid #7c4dff;
+    background-color: qradialgradient(cx: 0.5, cy: 0.5, radius: 0.5, fx: 0.5, fy: 0.5, stop: 0 #7c4dff, stop: 0.55 #7c4dff, stop: 0.6 transparent, stop: 1 transparent);
+}}
+
+QRadioButton::indicator:disabled {{
+    border: 2px solid #444455;
+    background-color: #1a1a26;
+}}
+
+/* CheckBox */
+QCheckBox {{
+    color: #ffffff;
+    font-size: 12px;
+    spacing: 8px;
+}}
+
+QCheckBox:hover {{
+    color: #ffffff;
+}}
+
+QCheckBox:disabled {{
+    color: #666677;
+}}
+
+QCheckBox::indicator {{
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 2px solid #777799;
+    background-color: #242436;
+}}
+
+QCheckBox::indicator:hover {{
+    border-color: #9999cc;
+}}
+
+QCheckBox::indicator:checked {{
+    border: 2px solid #7c4dff;
+    background-color: #7c4dff;
+    image: url("{check_icon}");
+}}
+
+QCheckBox::indicator:disabled {{
+    border: 2px solid #444455;
+    background-color: #1a1a26;
 }}
 """
 
