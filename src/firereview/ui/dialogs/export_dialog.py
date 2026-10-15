@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QFrame,
 )
+from ..styles import _asset
 
 
 class ExportPdfDialog(QDialog):
@@ -38,15 +39,16 @@ class ExportPdfDialog(QDialog):
         self._setup_ui()
 
     def _apply_dialog_style(self):
-        self.setStyleSheet("""
-            QDialog {
+        check_icon = _asset("check.svg")
+        self.setStyleSheet(f"""
+            QDialog {{
                 background-color: #1e1e2e;
-            }
-            QLabel {
+            }}
+            QLabel {{
                 color: #ffffff;
                 border: none;
-            }
-            QGroupBox {
+            }}
+            QGroupBox {{
                 border: 1px solid #333344;
                 border-radius: 6px;
                 margin-top: 14px;
@@ -57,27 +59,73 @@ class ExportPdfDialog(QDialog):
                 font-weight: bold;
                 color: #aaaacc;
                 font-size: 12px;
-            }
-            QGroupBox::title {
+            }}
+            QGroupBox::title {{
                 subcontrol-origin: margin;
                 subcontrol-position: top left;
                 padding: 0 6px;
                 background-color: #1e1e2e;
-            }
-            QRadioButton {
+            }}
+            QRadioButton {{
                 color: #dddddd;
                 font-size: 12px;
                 spacing: 8px;
-            }
-            QRadioButton:disabled {
+            }}
+            QRadioButton:hover {{
+                color: #ffffff;
+            }}
+            QRadioButton:disabled {{
                 color: #666677;
-            }
-            QCheckBox {
+            }}
+            QRadioButton::indicator {{
+                width: 16px;
+                height: 16px;
+                border-radius: 9px;
+                border: 2px solid #777799;
+                background-color: #242436;
+            }}
+            QRadioButton::indicator:hover {{
+                border-color: #9999cc;
+            }}
+            QRadioButton::indicator:checked {{
+                border: 2px solid #7c4dff;
+                background-color: qradialgradient(cx: 0.5, cy: 0.5, radius: 0.5, fx: 0.5, fy: 0.5, stop: 0 #7c4dff, stop: 0.55 #7c4dff, stop: 0.6 transparent, stop: 1 transparent);
+            }}
+            QRadioButton::indicator:disabled {{
+                border: 2px solid #444455;
+                background-color: #1a1a26;
+            }}
+            QCheckBox {{
                 color: #dddddd;
                 font-size: 12px;
                 spacing: 8px;
-            }
-            QPushButton {
+            }}
+            QCheckBox:hover {{
+                color: #ffffff;
+            }}
+            QCheckBox:disabled {{
+                color: #666677;
+            }}
+            QCheckBox::indicator {{
+                width: 16px;
+                height: 16px;
+                border-radius: 4px;
+                border: 2px solid #777799;
+                background-color: #242436;
+            }}
+            QCheckBox::indicator:hover {{
+                border-color: #9999cc;
+            }}
+            QCheckBox::indicator:checked {{
+                border: 2px solid #7c4dff;
+                background-color: #7c4dff;
+                image: url("{check_icon}");
+            }}
+            QCheckBox::indicator:disabled {{
+                border: 2px solid #444455;
+                background-color: #1a1a26;
+            }}
+            QPushButton {{
                 background-color: #2a2a3d;
                 color: #ffffff;
                 border: 1px solid #444455;
@@ -86,18 +134,18 @@ class ExportPdfDialog(QDialog):
                 font-weight: bold;
                 font-size: 12px;
                 min-width: 80px;
-            }
-            QPushButton:hover {
+            }}
+            QPushButton:hover {{
                 background-color: #35354d;
                 border-color: #666677;
-            }
-            QPushButton#primaryBtn {
+            }}
+            QPushButton#primaryBtn {{
                 background-color: #7c4dff;
                 border: 1px solid #7c4dff;
-            }
-            QPushButton#primaryBtn:hover {
+            }}
+            QPushButton#primaryBtn:hover {{
                 background-color: #6c3bee;
-            }
+            }}
         """)
 
     def _format_page_summary(self, pages: List[int]) -> str:
@@ -131,12 +179,15 @@ class ExportPdfDialog(QDialog):
         
         self.radio_annotated = QRadioButton(ann_text)
         self.radio_annotated.setEnabled(has_annotations)
+        if has_annotations:
+            self.radio_annotated.setCursor(Qt.PointingHandCursor)
         if has_annotations and len(self.annotated_pages) > 6:
             full_summary = ", ".join(f"P.{p + 1}" for p in self.annotated_pages)
             self.radio_annotated.setToolTip(f"出力対象: {full_summary}")
 
         # 全ページラジオボタン
         self.radio_all = QRadioButton(f"全ページ  —  全 {self.total_pages} ページ")
+        self.radio_all.setCursor(Qt.PointingHandCursor)
 
         # デフォルト選択: 注釈があれば注釈のみ、なければ全ページ
         if has_annotations:
@@ -154,6 +205,7 @@ class ExportPdfDialog(QDialog):
         options_layout.setSpacing(6)
 
         self.check_apply_bg_opacity = QCheckBox("背景図面のフェード（透明度）を出力PDFに反映する")
+        self.check_apply_bg_opacity.setCursor(Qt.PointingHandCursor)
         # デフォルトはON
         self.check_apply_bg_opacity.setChecked(True)
 
@@ -178,10 +230,12 @@ class ExportPdfDialog(QDialog):
         btn_layout.addStretch()
 
         self.btn_cancel = QPushButton("キャンセル")
+        self.btn_cancel.setCursor(Qt.PointingHandCursor)
         self.btn_cancel.clicked.connect(self.reject)
 
         self.btn_export = QPushButton("書き出し...")
         self.btn_export.setObjectName("primaryBtn")
+        self.btn_export.setCursor(Qt.PointingHandCursor)
         self.btn_export.clicked.connect(self.accept)
 
         btn_layout.addWidget(self.btn_cancel)

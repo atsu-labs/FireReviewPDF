@@ -67,20 +67,28 @@ class PreferencesDialog(QDialog):
             QRadioButton {
                 color: #ffffff;
                 font-size: 12px;
+                spacing: 8px;
+            }
+            QRadioButton:hover {
+                color: #ffffff;
             }
             QRadioButton::indicator {
                 width: 16px;
                 height: 16px;
-                border: 2px solid #555577;
                 border-radius: 9px;
-                background-color: #2a2a3d;
-            }
-            QRadioButton::indicator:checked {
-                border: 2px solid #ffffff;
-                background-color: #7c4dff;
+                border: 2px solid #777799;
+                background-color: #242436;
             }
             QRadioButton::indicator:hover {
-                border-color: #7c4dff;
+                border-color: #9999cc;
+            }
+            QRadioButton::indicator:checked {
+                border: 2px solid #7c4dff;
+                background-color: qradialgradient(cx: 0.5, cy: 0.5, radius: 0.5, fx: 0.5, fy: 0.5, stop: 0 #7c4dff, stop: 0.55 #7c4dff, stop: 0.6 transparent, stop: 1 transparent);
+            }
+            QRadioButton::indicator:disabled {
+                border: 2px solid #444455;
+                background-color: #1a1a26;
             }
         """)
 

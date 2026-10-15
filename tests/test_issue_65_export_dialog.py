@@ -126,3 +126,23 @@ def test_document_manager_export_pdf(multi_page_pdf, tmp_path):
     doc = fitz.open(out_pdf)
     assert len(doc) == 2
     doc.close()
+
+
+def test_export_dialog_indicator_and_cursor_style(qapp):
+    from PySide6.QtCore import Qt
+    dialog = ExportPdfDialog(total_pages=5, annotated_pages=[0], bg_opacity=0.8)
+    sheet = dialog.styleSheet()
+
+    # ラジオボタンおよびチェックボックスのインジケーター定義があること
+    assert "QRadioButton::indicator" in sheet
+    assert "QRadioButton::indicator:checked" in sheet
+    assert "QCheckBox::indicator" in sheet
+    assert "QCheckBox::indicator:checked" in sheet
+
+    # ポインティングハンドカーソルの確認
+    assert dialog.radio_annotated.cursor().shape() == Qt.PointingHandCursor
+    assert dialog.radio_all.cursor().shape() == Qt.PointingHandCursor
+    assert dialog.check_apply_bg_opacity.cursor().shape() == Qt.PointingHandCursor
+    assert dialog.btn_cancel.cursor().shape() == Qt.PointingHandCursor
+    assert dialog.btn_export.cursor().shape() == Qt.PointingHandCursor
+
