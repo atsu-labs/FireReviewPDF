@@ -6,16 +6,44 @@ from ..canvas import ToolMode
 class MainToolBar(QFrame):
     tool_changed = Signal(int)  # Emits selected ToolMode
     zoom_changed = Signal(str)  # Emits current text of zoom combo
+    open_pdf_requested = Signal()
+    save_project_requested = Signal()
+    export_pdf_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("ToolBar")
         self.tool_btns = []
+        self.quick_action_btns = []
         self._setup_ui()
 
     def _setup_ui(self):
         t_layout = QHBoxLayout(self)
         t_layout.setContentsMargins(10, 0, 10, 0)
+
+        # クイックファイル操作
+        quick_actions = [
+            ('fa5s.folder-open', "PDF図面を開く (Ctrl+O)", self.open_pdf_requested),
+            ('fa5s.save', "プロジェクトを保存 (Ctrl+S)", self.save_project_requested),
+            ('fa5s.file-export', "PDFを書き出し (Ctrl+E)", self.export_pdf_requested),
+        ]
+
+        for icon_name, tip, sig in quick_actions:
+            btn = QPushButton()
+            btn.setIcon(qta.icon(icon_name, color='#ffffff'))
+            btn.setIconSize(QSize(18, 18))
+            btn.setObjectName("QuickActionBtn")
+            btn.setToolTip(tip)
+            btn.setFixedSize(36, 36)
+            btn.clicked.connect(sig.emit)
+            t_layout.addWidget(btn)
+            self.quick_action_btns.append(btn)
+
+        # セパレーター
+        sep = QFrame()
+        sep.setFrameShape(QFrame.VLine)
+        sep.setStyleSheet("color: #333344; background-color: #333344; width: 1px; margin: 4px 6px;")
+        t_layout.addWidget(sep)
 
         tools = [
             ('fa5s.mouse-pointer', "選択", ToolMode.SELECT),

@@ -207,13 +207,14 @@ class MainWindow(QMainWindow):
     def _setup_menus(self):
         self.menubar = MainMenuBar(self)
         self.setMenuBar(self.menubar)
-        
+
         self.menubar.open_pdf_requested.connect(self.open_pdf)
         self.menubar.swap_pdf_requested.connect(self.swap_pdf)
         self.menubar.save_project_requested.connect(self.save_project)
         self.menubar.save_project_as_requested.connect(self.save_project_as)
         self.menubar.load_project_requested.connect(self.load_project)
         self.menubar.export_pdf_requested.connect(self.export_pdf)
+        self.menubar.preferences_requested.connect(self._open_preferences_dialog)
 
     def setup_ui(self):
         # Central Widget
@@ -223,18 +224,18 @@ class MainWindow(QMainWindow):
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
 
-        # 1. Header
-        self._setup_header()
-
-        # 2. Main Tool Bar
+        # 1. Main Tool Bar
         self.toolbar = MainToolBar()
         self.zoom_combo = self.toolbar.zoom_combo
         self.scale_status_label = self.toolbar.scale_status_label
         self.pdf_size_label = self.toolbar.pdf_size_label
         self.tool_btns = self.toolbar.tool_btns
-        
+
         self.toolbar.tool_changed.connect(self.set_tool)
         self.toolbar.zoom_changed.connect(self._on_zoom_combo_changed_from_toolbar)
+        self.toolbar.open_pdf_requested.connect(self.open_pdf)
+        self.toolbar.save_project_requested.connect(self.save_project)
+        self.toolbar.export_pdf_requested.connect(self.export_pdf)
         self.main_layout.addWidget(self.toolbar)
 
         # 3. Tool Options Bar
@@ -334,40 +335,6 @@ class MainWindow(QMainWindow):
 
         # 5. Status Bar
         self._setup_status_bar()
-
-    def _setup_header(self):
-        header = QFrame()
-        header.setObjectName("MainHeader")
-        header.setFixedHeight(50)
-        h_layout = QHBoxLayout(header)
-        h_layout.setContentsMargins(15, 0, 15, 0)
-
-        title = QLabel("FireReviewPDF")
-        title.setStyleSheet("font-weight: bold; font-size: 18px; color: #ffffff;")
-        h_layout.addWidget(title)
-
-        h_layout.addSpacing(20)
-        
-        btn_files = QPushButton(" すべてのファイル")
-        btn_files.setIcon(qta.icon('fa5s.folder', color='white'))
-        btn_save = QPushButton(" 保存")
-        btn_save.setIcon(qta.icon('fa5s.save', color='white'))
-        h_layout.addWidget(btn_files)
-        h_layout.addWidget(btn_save)
-
-        h_layout.addStretch()
-
-        btn_share = QPushButton()
-        btn_share.setIcon(qta.icon('fa5s.share-square', color='white'))
-        self.btn_settings = QPushButton()
-        self.btn_settings.setIcon(qta.icon('fa5s.cog', color='white'))
-        self.btn_settings.clicked.connect(self._on_settings_clicked)
-        user_info = QLabel(" 👤 ユーザー名")
-        h_layout.addWidget(btn_share)
-        h_layout.addWidget(self.btn_settings)
-        h_layout.addWidget(user_info)
-
-        self.main_layout.addWidget(header)
 
     def _setup_status_bar(self):
         status = QFrame()
