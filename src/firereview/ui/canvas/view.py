@@ -1,9 +1,10 @@
 import math
 from PySide6.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, 
                                  QGraphicsLineItem, QGraphicsTextItem, QGraphicsEllipseItem, 
-                                 QGraphicsPolygonItem, QGraphicsPathItem, QMenu, QGraphicsItem)
+                                 QGraphicsPolygonItem, QGraphicsPathItem, QMenu, QGraphicsItem,
+                                 QGraphicsRectItem)
 from PySide6.QtCore import Qt, Signal, QPointF, QRectF, QEvent
-from PySide6.QtGui import QPainter, QPen, QColor, QPolygonF, QAction, QFont, QPainterPath
+from PySide6.QtGui import QPainter, QPen, QColor, QPolygonF, QAction, QFont, QPainterPath, QBrush
 
 from .items import CustomTextItem, VertexHandleItem
 from .utils import point_to_segment_distance, apply_angle_snap
@@ -50,6 +51,7 @@ class PDFCanvas(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         
         self.background_item = None
+        self.paper_item = None
         self.bg_opacity = 1.0
         self.tool_mode = ToolMode.NONE
         
@@ -251,6 +253,18 @@ class PDFCanvas(QGraphicsView):
         self.temp_arc = None
         self.annotation_items.clear()
         self.scene.clear()
+
+        # 白色の用紙背景アイテム（PDF透明度調整時に黒ずまず白く淡色化させる）
+        rect = QRectF(pixmap.rect())
+        self.paper_item = QGraphicsRectItem(rect)
+        self.paper_item.setBrush(QBrush(Qt.white))
+        self.paper_item.setPen(QPen(Qt.NoPen))
+        self.paper_item.setZValue(-2)
+        self.paper_item.setFlag(QGraphicsItem.ItemIsSelectable, False)
+        self.paper_item.setFlag(QGraphicsItem.ItemIsMovable, False)
+        self.paper_item.setAcceptedMouseButtons(Qt.NoButton)
+        self.scene.addItem(self.paper_item)
+
         self.background_item = QGraphicsPixmapItem(pixmap)
         self.background_item.setZValue(-1)
         self.background_item.setOpacity(self.bg_opacity)

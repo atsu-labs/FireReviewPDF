@@ -3,6 +3,7 @@ import tempfile
 import fitz
 import pytest
 from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
 from firereview.models import DrawingModel
 from firereview.services.pdf_handler import PDFHandler
 from firereview.services.pdf_exporter import export_pdf_document
@@ -96,6 +97,37 @@ def test_canvas_bg_opacity(qapp, sample_pdf):
     assert canvas.bg_opacity == pytest.approx(0.1)
     canvas.set_background_opacity(1.5)
     assert canvas.bg_opacity == pytest.approx(1.0)
+
+
+def test_canvas_bg_opacity_fades_to_white(qapp):
+    from PySide6.QtGui import QImage, QPainter, QColor, QPixmap
+    canvas = PDFCanvas()
+
+    # 黒いテスト画像を作成（図面上の黒線や塗りつぶしに相当）
+    pix = QPixmap(100, 100)
+    pix.fill(Qt.black)
+    canvas.set_page_image(pix)
+
+    # 白色の下地用紙アイテムが正しく作成・設定されていること
+    assert hasattr(canvas, "paper_item") and canvas.paper_item is not None
+    assert canvas.paper_item.zValue() == -2
+    assert canvas.paper_item.brush().color() == QColor(Qt.white)
+
+    # 不透明度1.0のとき: レンダリング結果は黒 (RGB値が0付近)
+    img_100 = QImage(100, 100, QImage.Format_ARGB32)
+    p1 = QPainter(img_100)
+    canvas.scene.render(p1)
+    p1.end()
+    assert img_100.pixelColor(50, 50).red() < 10
+
+    # 不透明度0.2（濃度20%）のとき: 下地の白が透けて明るい白寄りグレーになること（黒ずまないこと）
+    canvas.set_background_opacity(0.2)
+    img_20 = QImage(100, 100, QImage.Format_ARGB32)
+    p2 = QPainter(img_20)
+    canvas.scene.render(p2)
+    p2.end()
+    # 黒0の20% + 白255の80% = 約204
+    assert img_20.pixelColor(50, 50).red() > 180
 
 
 def test_navigator_bg_settings_ui(qapp):
