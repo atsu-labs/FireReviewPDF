@@ -180,6 +180,8 @@ class ToolController:
         else:
             self.current_fill_color = color
         self.update_canvas_shape_defaults()
+        if self.canvas and self.canvas.editing_item_id:
+            self.canvas.update_item_properties(self.canvas.editing_item_id, {"fill_color": color})
 
     def on_options_fill_opacity_changed(self, opacity: int):
         if self.current_tool_mode == ToolMode.DRAW_CLOUD:

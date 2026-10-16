@@ -39,6 +39,12 @@ class TestCloudModelAndPersistence:
         assert ann.line_width == 2
         assert ann.stroke_opacity == 100
 
+        # Minimal dict without color / fill_opacity should preserve CloudAnnotation defaults
+        partial = Annotation.from_dict({"type": "cloud", "points": [(0, 0), (50, 0), (50, 50)]})
+        assert isinstance(partial, CloudAnnotation)
+        assert partial.color == "#ff0000"
+        assert partial.fill_opacity == 0
+
     def test_cloud_project_store_roundtrip(self, tmp_path):
         model = DrawingModel()
         cloud = Annotation("cloud")
@@ -87,7 +93,9 @@ class TestCloudGeometry:
         for pts in (cw_pts, ccw_pts):
             beziers = compute_cloud_beziers(pts)
             assert len(beziers) >= 8
-            for start_pt, ctrl1, ctrl2, end_pt in beziers:
+            for idx, (start_pt, ctrl1, ctrl2, end_pt) in enumerate(beziers):
+                next_start = beziers[(idx + 1) % len(beziers)][0]
+                assert (end_pt.x(), end_pt.y()) == (next_start.x(), next_start.y())
                 mid_chord = QPointF(
                     (start_pt.x() + end_pt.x()) / 2.0,
                     (start_pt.y() + end_pt.y()) / 2.0,
@@ -197,6 +205,13 @@ class TestCloudCanvasAndTool:
         canvas.start_node_editing("cloud-1")
         assert len(canvas.vertex_handles) == 4
 
+        # Edge hit-testing on outward-bulging cloud arc (~10px outside top chord y=50) even when zoomed in 3x
+        canvas.scale(3.0, 3.0)
+        edge_idx, proj, _ = canvas._find_closest_edge(item, QPointF(100, 40))
+        assert edge_idx == 0
+        assert proj == QPointF(100, 50)
+        canvas.resetTransform()
+
         # Move vertex 2
         canvas.on_vertex_moved(item, 2, QPointF(200, 200))
         updated_pts = canvas._get_item_points(item)
@@ -260,7 +275,6 @@ class TestCloudCanvasAndTool:
 
         canvas_ctrl.on_item_selected(cloud_ann.id)
         assert prop_panel.type_title.text() == "雲マーク"
-        assert not prop_panel.calc_container.isHidden() is False  # calc_container is hidden
         assert prop_panel.calc_container.isHidden() is True
         assert prop_panel.text_container.isHidden() is True
         assert prop_panel.node_edit_container.isHidden() is False

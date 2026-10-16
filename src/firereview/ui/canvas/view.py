@@ -1475,7 +1475,9 @@ class PDFCanvas(QGraphicsView):
             return -1, None, float('inf')
         
         local_pos = item.mapFromScene(scene_pos)
-        best_dist = 15.0 / self.transform().m11()
+        scale = self.transform().m11()
+        base_tol = 15.0 / scale if scale > 0 else 15.0
+        best_dist = max(base_tol, 15.0) if isinstance(item, CloudItem) else base_tol
         best_idx = -1
         best_proj = None
         n = len(points)

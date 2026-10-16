@@ -73,14 +73,19 @@ def compute_cloud_beziers(points, base_pitch: float = 19.5):
         total_w = sum(weights)
 
         cur_dist = 0.0
-        for w in weights:
+        prev_pt = QPointF(p1.x(), p1.y())
+        for k, w in enumerate(weights):
             chord = length * (w / total_w)
             next_dist = cur_dist + chord
 
-            ax = p1.x() + tx * cur_dist
-            ay = p1.y() + ty * cur_dist
-            bx = p1.x() + tx * next_dist
-            by = p1.y() + ty * next_dist
+            ax = prev_pt.x()
+            ay = prev_pt.y()
+            if k == num_bumps - 1:
+                bx = p2.x()
+                by = p2.y()
+            else:
+                bx = p1.x() + tx * next_dist
+                by = p1.y() + ty * next_dist
 
             # 外向き膨らみ高さと接線方向インセット
             h = chord * 0.55
@@ -91,12 +96,14 @@ def compute_cloud_beziers(points, base_pitch: float = 19.5):
             c2x = bx - tx * dt + nx * h
             c2y = by - ty * dt + ny * h
 
+            end_pt = QPointF(bx, by)
             beziers.append((
-                QPointF(ax, ay),
+                prev_pt,
                 QPointF(c1x, c1y),
                 QPointF(c2x, c2y),
-                QPointF(bx, by),
+                end_pt,
             ))
+            prev_pt = end_pt
             cur_dist = next_dist
 
     return beziers
