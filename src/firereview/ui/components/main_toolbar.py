@@ -52,10 +52,12 @@ class MainToolBar(QFrame):
             ('fa5s.square', "矩形 (R)", ToolMode.POLYGON_AREA),
             ('fa5s.circle', "円 (C)", ToolMode.DRAW_CIRCLE_DRAG),
             ('fa5s.circle-notch', "円弧", ToolMode.DRAW_ARC),
+            ('fa5s.cloud', "雲マーク (K)", ToolMode.DRAW_CLOUD),
             ('fa5s.font', "テキスト (T)", ToolMode.TEXT),
             ('fa5s.map-marker-alt', "マーカー (M)", ToolMode.DRAW_MARKER),
             ('fa5s.list-alt', "凡例", ToolMode.DRAW_LEGEND),
         ]
+
 
         for icon_name, tip, mode in tools:
             btn = QPushButton()

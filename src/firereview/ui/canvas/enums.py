@@ -9,6 +9,7 @@ class ToolMode:
     DRAW_MARKER = 9
     DRAW_LEGEND = 10
     DRAW_ARC = 11
+    DRAW_CLOUD = 12
 
 
 

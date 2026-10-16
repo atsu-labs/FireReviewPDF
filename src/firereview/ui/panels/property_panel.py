@@ -424,21 +424,22 @@ class PropertyPanel(QWidget):
         self.current_item_id = item_id
         self.current_item_type = item_type
         
-        type_names = {"line": "直線（計測）", "polyline": "直線", "polygon": "矩形", "circle": "円", "text": "テキスト", "marker": "マーカー", "arc": "円弧"}
+        type_names = {"line": "直線（計測）", "polyline": "直線", "polygon": "矩形", "cloud": "雲マーク", "circle": "円", "text": "テキスト", "marker": "マーカー", "arc": "円弧"}
         self.type_title.setText(type_names.get(item_type, "要素"))
         self.sub_title.setVisible(True)
         
         # Dynamic visibility
-        is_shape = item_type in ["line", "polyline", "polygon", "circle", "arc"]
+        is_shape = item_type in ["line", "polyline", "polygon", "circle", "arc", "cloud"]
         is_text = item_type == "text"
         is_marker = item_type == "marker"
         is_arc = item_type == "arc"
-        has_label = text != ""
-        has_fill = item_type in ["polygon", "circle"]
+        has_label = (text != "") and (item_type != "cloud")
+        has_fill = item_type in ["polygon", "circle", "cloud"]
         can_calc = item_type in ["polyline", "polygon", "circle", "arc"]
         has_line_markers = item_type == "polyline"
         has_circle_marker = item_type in ["circle", "arc"]
-        is_node_editable = item_type in ["line", "polyline", "polygon"] or (item_type == "text" and has_leader)
+        is_node_editable = item_type in ["line", "polyline", "polygon", "cloud"] or (item_type == "text" and has_leader)
+
         
         self.line_container.setVisible(is_shape)
         self.fill_container.setVisible(has_fill)
@@ -611,8 +612,9 @@ class PropertyPanel(QWidget):
 
         attrs = {"color": hex_color}
         # 塗り対応図形かつ連動チェックがONの場合、塗りの色も同期
-        if self.fill_link_check.isChecked() and self.current_item_type in ["polygon", "circle"]:
+        if self.fill_link_check.isChecked() and self.current_item_type in ["polygon", "circle", "cloud"]:
             self.current_fill_color = hex_color
+
             self.fill_color_preview.setStyleSheet(f"background-color: {hex_color}; border-radius: 4px;")
             self.fill_color_hex_label.setText(hex_color.upper())
             attrs["fill_color"] = hex_color

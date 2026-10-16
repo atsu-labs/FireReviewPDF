@@ -7,6 +7,7 @@ from .shape_renderers import (
     CirclePdfRenderer,
     ArcPdfRenderer,
 )
+from .cloud_renderer import CloudPdfRenderer, CloudRenderer
 from .text_renderer import TextPdfRenderer
 from .marker_renderer import MarkerPdfRenderer
 from .legend_renderer import LegendPdfRenderer
@@ -15,6 +16,7 @@ PDF_RENDERER_REGISTRY = {
     "line": LinePdfRenderer(),
     "polyline": PolylinePdfRenderer(),
     "polygon": PolygonPdfRenderer(),
+    "cloud": CloudPdfRenderer(),
     "circle": CirclePdfRenderer(),
     "arc": ArcPdfRenderer(),
     "marker": MarkerPdfRenderer(),
@@ -42,6 +44,8 @@ __all__ = [
     "LinePdfRenderer",
     "PolylinePdfRenderer",
     "PolygonPdfRenderer",
+    "CloudPdfRenderer",
+    "CloudRenderer",
     "CirclePdfRenderer",
     "ArcPdfRenderer",
     "TextPdfRenderer",
@@ -51,3 +55,4 @@ __all__ = [
     "get_renderer",
     "register_renderer",
 ]
+

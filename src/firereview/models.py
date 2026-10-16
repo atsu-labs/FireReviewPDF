@@ -181,15 +181,15 @@ class BaseAnnotation:
         from PySide6.QtCore import QPointF
         self.id = data.get("id", str(uuid.uuid4()))
         self.points = [QPointF(p[0], p[1]) for p in data.get("points", [])]
-        self.color = data.get("color", "#7c4dff")
-        self.fill_color = data.get("fill_color", "")
+        self.color = data.get("color", self.color)
+        self.fill_color = data.get("fill_color", self.fill_color)
         self.text = data.get("text", "")
         self.font_family = data.get("font_family", "BIZ UDゴシック")
         self.font_size = data.get("font_size", 12)
         self.line_width = data.get("line_width", 2)
         _legacy_opacity = data.get("opacity", 100)  # backward compat
         self.stroke_opacity = data.get("stroke_opacity", _legacy_opacity)
-        self.fill_opacity = data.get("fill_opacity", 30)
+        self.fill_opacity = data.get("fill_opacity", self.fill_opacity)
         self.real_value = data.get("real_value", 0.0)
         self.page_num = data.get("page_num", 0)
         self.label_offset = data.get("label_offset", [0.0, 0.0])
@@ -251,6 +251,17 @@ class PolygonAnnotation(Annotation):
         super().__init__(type_name)
 
 
+class CloudAnnotation(Annotation):
+    """雲マーク（クラウド）注釈"""
+    type: str = "cloud"
+
+    def __init__(self, type_name: str = "cloud"):
+        super().__init__(type_name)
+        self.color = "#ff0000"
+        self.fill_color = ""
+        self.fill_opacity = 0
+
+
 class CircleAnnotation(Annotation):
     """円注釈"""
     type: str = "circle"
@@ -307,9 +318,11 @@ ANNOTATION_REGISTRY = {
     "line": LineAnnotation,
     "polyline": PolylineAnnotation,
     "polygon": PolygonAnnotation,
+    "cloud": CloudAnnotation,
     "circle": CircleAnnotation,
     "arc": ArcAnnotation,
     "marker": MarkerAnnotation,
     "text": TextAnnotation,
     "legend": LegendAnnotation,
 }
+

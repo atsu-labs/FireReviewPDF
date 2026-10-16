@@ -37,25 +37,69 @@ class ToolController:
         self.current_arc_span = 30.0
         self.current_arc_show_radial_line = False
 
+        # Cloud tool defaults (independent from measurement shapes)
+        self.current_cloud_color = "#ff0000"
+        self.current_cloud_fill_color = ""
+        self.current_cloud_fill_opacity = 0
+        self.is_cloud_color_linked = False
+        self.current_cloud_line_width = 2
+
         # Marker defaults
         self.current_marker_style = "square"
         self.current_marker_color = "#ff1744"
         self.current_marker_opacity = 70
 
+        self.current_tool_mode = ToolMode.NONE
+
     def update_canvas_shape_defaults(self):
         """現在の図形描画設定をキャンバスに反映する"""
-        if self.canvas:
+        if not self.canvas:
+            return
+        if self.current_tool_mode == ToolMode.DRAW_CLOUD:
             self.canvas.set_shape_defaults(
-                self.current_shape_color, self.current_line_width, self.current_fill_color
+                self.current_cloud_color,
+                self.current_cloud_line_width,
+                self.current_cloud_fill_color,
+                self.current_cloud_fill_opacity,
+            )
+        else:
+            self.canvas.set_shape_defaults(
+                self.current_shape_color,
+                self.current_line_width,
+                self.current_fill_color,
+                self.current_fill_opacity,
             )
 
     def set_tool(self, mode, is_calibrated: bool = False):
         """アクティブな描画ツールを切り替え、オプションバーとキャンバスを更新する"""
+        self.current_tool_mode = mode
         if self.toolbar:
             self.toolbar.set_tool_mode(mode)
         if self.canvas:
             self.canvas.set_tool_mode(mode)
         if self.options_bar:
+            if hasattr(self.options_bar, "set_shape_options"):
+                if mode == ToolMode.DRAW_CLOUD:
+                    self.options_bar.set_shape_options(
+                        self.current_cloud_line_width,
+                        self.current_cloud_color,
+                        self.current_cloud_fill_color,
+                        self.current_cloud_fill_opacity,
+                        self.is_cloud_color_linked,
+                    )
+                elif mode in [
+                    ToolMode.DRAW_LINE,
+                    ToolMode.POLYGON_AREA,
+                    ToolMode.DRAW_CIRCLE_DRAG,
+                    ToolMode.DRAW_ARC,
+                ]:
+                    self.options_bar.set_shape_options(
+                        self.current_line_width,
+                        self.current_shape_color,
+                        self.current_fill_color,
+                        self.current_fill_opacity,
+                        self.is_color_linked,
+                    )
             self.options_bar.update_options_visibility(mode, is_calibrated)
 
         is_shape_tool = mode in [
@@ -63,6 +107,7 @@ class ToolController:
             ToolMode.POLYGON_AREA,
             ToolMode.DRAW_CIRCLE_DRAG,
             ToolMode.DRAW_ARC,
+            ToolMode.DRAW_CLOUD,
         ]
 
         if not self.canvas or not self.options_bar:
@@ -88,13 +133,34 @@ class ToolController:
 
     # --- オプションバーからの各種シグナルハンドラ ---
     def on_options_color_link_changed(self, linked: bool):
-        self.is_color_linked = linked
+        if self.current_tool_mode == ToolMode.DRAW_CLOUD:
+            self.is_cloud_color_linked = linked
+        else:
+            self.is_color_linked = linked
 
     def on_options_line_width_changed(self, width: int):
-        self.current_line_width = width
+        if self.current_tool_mode == ToolMode.DRAW_CLOUD:
+            self.current_cloud_line_width = width
+        else:
+            self.current_line_width = width
         self.update_canvas_shape_defaults()
 
     def on_options_shape_color_changed(self, color: str):
+        if self.current_tool_mode == ToolMode.DRAW_CLOUD:
+            self.current_cloud_color = color
+            if self.is_cloud_color_linked:
+                self.current_cloud_fill_color = color
+            self.update_canvas_shape_defaults()
+            if self.canvas and self.canvas.editing_item_id:
+                props = {"color": color}
+                if self.is_cloud_color_linked:
+                    props["fill_color"] = color
+                    if self.current_cloud_fill_opacity == 0:
+                        self.current_cloud_fill_opacity = 30
+                        props["fill_opacity"] = 30
+                self.canvas.update_item_properties(self.canvas.editing_item_id, props)
+            return
+
         self.current_shape_color = color
         if self.is_color_linked:
             self.current_fill_color = color
@@ -109,13 +175,23 @@ class ToolController:
             self.canvas.update_item_properties(self.canvas.editing_item_id, props)
 
     def on_options_fill_color_changed(self, color: str):
-        self.current_fill_color = color
+        if self.current_tool_mode == ToolMode.DRAW_CLOUD:
+            self.current_cloud_fill_color = color
+        else:
+            self.current_fill_color = color
         self.update_canvas_shape_defaults()
+        if self.canvas and self.canvas.editing_item_id:
+            self.canvas.update_item_properties(self.canvas.editing_item_id, {"fill_color": color})
 
     def on_options_fill_opacity_changed(self, opacity: int):
-        self.current_fill_opacity = opacity
+        if self.current_tool_mode == ToolMode.DRAW_CLOUD:
+            self.current_cloud_fill_opacity = opacity
+        else:
+            self.current_fill_opacity = opacity
+        self.update_canvas_shape_defaults()
         if self.canvas and self.canvas.editing_item_id:
             self.canvas.update_item_properties(self.canvas.editing_item_id, {"fill_opacity": opacity})
+
 
     def on_options_start_marker_changed(self, index: int):
         if 0 <= index < len(self._start_marker_values):
