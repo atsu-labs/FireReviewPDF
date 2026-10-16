@@ -287,13 +287,53 @@ class ToolOptionsBar(QFrame):
         o_layout.addStretch()
 
     # --- UI updates when tool switches ---
+    def set_shape_options(
+        self,
+        line_width: int,
+        shape_color: str,
+        fill_color: str,
+        fill_opacity: int,
+        is_color_linked: bool,
+    ):
+        """図形系ツールの現在値をシグナル発火なしでUIコントロールへ反映する"""
+        self.current_line_width = line_width
+        self.current_shape_color = shape_color
+        self.current_fill_color = fill_color
+        self.current_fill_opacity = fill_opacity
+        self.is_color_linked = is_color_linked
+
+        self.tool_line_width_spin.blockSignals(True)
+        self.tool_line_width_spin.setValue(line_width)
+        self.tool_line_width_spin.blockSignals(False)
+
+        self.tool_shape_color_preview.setStyleSheet(
+            f"background-color: {shape_color}; border: 1px solid #666; border-radius: 4px;"
+        )
+
+        self.tool_fill_link_check.blockSignals(True)
+        self.tool_fill_link_check.setChecked(is_color_linked)
+        self.tool_fill_link_check.blockSignals(False)
+
+        self.tool_fill_opacity_spin.blockSignals(True)
+        self.tool_fill_opacity_spin.setValue(fill_opacity)
+        self.tool_fill_opacity_spin.blockSignals(False)
+
+        self._update_fill_preview()
+
     def update_options_visibility(self, mode, is_page_calibrated):
-        is_shape_tool = mode in [ToolMode.DRAW_LINE, ToolMode.POLYGON_AREA, ToolMode.DRAW_CIRCLE_DRAG, ToolMode.DRAW_ARC]
-        has_fill = mode in [ToolMode.POLYGON_AREA, ToolMode.DRAW_CIRCLE_DRAG]
+        is_shape_tool = mode in [
+            ToolMode.DRAW_LINE,
+            ToolMode.POLYGON_AREA,
+            ToolMode.DRAW_CIRCLE_DRAG,
+            ToolMode.DRAW_ARC,
+            ToolMode.DRAW_CLOUD,
+        ]
+        has_fill = mode in [ToolMode.POLYGON_AREA, ToolMode.DRAW_CIRCLE_DRAG, ToolMode.DRAW_CLOUD]
         has_radius = mode == ToolMode.DRAW_CIRCLE_DRAG and is_page_calibrated
         has_line_markers = mode == ToolMode.DRAW_LINE
         has_circle_marker = mode in [ToolMode.DRAW_CIRCLE_DRAG, ToolMode.DRAW_ARC]
         has_arc_settings = mode == ToolMode.DRAW_ARC
+
 
         if mode in [ToolMode.TEXT, ToolMode.DRAW_LEGEND]:
             self.default_opt_label.hide()

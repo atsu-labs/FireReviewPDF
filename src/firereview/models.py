@@ -251,6 +251,17 @@ class PolygonAnnotation(Annotation):
         super().__init__(type_name)
 
 
+class CloudAnnotation(Annotation):
+    """雲マーク（クラウド）注釈"""
+    type: str = "cloud"
+
+    def __init__(self, type_name: str = "cloud"):
+        super().__init__(type_name)
+        self.color = "#ff0000"
+        self.fill_color = ""
+        self.fill_opacity = 0
+
+
 class CircleAnnotation(Annotation):
     """円注釈"""
     type: str = "circle"
@@ -307,9 +318,11 @@ ANNOTATION_REGISTRY = {
     "line": LineAnnotation,
     "polyline": PolylineAnnotation,
     "polygon": PolygonAnnotation,
+    "cloud": CloudAnnotation,
     "circle": CircleAnnotation,
     "arc": ArcAnnotation,
     "marker": MarkerAnnotation,
     "text": TextAnnotation,
     "legend": LegendAnnotation,
 }
+

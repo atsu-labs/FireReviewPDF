@@ -1,6 +1,8 @@
-from PySide6.QtWidgets import QGraphicsTextItem, QGraphicsEllipseItem, QGraphicsItem, QGraphicsLineItem
+from PySide6.QtWidgets import QGraphicsTextItem, QGraphicsEllipseItem, QGraphicsItem, QGraphicsLineItem, QGraphicsPathItem
 from PySide6.QtCore import Qt, Signal, QRectF, QPointF
 from PySide6.QtGui import QPen, QColor, QPainter, QPainterPath, QFont
+from .utils import build_cloud_path
+
 
 class CustomTextItem(QGraphicsTextItem):
     editing_finished = Signal(str)
@@ -350,6 +352,28 @@ class LegendItem(QGraphicsItem):
                 y_offset += row_h
                 
         painter.restore()
+
+
+class CloudItem(QGraphicsPathItem):
+    """雲マーク（クラウド注釈）を描画するグラフィックスアイテム"""
+
+    def __init__(self, points=None, parent=None):
+        super().__init__(parent)
+        self._points = []
+        if points:
+            self.set_points(points)
+        else:
+            self.setPath(QPainterPath())
+
+    def points(self):
+        return list(self._points)
+
+    def set_points(self, points):
+        self._points = [
+            QPointF(p.x(), p.y()) if isinstance(p, QPointF) else QPointF(float(p[0]), float(p[1]))
+            for p in points
+        ]
+        self.setPath(build_cloud_path(self._points))
 
 
 
