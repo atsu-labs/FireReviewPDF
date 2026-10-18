@@ -293,7 +293,9 @@ class MainWindow(QMainWindow):
         self.canvas.setStyleSheet("background-color: #0f0f1a; border: none;")
         self.canvas.calibration_points_selected.connect(self.on_calibration_selected)
         self.canvas.polygon_complete.connect(self.on_polygon_complete)
+        self.canvas.cloud_complete.connect(self.on_cloud_complete)
         self.canvas.polyline_complete.connect(self.on_polyline_complete)
+
         self.canvas.circle_drag_complete.connect(self.on_circle_drag_complete)
         self.canvas.arc_drag_complete.connect(self.on_arc_drag_complete)
         self.canvas.marker_complete.connect(self.on_marker_complete)
@@ -581,6 +583,7 @@ class MainWindow(QMainWindow):
                     Qt.Key_L: ToolMode.DRAW_LINE,
                     Qt.Key_R: ToolMode.POLYGON_AREA,
                     Qt.Key_C: ToolMode.DRAW_CIRCLE_DRAG,
+                    Qt.Key_K: ToolMode.DRAW_CLOUD,
                     Qt.Key_T: ToolMode.TEXT,
                     Qt.Key_M: ToolMode.DRAW_MARKER,
                 }
@@ -712,6 +715,10 @@ class MainWindow(QMainWindow):
 
     def on_polygon_complete(self, points):
         self.canvas_controller.on_polygon_complete(points)
+
+    def on_cloud_complete(self, points):
+        self.canvas_controller.on_cloud_complete(points)
+
 
     def on_polyline_complete(self, points):
         self.canvas_controller.on_polyline_complete(points)

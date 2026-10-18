@@ -6,13 +6,14 @@ from PySide6.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsPixmapIte
 from PySide6.QtCore import Qt, Signal, QPointF, QRectF, QEvent
 from PySide6.QtGui import QPainter, QPen, QColor, QPolygonF, QAction, QFont, QPainterPath, QBrush
 
-from .items import CustomTextItem, VertexHandleItem
+from .items import CustomTextItem, VertexHandleItem, CloudItem
 from .utils import point_to_segment_distance, apply_angle_snap
 from .enums import ToolMode
 
 class PDFCanvas(QGraphicsView):
     calibration_points_selected = Signal(QPointF, QPointF)
     polygon_complete = Signal(list) # list of QPointF
+    cloud_complete = Signal(list)   # list of QPointF for cloud tool
     polyline_complete = Signal(list)  # list of QPointF for polyline tool
     circle_drag_complete = Signal(QPointF, float)  # center, radius_px
     arc_drag_complete = Signal(QPointF, float, float)  # center, radius_px, drag_angle
@@ -61,6 +62,7 @@ class PDFCanvas(QGraphicsView):
         self.temp_poly = None
         self.temp_circle = None
         self.temp_arc = None
+        self.temp_cloud = None
         self.drag_start = None  # For DRAW_CIRCLE_DRAG
         self.current_arc_span = 30.0
         self.current_arc_show_radial_line = False
@@ -69,6 +71,7 @@ class PDFCanvas(QGraphicsView):
         self.current_shape_color = "#7c4dff"
         self.current_shape_line_width = 2
         self.current_fill_color = ""
+        self.current_fill_opacity = 30
         self.continuous_shape = False  # Stay in same tool after completing a shape
         
         # Text default properties
@@ -100,13 +103,17 @@ class PDFCanvas(QGraphicsView):
         self._original_accepted_buttons = {}
 
         # Instantiate modular drawing tools
-        from .tools import SelectTool, DrawLineTool, PolygonTool, CircleTool, TextTool, CalibrationTool, MarkerTool, LegendTool, ArcTool
+        from .tools import (
+            SelectTool, DrawLineTool, PolygonTool, CircleTool, TextTool,
+            CalibrationTool, MarkerTool, LegendTool, ArcTool, CloudTool
+        )
         self.tools = {
             ToolMode.SELECT: SelectTool(self),
             ToolMode.DRAW_LINE: DrawLineTool(self),
             ToolMode.POLYGON_AREA: PolygonTool(self),
             ToolMode.DRAW_CIRCLE_DRAG: CircleTool(self),
             ToolMode.DRAW_ARC: ArcTool(self),
+            ToolMode.DRAW_CLOUD: CloudTool(self),
             ToolMode.TEXT: TextTool(self),
             ToolMode.CALIBRATE: CalibrationTool(self),
             ToolMode.DRAW_MARKER: MarkerTool(self),
@@ -125,10 +132,12 @@ class PDFCanvas(QGraphicsView):
         self.current_text_color = color
         self.continuous_text_input = continuous
 
-    def set_shape_defaults(self, line_color, line_width, fill_color=""):
+    def set_shape_defaults(self, line_color, line_width, fill_color="", fill_opacity=30):
         self.current_shape_color = line_color
         self.current_shape_line_width = line_width
         self.current_fill_color = fill_color
+        self.current_fill_opacity = fill_opacity
+
 
     def set_shape_continuous(self, continuous):
         self.continuous_shape = continuous
@@ -239,6 +248,7 @@ class PDFCanvas(QGraphicsView):
         self.temp_poly = _safe_remove(self.temp_poly)
         self.temp_circle = _safe_remove(self.temp_circle)
         self.temp_arc = _safe_remove(self.temp_arc)
+        self.temp_cloud = _safe_remove(self.temp_cloud)
         self.drag_start = None
 
     def set_background_opacity(self, opacity: float):
@@ -251,8 +261,10 @@ class PDFCanvas(QGraphicsView):
         self.temp_poly = None
         self.temp_circle = None
         self.temp_arc = None
+        self.temp_cloud = None
         self.annotation_items.clear()
         self.scene.clear()
+
 
         # 白色の用紙背景アイテム（PDF透明度調整時に黒ずまず白く淡色化させる）
         rect = QRectF(pixmap.rect())
@@ -536,9 +548,11 @@ class PDFCanvas(QGraphicsView):
                 Qt.Key_L: ToolMode.DRAW_LINE,
                 Qt.Key_R: ToolMode.POLYGON_AREA,
                 Qt.Key_C: ToolMode.DRAW_CIRCLE_DRAG,
+                Qt.Key_K: ToolMode.DRAW_CLOUD,
                 Qt.Key_T: ToolMode.TEXT,
                 Qt.Key_M: ToolMode.DRAW_MARKER,
             }
+
             if event.key() in key_map:
                 self.request_tool_change.emit(key_map[event.key()])
                 event.accept()
@@ -703,6 +717,33 @@ class PDFCanvas(QGraphicsView):
             
         if item_id:
             self.annotation_items[item_id] = poly
+
+    def add_cloud_annotation(self, points, color="#ff0000", item_id=None, line_width=2, stroke_opacity=100, fill_opacity=0, fill_color=""):
+        if not points or len(points) < 3:
+            return
+        cloud = CloudItem(points)
+        cloud.setAcceptHoverEvents(True)
+        stroke_c = QColor(color)
+        stroke_c.setAlpha(round(stroke_opacity / 100.0 * 255))
+        pen = QPen(stroke_c, line_width)
+        pen.setCosmetic(True)
+        cloud.setPen(pen)
+        if fill_opacity == 0:
+            cloud.setBrush(Qt.NoBrush)
+        else:
+            fill_base = QColor(fill_color) if fill_color else QColor(color)
+            fill_base.setAlpha(round(fill_opacity / 100.0 * 255))
+            cloud.setBrush(fill_base)
+        if item_id:
+            cloud.setData(0, item_id)
+            cloud.setData(1, QPointF(0, 0))
+            interactive = (self.tool_mode == ToolMode.SELECT)
+            cloud.setFlag(QGraphicsItem.ItemIsSelectable, interactive)
+            cloud.setFlag(QGraphicsItem.ItemIsMovable, interactive)
+        self.scene.addItem(cloud)
+        if item_id:
+            self.annotation_items[item_id] = cloud
+
 
     def add_circle_annotation(self, center, radius_px, text="", color="green", item_id=None, font_family="BIZ UDゴシック", font_size=12, line_width=2, stroke_opacity=100, fill_opacity=30, fill_color="", center_marker="", label_offset=None):
         circle = QGraphicsEllipseItem(center.x() - radius_px, center.y() - radius_px, radius_px * 2, radius_px * 2)
@@ -1055,14 +1096,14 @@ class PDFCanvas(QGraphicsView):
                             pen.setWidth(attrs["line_width"])
                         item.setPen(pen)
 
-                        if "color" in attrs and isinstance(item, QGraphicsPolygonItem) and "fill_color" not in attrs:
+                        if "color" in attrs and isinstance(item, (QGraphicsPolygonItem, CloudItem)) and "fill_color" not in attrs:
                             cur_brush = item.brush()
                             if cur_brush.style() != Qt.NoBrush:
                                 cur_fill_a = cur_brush.color().alpha()
                                 item.setBrush(QColor(base_rgb.red(), base_rgb.green(), base_rgb.blue(), cur_fill_a))
 
                 if "fill_color" in attrs or "fill_opacity" in attrs:
-                    if isinstance(item, (QGraphicsPolygonItem, QGraphicsEllipseItem)):
+                    if isinstance(item, (QGraphicsPolygonItem, QGraphicsEllipseItem, CloudItem)):
                         cur_brush = item.brush()
                         if "fill_opacity" in attrs:
                             fill_alpha = round(attrs["fill_opacity"] / 100.0 * 255)
@@ -1100,7 +1141,7 @@ class PDFCanvas(QGraphicsView):
                     elif isinstance(item, QGraphicsPathItem) and item.data(4) == "arc" and "center_marker" in attrs:
                         center = item.data(5)
                         self._draw_center_marker(item, center.x(), center.y(), attrs["center_marker"], color_str)
-                    elif isinstance(item, QGraphicsPathItem) and item.data(4) != "arc":
+                    elif isinstance(item, QGraphicsPathItem) and item.data(4) != "arc" and not isinstance(item, CloudItem):
                         path = item.path()
                         n = path.elementCount()
                         if n >= 2:
@@ -1293,6 +1334,8 @@ class PDFCanvas(QGraphicsView):
             return [line.p1(), line.p2()]
         elif isinstance(item, QGraphicsPolygonItem):
             return [p for p in item.polygon()]
+        elif isinstance(item, CloudItem):
+            return item.points()
         elif isinstance(item, QGraphicsPathItem):
             if item.data(4) == "arc":
                 return []
@@ -1334,6 +1377,8 @@ class PDFCanvas(QGraphicsView):
                 if isinstance(child, CustomTextItem) and child.data(3) == "label":
                     offset = getattr(child, "label_offset", QPointF(0, 0))
                     child.setPos(ref_pos + offset)
+        elif isinstance(item, CloudItem):
+            item.set_points(points)
         elif isinstance(item, QGraphicsPathItem):
             path = QPainterPath()
             path.moveTo(points[0])
@@ -1357,7 +1402,7 @@ class PDFCanvas(QGraphicsView):
         points = self._get_item_points(item)
         if not points:
             return
-        is_polygon = isinstance(item, QGraphicsPolygonItem)
+        is_polygon = isinstance(item, (QGraphicsPolygonItem, CloudItem))
         min_pts = 3 if is_polygon else 2
         if len(points) <= min_pts:
             return
@@ -1373,9 +1418,11 @@ class PDFCanvas(QGraphicsView):
         edit_action.triggered.connect(lambda: self.start_node_editing(item_id))
         menu.addAction(edit_action)
         
-        label_action = QAction("🏷️ ラベル位置を調整", self)
-        label_action.triggered.connect(lambda: self.start_label_editing(item_id))
-        menu.addAction(label_action)
+        target_item = self.annotation_items.get(item_id)
+        if not isinstance(target_item, CloudItem):
+            label_action = QAction("🏷️ ラベル位置を調整", self)
+            label_action.triggered.connect(lambda: self.start_label_editing(item_id))
+            menu.addAction(label_action)
         
         delete_action = QAction("❌ 削除", self)
         delete_action.triggered.connect(lambda: self.request_delete.emit(item_id))
@@ -1386,7 +1433,7 @@ class PDFCanvas(QGraphicsView):
         menu = QMenu(self)
         menu.setStyleSheet("QMenu { background-color: #1e1e2f; color: white; border: 1px solid #333344; } QMenu::item:selected { background-color: #7c4dff; }")
         points = self._get_item_points(handle_item.parent_item)
-        is_polygon = isinstance(handle_item.parent_item, QGraphicsPolygonItem)
+        is_polygon = isinstance(handle_item.parent_item, (QGraphicsPolygonItem, CloudItem))
         min_pts = 3 if is_polygon else 2
         can_delete = len(points) > min_pts
         del_action = QAction("❌ 頂点を削除", self)
@@ -1428,12 +1475,15 @@ class PDFCanvas(QGraphicsView):
             return -1, None, float('inf')
         
         local_pos = item.mapFromScene(scene_pos)
-        best_dist = 15.0 / self.transform().m11()
+        scale = self.transform().m11()
+        base_tol = 15.0 / scale if scale > 0 else 15.0
+        best_dist = max(base_tol, 15.0) if isinstance(item, CloudItem) else base_tol
         best_idx = -1
         best_proj = None
         n = len(points)
-        is_polygon = isinstance(item, QGraphicsPolygonItem)
+        is_polygon = isinstance(item, (QGraphicsPolygonItem, CloudItem))
         limit = n if is_polygon else n - 1
+
         
         for i in range(limit):
             s1 = points[i]

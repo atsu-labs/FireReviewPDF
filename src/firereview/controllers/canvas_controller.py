@@ -73,6 +73,20 @@ class CanvasController:
         )
         self.update_object_panel()
 
+    def on_cloud_complete(self, points):
+        ann = self.add_to_model("cloud", points, real_value=0.0, text="")
+        ann.color = self.tool_controller.current_cloud_color
+        ann.line_width = self.tool_controller.current_cloud_line_width
+        ann.fill_color = self.tool_controller.current_cloud_fill_color
+        ann.fill_opacity = self.tool_controller.current_cloud_fill_opacity
+        self.canvas.add_cloud_annotation(
+            points, color=ann.color, item_id=ann.id,
+            line_width=ann.line_width, stroke_opacity=ann.stroke_opacity,
+            fill_opacity=ann.fill_opacity, fill_color=ann.fill_color,
+        )
+        self.update_object_panel()
+
+
     def on_polyline_complete(self, points):
         ann = self.add_to_model("polyline", points, real_value=0.0, text="")
         ann.color = self.tool_controller.current_shape_color
@@ -279,6 +293,8 @@ class CanvasController:
                     ann.color = attrs["color"]
                     if ann.type == "marker":
                         self.tool_controller.current_marker_color = attrs["color"]
+                    elif ann.type == "cloud":
+                        self.tool_controller.current_cloud_color = attrs["color"]
                     else:
                         self.tool_controller.current_shape_color = attrs["color"]
                 if "fill_color" in attrs: ann.fill_color = attrs["fill_color"]
@@ -500,6 +516,13 @@ class CanvasController:
                         fill_opacity=ann.fill_opacity, fill_color=ann.fill_color,
                         label_offset=getattr(ann, "label_offset", [0.0, 0.0]),
                     )
+                elif ann.type == "cloud":
+                    self.canvas.add_cloud_annotation(
+                        ann.points, color=ann.color, item_id=ann.id,
+                        line_width=ann.line_width, stroke_opacity=ann.stroke_opacity,
+                        fill_opacity=ann.fill_opacity, fill_color=ann.fill_color,
+                    )
+
                 elif ann.type == "circle":
                     radius_px = ann.radius_px
                     if radius_px <= 0 and ann.real_value > 0 and current_scale_factor > 0:
