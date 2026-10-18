@@ -1399,7 +1399,7 @@ class PDFCanvas(QGraphicsView):
     def reset_view(self):
         self._rerender_timer.stop()
         self.clear_high_res_background()
-        self._logical_zoom_ratio = 1.0
+        self._logical_zoom_ratio = None
         self.resetTransform()
         if self.background_item:
             self.fitInView(self.background_item, Qt.KeepAspectRatio)

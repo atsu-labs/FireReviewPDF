@@ -224,3 +224,35 @@ def test_main_window_toolbar_zoom_and_grayscale_sync(qapp, sample_pdf):
     assert window.canvas.current_high_res_dpi == 0
 
     window.pdf_handler.close()
+
+
+def test_fit_to_page_zoom_in_does_not_falsely_trigger_high_res(qapp, sample_pdf):
+    # Fit to Page（全体表示）した状態からズームインしても、
+    # 画面上の表示倍率が等倍以下（150 DPI未満）なら不要な再描画が走らないことを検証
+    handler = PDFHandler()
+    assert handler.open_file(sample_pdf) is True
+
+    canvas = PDFCanvas()
+    canvas.resize(200, 200)
+    canvas.set_high_res_provider(
+        lambda rect, dpi: handler.get_page_clip_pixmap(0, rect, dpi=dpi, base_dpi=150)
+    )
+    canvas.set_page_image(handler.get_page_pixmap(0, dpi=150))
+    canvas.reset_view()
+
+    # reset_view() 直後は _logical_zoom_ratio が None で、等倍未満のため 150 DPI
+    assert canvas._logical_zoom_ratio is None
+    assert canvas.transform().m11() < 0.6
+    assert canvas._calculate_target_dpi() == 150
+    assert canvas._rerender_timer.isActive() is False
+
+    # 1段階拡大（zoom_in: 1.25倍）しても依然として等倍未満（< 1.02）のため再描画タイマーは発火しない
+    canvas.zoom_in()
+    assert canvas._logical_zoom_ratio is None
+    assert canvas.transform().m11() < 0.8
+    assert canvas._calculate_target_dpi() == 150
+    assert canvas._rerender_timer.isActive() is False
+    assert canvas.high_res_bg_item is None
+
+    handler.close()
+
