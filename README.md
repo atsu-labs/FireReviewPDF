@@ -63,6 +63,7 @@
 ### D. 操作性・ビュー制御・ショートカット
 * **ズーム・ページ表示制御:**
   * ツールバーのコンボボックス、マウスホイール、またはメニューバーの「表示」メニューから拡大（`Ctrl + +`）・縮小（`Ctrl + -`）を行えます。
+  * **高倍率ズーム時の背景PDF動的再レンダリング:** 拡大表示時（150 DPI相当を超えるズーム時）は、ズームやパン操作の停止後（200msデバウンス）に現在の表示領域（＋周囲25%のスクロール余白）を最大 **600 DPI（400%相当）** で動的にクリップ再ラスタライズして重ね合わせ表示します。大判図面でもメモリを圧迫せず、細かな文字や記号をボケのない鮮明な画質で確認できます（等倍以下への縮小時は即座に150 DPIベース画像へ復帰）。
   * **ページ全体を表示 (`Ctrl + 0`):** ページ全体がキャンバスに収まるよう自動調整（フィット）します（ページ切替時にも自動適用）。
   * **物理DPIベースの100%実寸大表示 (`Ctrl + 1`):** ディスプレイの物理DPI情報を自動取得し、印刷時のサイズと画面上の表示寸法が一致する「実寸大表示（100%）」に瞬時に切り替えます。
   * **ページ移動 (`PageUp` / `PageDown`):** 前後のページへ素早く移動できます。
@@ -177,7 +178,7 @@ PyInstaller を使用して、単一実行可能ファイル（Onefile 形式）
   * 基底クラス `BaseAnnotation` と図形固有の派生クラス（`CircleAnnotation`, `ArcAnnotation`, `CloudAnnotation`, `TextAnnotation` 等）によるポリモーフィズム設計。
   * `Annotation("type")` ファクトリおよび `Annotation.from_dict()` の動的ディスパッチによる後方互換性維持。
 * **PDF処理エンジン:** PyMuPDF (fitz)
-  * 本文表示用の150 DPIラスタライズとサムネイル用の30 DPI低解像度レンダリング、およびグレースケール（`fitz.csGRAY`）ラスタライズに対応。容量制限付きLRUキャッシュ（最大3ページ）および `QImage` メモリ所有権の分離（`.copy()`）により高速描画と省メモリ・クラッシュ防止を両立。
+  * 本文表示用の150 DPIラスタライズ、高倍率ズーム時の表示領域クリップ高解像度ラスタライズ（最大600 DPI、専用LRUキャッシュ管理）、サムネイル用の30 DPI低解像度レンダリング、およびグレースケール（`fitz.csGRAY`）ラスタライズに対応。容量制限付きLRUキャッシュ（全体画像最大3ページ・クリップ画像最大6件）および `QImage` メモリ所有権の分離（`.copy()`）により高速描画と省メモリ・クラッシュ防止を両立。
   * **Strategy / Registryパターン**（`BasePdfRenderer` を継承する図形別専用レンダラー）による疎結合なPDF出力ロジック分離。
   * アノテーションフォントを「BIZ UDゴシック」に統一し、フォントメトリクス基準のベースライン・行送り補正、DPI換算の線幅・マーカー補正、ページ回転補正、背景淡色化マスク合成により、キャンバス表示と出力PDFの完全一致を実現。
   * PDF出力時は書き込み権限・排他ロックの事前検証（`check_writable`）と一時ファイル経由のアトミック保存（`os.replace`）によりファイル破損を防止。
@@ -220,7 +221,7 @@ FireReviewPDF/
 │       │   ├── document_manager.py # プロジェクトファイル・PDF入出力・ダーティ管理
 │       │   ├── measurement_service.py # スケール計算・実寸法計測・単位変換サービス
 │       │   ├── pdf_exporter.py # アノテーション合成・アトミックPDF出力オーケストレーター
-│       │   ├── pdf_handler.py  # PyMuPDFを使用したPDF描画・グレースケール・LRUキャッシュ・サイズ解析
+│       │   ├── pdf_handler.py  # PyMuPDFを使用したPDF描画・高解像度クリップ・グレースケール・LRUキャッシュ・サイズ解析
 │       │   ├── pdf_renderers/  # 図形別PDF描画ストラテジー（Strategyパターン）
 │       │   │   ├── __init__.py # レンダラーレジストリ
 │       │   │   ├── base.py     # レンダラー基底クラスおよび描画コンテキスト
@@ -253,7 +254,7 @@ FireReviewPDF/
 │               ├── __init__.py
 │               ├── enums.py    # キャンバスおよびツールの動作モード定義
 │               ├── utils.py    # ジオメトリ計算、角度スナップ、雲マークベジェ生成ユーティリティ
-│               ├── view.py     # PDFCanvasビューア本体（QGraphicsView / ズーム・パン・一時パン制御）
+│               ├── view.py     # PDFCanvasビューア本体（QGraphicsView / ズーム・パン・高倍率動的再描画制御）
 │               ├── items.py    # カスタム描画アイテム（CustomTextItem, MarkerItem, LegendItem, CloudItem 等）
 │               └── tools/      # 各種描画モードのStateイベントハンドラ群
 │                   ├── __init__.py
@@ -274,6 +275,7 @@ FireReviewPDF/
     ├── test_canvas_utils.py
     ├── test_dirty_state.py
     ├── test_document_manager.py
+    ├── test_issue_42_dynamic_rerender.py
     ├── test_issue_50_linewidth_dpi.py
     ├── test_issue_51_text_alignment.py
     ├── test_issue_52_navigator_selection.py

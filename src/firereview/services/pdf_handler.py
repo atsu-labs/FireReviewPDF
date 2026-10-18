@@ -1,9 +1,12 @@
 from collections import OrderedDict
 import fitz  # PyMuPDF
+from PySide6.QtCore import QRectF
 from PySide6.QtGui import QImage, QPixmap
 
 class PDFHandler:
     SIZE_LABEL_UNKNOWN = "PDFサイズ: -"
+    BASE_RENDER_DPI = 150
+    MAX_DYNAMIC_DPI = 600
     _POINTS_TO_MM = 25.4 / 72.0
     _ISO_A_SIZES_MM = {
         "A0": (841, 1189),
@@ -21,12 +24,15 @@ class PDFHandler:
         self.current_page_num = 0
         self._pixmap_cache = OrderedDict()
         self._cache_limit = 3
+        self._clip_cache = OrderedDict()
+        self._clip_cache_limit = 6
 
     def open_file(self, file_path):
         try:
             self.doc = fitz.open(file_path)
             self.current_page_num = 0
             self._pixmap_cache.clear()
+            self._clip_cache.clear()
             return True
         except Exception as e:
             print(f"Error opening PDF: {e}")
@@ -64,6 +70,94 @@ class PDFHandler:
             self._pixmap_cache.popitem(last=False)  # Pop oldest (first item)
         return pixmap
 
+    def get_page_clip_pixmap(
+        self,
+        page_num: int,
+        clip_rect_scene: QRectF,
+        dpi: int = 300,
+        base_dpi: int = BASE_RENDER_DPI,
+        grayscale: bool = False,
+    ):
+        """指定されたシーン座標領域（base_dpi基準）のみを高解像度でラスタライズして返す。
+
+        Returns:
+            tuple[QPixmap, QRectF] | None: (高解像度QPixmap, base_dpiシーン座標系での正確な配置QRectF)
+        """
+        if not self.doc or page_num < 0 or page_num >= len(self.doc):
+            return None
+        if dpi <= 0 or base_dpi <= 0:
+            return None
+
+        target_dpi = min(int(round(dpi)), self.MAX_DYNAMIC_DPI)
+        if isinstance(clip_rect_scene, QRectF):
+            rx, ry, rw, rh = (
+                clip_rect_scene.x(),
+                clip_rect_scene.y(),
+                clip_rect_scene.width(),
+                clip_rect_scene.height(),
+            )
+        else:
+            rx, ry, rw, rh = clip_rect_scene
+
+        if rw <= 0 or rh <= 0:
+            return None
+
+        page = self.doc[page_num]
+        page_rect = page.rect
+        scale_to_pt = 72.0 / float(base_dpi)
+
+        fitz_clip = fitz.Rect(
+            page_rect.x0 + rx * scale_to_pt,
+            page_rect.y0 + ry * scale_to_pt,
+            page_rect.x0 + (rx + rw) * scale_to_pt,
+            page_rect.y0 + (ry + rh) * scale_to_pt,
+        ) & page_rect
+
+        if fitz_clip.is_empty or fitz_clip.width <= 0 or fitz_clip.height <= 0:
+            return None
+
+        zoom = float(target_dpi) / 72.0
+        mat = fitz.Matrix(zoom, zoom)
+        full_irect = (page_rect * mat).irect
+        clip_irect = (fitz_clip * mat).irect
+
+        cache_key = (
+            page_num,
+            target_dpi,
+            bool(grayscale),
+            clip_irect.x0,
+            clip_irect.y0,
+            clip_irect.x1,
+            clip_irect.y1,
+        )
+        if cache_key in self._clip_cache:
+            cached = self._clip_cache.pop(cache_key)
+            self._clip_cache[cache_key] = cached
+            return cached
+
+        if grayscale:
+            pix = page.get_pixmap(matrix=mat, clip=fitz_clip, colorspace=fitz.csGRAY)
+            img = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format_Grayscale8).copy()
+        else:
+            pix = page.get_pixmap(matrix=mat, clip=fitz_clip)
+            img = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format_RGB888).copy()
+        pixmap = QPixmap.fromImage(img)
+
+        scene_scale = float(base_dpi) / float(target_dpi)
+        pix_x0 = pix.irect[0]
+        pix_y0 = pix.irect[1]
+        scene_x = (pix_x0 - full_irect.x0) * scene_scale
+        scene_y = (pix_y0 - full_irect.y0) * scene_scale
+        scene_w = pix.width * scene_scale
+        scene_h = pix.height * scene_scale
+        actual_scene_rect = QRectF(scene_x, scene_y, scene_w, scene_h)
+
+        result = (pixmap, actual_scene_rect)
+        self._clip_cache[cache_key] = result
+        if len(self._clip_cache) > self._clip_cache_limit:
+            self._clip_cache.popitem(last=False)
+        return result
+
     def get_page_size_mm(self, page_num):
         """指定ページのサイズをミリメートルで返す。
 
@@ -100,3 +194,4 @@ class PDFHandler:
             self.doc.close()
             self.doc = None
             self._pixmap_cache.clear()
+            self._clip_cache.clear()

@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsPixmapIte
                                  QGraphicsLineItem, QGraphicsTextItem, QGraphicsEllipseItem, 
                                  QGraphicsPolygonItem, QGraphicsPathItem, QMenu, QGraphicsItem,
                                  QGraphicsRectItem)
-from PySide6.QtCore import Qt, Signal, QPointF, QRectF, QEvent
+from PySide6.QtCore import Qt, Signal, QPointF, QRectF, QEvent, QTimer
 from PySide6.QtGui import QPainter, QPen, QColor, QPolygonF, QAction, QFont, QPainterPath, QBrush
 
 from .items import CustomTextItem, VertexHandleItem, CloudItem
@@ -53,8 +53,24 @@ class PDFCanvas(QGraphicsView):
         
         self.background_item = None
         self.paper_item = None
+        self.high_res_paper_item = None
+        self.high_res_bg_item = None
         self.bg_opacity = 1.0
         self.tool_mode = ToolMode.NONE
+
+        # 高倍率ズーム時の動的再レンダリング設定 (Issue #42)
+        self.base_render_dpi = 150
+        self.max_dynamic_dpi = 600
+        self.viewport_margin_ratio = 0.25
+        self.rerender_debounce_ms = 200
+        self.current_high_res_dpi = 0
+        self.current_high_res_rect = QRectF()
+        self._logical_zoom_ratio = None
+        self._high_res_provider = None
+        self._rerender_timer = QTimer(self)
+        self._rerender_timer.setSingleShot(True)
+        self._rerender_timer.setInterval(self.rerender_debounce_ms)
+        self._rerender_timer.timeout.connect(self.update_high_res_background)
         
         # Interaction state
         self.temp_points = []
@@ -122,6 +138,16 @@ class PDFCanvas(QGraphicsView):
         
         self.hover_connection_line = None
         self.scene.installEventFilter(self)
+        self.horizontalScrollBar().valueChanged.connect(self._on_viewport_scrolled)
+        self.verticalScrollBar().valueChanged.connect(self._on_viewport_scrolled)
+
+    def _is_background_layer_item(self, item) -> bool:
+        return item in (
+            self.background_item,
+            self.paper_item,
+            self.high_res_bg_item,
+            self.high_res_paper_item,
+        )
 
     def _get_active_tool(self):
         return self.tools.get(self.tool_mode)
@@ -179,7 +205,7 @@ class PDFCanvas(QGraphicsView):
         if active:
             self._original_accepted_buttons.clear()
             for item in self.scene.items():
-                if item == self.background_item:
+                if self._is_background_layer_item(item):
                     continue
                 
                 iid = item.data(0)
@@ -199,7 +225,7 @@ class PDFCanvas(QGraphicsView):
                         item.setAcceptedMouseButtons(Qt.NoButton)
         else:
             for item in self.scene.items():
-                if item == self.background_item:
+                if self._is_background_layer_item(item):
                     continue
                 
                 iid = item.data(0)
@@ -225,7 +251,8 @@ class PDFCanvas(QGraphicsView):
 
     def _set_items_interactive(self, interactive):
         for item in self.scene.items():
-            if item == self.background_item: continue
+            if self._is_background_layer_item(item):
+                continue
             if item.data(0):
                 if item.data(3) == "label":
                     is_editing = (self.editing_label_item_id == item.data(0))
@@ -255,13 +282,151 @@ class PDFCanvas(QGraphicsView):
         self.bg_opacity = max(0.1, min(1.0, float(opacity)))
         if self.background_item:
             self.background_item.setOpacity(self.bg_opacity)
+        if self.high_res_bg_item:
+            self.high_res_bg_item.setOpacity(self.bg_opacity)
+
+    def set_high_res_provider(self, provider_fn):
+        """高倍率時のクリップ描画プロバイダ関数 `(clip_rect_scene, target_dpi) -> (QPixmap, QRectF) | None` を登録する"""
+        self._high_res_provider = provider_fn
+
+    def _calculate_target_dpi(self) -> int:
+        if self._logical_zoom_ratio is not None:
+            effective_zoom = self._logical_zoom_ratio
+        else:
+            effective_zoom = self.transform().m11()
+
+        if effective_zoom <= 1.02:
+            return self.base_render_dpi
+
+        target_dpi = int(round(self.base_render_dpi * effective_zoom))
+        if target_dpi <= self.base_render_dpi:
+            return self.base_render_dpi
+        return min(self.max_dynamic_dpi, target_dpi)
+
+    def get_visible_scene_rect(self, margin_ratio: float = None) -> QRectF:
+        """現在のビューポート表示領域（＋指定比率の周囲余白）をシーン座標系で返し、ページ領域でクリップする"""
+        if not self.background_item:
+            return QRectF()
+        if margin_ratio is None:
+            margin_ratio = self.viewport_margin_ratio
+
+        vp_rect = self.viewport().rect()
+        if vp_rect.isEmpty():
+            return QRectF()
+
+        visible_scene = self.mapToScene(vp_rect).boundingRect()
+        if margin_ratio > 0:
+            dx = visible_scene.width() * margin_ratio
+            dy = visible_scene.height() * margin_ratio
+            visible_scene = visible_scene.adjusted(-dx, -dy, dx, dy)
+
+        page_rect = self.background_item.boundingRect()
+        return visible_scene.intersected(page_rect)
+
+    def clear_high_res_background(self):
+        """高解像度パッチ（およびその白マスク下地）を破棄してベース150 DPI画像のみに戻す"""
+        if self.high_res_bg_item:
+            try:
+                self.scene.removeItem(self.high_res_bg_item)
+            except RuntimeError:
+                pass
+            self.high_res_bg_item = None
+
+        if self.high_res_paper_item:
+            try:
+                self.scene.removeItem(self.high_res_paper_item)
+            except RuntimeError:
+                pass
+            self.high_res_paper_item = None
+
+        self.current_high_res_dpi = 0
+        self.current_high_res_rect = QRectF()
+
+    def _schedule_high_res_update(self):
+        """ズーム・パン・リサイズに応じた高解像度再描画をスケジュール（等倍以下への縮小時は即時破棄）"""
+        if not self.background_item or not self._high_res_provider:
+            return
+        target_dpi = self._calculate_target_dpi()
+        if target_dpi <= self.base_render_dpi:
+            self._rerender_timer.stop()
+            self.clear_high_res_background()
+            return
+        self._rerender_timer.start(self.rerender_debounce_ms)
+
+    def update_high_res_background(self) -> bool:
+        """現在のビューポート領域を高解像度でラスタライズし、ベース画像の上に重ねて更新する"""
+        if not self.background_item or not self._high_res_provider:
+            return False
+
+        target_dpi = self._calculate_target_dpi()
+        if target_dpi <= self.base_render_dpi:
+            self.clear_high_res_background()
+            return False
+
+        clip_rect = self.get_visible_scene_rect(margin_ratio=self.viewport_margin_ratio)
+        if clip_rect.isEmpty() or clip_rect.width() <= 0 or clip_rect.height() <= 0:
+            return False
+
+        res = self._high_res_provider(clip_rect, target_dpi)
+        if not res:
+            return False
+
+        high_res_pixmap, actual_scene_rect = res
+        if not high_res_pixmap or high_res_pixmap.isNull() or actual_scene_rect.isEmpty():
+            return False
+
+        # 半透明背景時（bg_opacity < 1.0）にベース画像と二重合成されて濃くなるのを防ぐ白下地マスク
+        if self.high_res_paper_item is None:
+            self.high_res_paper_item = QGraphicsRectItem()
+            self.high_res_paper_item.setBrush(QBrush(Qt.white))
+            self.high_res_paper_item.setPen(QPen(Qt.NoPen))
+            self.high_res_paper_item.setZValue(-0.9)
+            self.high_res_paper_item.setFlag(QGraphicsItem.ItemIsSelectable, False)
+            self.high_res_paper_item.setFlag(QGraphicsItem.ItemIsMovable, False)
+            self.high_res_paper_item.setAcceptedMouseButtons(Qt.NoButton)
+            self.scene.addItem(self.high_res_paper_item)
+        self.high_res_paper_item.setRect(actual_scene_rect)
+
+        if self.high_res_bg_item is None:
+            self.high_res_bg_item = QGraphicsPixmapItem()
+            self.high_res_bg_item.setZValue(-0.8)
+            self.high_res_bg_item.setTransformationMode(Qt.SmoothTransformation)
+            self.high_res_bg_item.setFlag(QGraphicsItem.ItemIsSelectable, False)
+            self.high_res_bg_item.setFlag(QGraphicsItem.ItemIsMovable, False)
+            self.high_res_bg_item.setAcceptedMouseButtons(Qt.NoButton)
+            self.scene.addItem(self.high_res_bg_item)
+
+        self.high_res_bg_item.setPixmap(high_res_pixmap)
+        self.high_res_bg_item.setPos(actual_scene_rect.topLeft())
+        scale_factor = actual_scene_rect.width() / float(high_res_pixmap.width())
+        self.high_res_bg_item.setScale(scale_factor)
+        self.high_res_bg_item.setOpacity(self.bg_opacity)
+
+        self.current_high_res_dpi = target_dpi
+        self.current_high_res_rect = QRectF(actual_scene_rect)
+        self.viewport().update()
+        return True
+
+    def _on_viewport_scrolled(self, _value=0):
+        if self._calculate_target_dpi() > self.base_render_dpi:
+            self._schedule_high_res_update()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._calculate_target_dpi() > self.base_render_dpi:
+            self._schedule_high_res_update()
 
     def set_page_image(self, pixmap):
+        self._rerender_timer.stop()
         self.temp_line = None
         self.temp_poly = None
         self.temp_circle = None
         self.temp_arc = None
         self.temp_cloud = None
+        self.high_res_paper_item = None
+        self.high_res_bg_item = None
+        self.current_high_res_dpi = 0
+        self.current_high_res_rect = QRectF()
         self.annotation_items.clear()
         self.scene.clear()
 
@@ -283,13 +448,19 @@ class PDFCanvas(QGraphicsView):
         self.scene.addItem(self.background_item)
         self.scene.setSceneRect(self.background_item.boundingRect())
 
+        if self._calculate_target_dpi() > self.base_render_dpi:
+            self._schedule_high_res_update()
+
     def wheelEvent(self, event):
         if event.modifiers() & Qt.ControlModifier:
             zoom_in_factor = 1.25
             zoom_out_factor = 1 / zoom_in_factor
             zoom_factor = zoom_in_factor if event.angleDelta().y() > 0 else zoom_out_factor
+            if self._logical_zoom_ratio is not None:
+                self._logical_zoom_ratio *= zoom_factor
             self.scale(zoom_factor, zoom_factor)
             self._emit_zoom_changed()
+            self._schedule_high_res_update()
         elif event.modifiers() & Qt.ShiftModifier:
             delta = event.angleDelta().y()
             self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta)
@@ -305,7 +476,8 @@ class PDFCanvas(QGraphicsView):
 
     def drawForeground(self, painter, rect):
         for item in self.scene.selectedItems():
-            if item == self.background_item: continue
+            if self._is_background_layer_item(item):
+                continue
             painter.save()
             painter.setPen(QPen(QColor(255, 255, 255), 1, Qt.DashLine))
             painter.setBrush(Qt.NoBrush)
@@ -445,13 +617,19 @@ class PDFCanvas(QGraphicsView):
 
     def zoom_in(self, factor=1.25):
         """キャンバス表示倍率を段階的に拡大する"""
+        if self._logical_zoom_ratio is not None:
+            self._logical_zoom_ratio *= factor
         self.scale(factor, factor)
         self._emit_zoom_changed()
+        self._schedule_high_res_update()
 
     def zoom_out(self, factor=1.25):
         """キャンバス表示倍率を段階的に縮小する"""
+        if self._logical_zoom_ratio is not None:
+            self._logical_zoom_ratio /= factor
         self.scale(1.0 / factor, 1.0 / factor)
         self._emit_zoom_changed()
+        self._schedule_high_res_update()
 
     def mouseDoubleClickEvent(self, event):
         tool = self._get_active_tool()
@@ -528,7 +706,7 @@ class PDFCanvas(QGraphicsView):
                         event.accept()
                         return
 
-            selected_items = [item for item in self.scene.selectedItems() if item != self.background_item]
+            selected_items = [item for item in self.scene.selectedItems() if not self._is_background_layer_item(item)]
             if selected_items:
                 ids_to_delete = []
                 for item in selected_items:
@@ -1219,18 +1397,23 @@ class PDFCanvas(QGraphicsView):
                 break
 
     def reset_view(self):
+        self._rerender_timer.stop()
+        self.clear_high_res_background()
+        self._logical_zoom_ratio = 1.0
         self.resetTransform()
         if self.background_item:
             self.fitInView(self.background_item, Qt.KeepAspectRatio)
         self._emit_zoom_changed()
 
-    def set_zoom_scale(self, target_scale):
+    def set_zoom_scale(self, target_scale, logical_zoom_ratio=None):
         current_zoom = self.transform().m11()
         if current_zoom <= 0 or target_scale <= 0:
             return
+        self._logical_zoom_ratio = logical_zoom_ratio
         factor = target_scale / current_zoom
         self.scale(factor, factor)
         self._emit_zoom_changed()
+        self._schedule_high_res_update()
 
     # === Node Editing Implementation ===
 
@@ -1510,7 +1693,7 @@ class PDFCanvas(QGraphicsView):
                 shape_item = None
                 label_item = None
                 
-                if item and item != self.background_item:
+                if item and not self._is_background_layer_item(item):
                     if isinstance(item, CustomTextItem) and item.data(3) == "label":
                         label_item = item
                         shape_item = item.parentItem()

@@ -309,6 +309,7 @@ class MainWindow(QMainWindow):
         self.canvas.request_delete.connect(self.on_delete_item)
         self.canvas.existing_text_edited.connect(self.on_existing_text_edited)
         self.canvas.zoom_changed.connect(self._update_zoom_label)
+        self.canvas.set_high_res_provider(self._provide_high_res_clip)
         content_area.addWidget(self.canvas)
 
         # Property Panel (Right)
@@ -450,7 +451,19 @@ class MainWindow(QMainWindow):
             return
 
         target_canvas_scale = (zoom_percent / 100.0) * physical_dpi / self.PDF_RENDER_DPI
-        self.canvas.set_zoom_scale(target_canvas_scale)
+        self.canvas.set_zoom_scale(target_canvas_scale, logical_zoom_ratio=zoom_percent / 100.0)
+
+    def _provide_high_res_clip(self, clip_rect_scene, target_dpi):
+        if not self.pdf_handler or not self.pdf_handler.doc:
+            return None
+        grayscale = getattr(self.model, "bg_grayscale", False)
+        return self.pdf_handler.get_page_clip_pixmap(
+            self.current_page,
+            clip_rect_scene,
+            dpi=target_dpi,
+            base_dpi=self.PDF_RENDER_DPI,
+            grayscale=grayscale,
+        )
 
     def _update_canvas_shape_defaults(self):
         self.tool_controller.update_canvas_shape_defaults()
@@ -598,7 +611,7 @@ class MainWindow(QMainWindow):
         if physical_dpi <= 0:
             return
         target_canvas_scale = physical_dpi / self.PDF_RENDER_DPI
-        self.canvas.set_zoom_scale(target_canvas_scale)
+        self.canvas.set_zoom_scale(target_canvas_scale, logical_zoom_ratio=1.0)
 
     def showEvent(self, event):
         super().showEvent(event)
