@@ -13,6 +13,10 @@ class MainMenuBar(QMenuBar):
     export_pdf_requested = Signal()
     preferences_requested = Signal()
 
+    # 編集操作シグナル
+    undo_requested = Signal()
+    redo_requested = Signal()
+
     # ビュー・ページ操作シグナル
     zoom_in_requested = Signal()
     zoom_out_requested = Signal()
@@ -65,6 +69,21 @@ class MainMenuBar(QMenuBar):
         export_action.triggered.connect(self.export_pdf_requested.emit)
         file_menu.addAction(export_action)
 
+        # 編集メニュー
+        edit_menu = self.addMenu("編集")
+
+        self.undo_action = QAction("元に戻す", self)
+        self.undo_action.setShortcut("Ctrl+Z")
+        self.undo_action.setEnabled(False)
+        self.undo_action.triggered.connect(self.undo_requested.emit)
+        edit_menu.addAction(self.undo_action)
+
+        self.redo_action = QAction("やり直す", self)
+        self.redo_action.setShortcut("Ctrl+Y")
+        self.redo_action.setEnabled(False)
+        self.redo_action.triggered.connect(self.redo_requested.emit)
+        edit_menu.addAction(self.redo_action)
+
         # 表示メニュー
         view_menu = self.addMenu("表示")
 
@@ -108,4 +127,10 @@ class MainMenuBar(QMenuBar):
         pref_action.setShortcut("Ctrl+,")
         pref_action.triggered.connect(self.preferences_requested.emit)
         settings_menu.addAction(pref_action)
+
+    def set_undo_enabled(self, enabled: bool):
+        self.undo_action.setEnabled(enabled)
+
+    def set_redo_enabled(self, enabled: bool):
+        self.redo_action.setEnabled(enabled)
 

@@ -1384,8 +1384,15 @@ class PDFCanvas(QGraphicsView):
                     txt_new = self._add_text_item(attrs["text"], tx, ty, color_str, ff, fs)
                     if txt_new:
                         txt_new.setParentItem(item)
-                        txt_new.label_offset = QPointF(0, 0)
+                        raw_offset = attrs.get("label_offset", [0.0, 0.0]) or [0.0, 0.0]
+                        offset = QPointF(raw_offset[0], raw_offset[1]) if not isinstance(raw_offset, QPointF) else raw_offset
+                        txt_new.label_offset = offset
+                        if offset.x() != 0 or offset.y() != 0:
+                            ref_pos = self._get_shape_ref_pos(item)
+                            if ref_pos is not None:
+                                txt_new.setPos(ref_pos + offset)
                         txt_new.setData(0, item_id)
+                        txt_new.setData(1, txt_new.pos())
                         txt_new.setData(3, "label")
                         interactive = (self.tool_mode == ToolMode.SELECT)
                         is_editing = (self.editing_label_item_id == item_id)
@@ -1395,6 +1402,80 @@ class PDFCanvas(QGraphicsView):
                 self.scene.update()
                 self.viewport().update()
                 break
+
+    def sync_annotation_geometry(self, ann):
+        """注釈モデルの座標・ラベルオフセットをキャンバス上のQGraphicsItemへ同期する（Undo/Redo用）"""
+        item = self.annotation_items.get(ann.id)
+        if not item:
+            return
+        points = [QPointF(p.x(), p.y()) if isinstance(p, QPointF) else QPointF(float(p[0]), float(p[1])) for p in ann.points]
+        offset_list = getattr(ann, "label_offset", [0.0, 0.0]) or [0.0, 0.0]
+        offset = QPointF(offset_list[0], offset_list[1])
+
+        if isinstance(item, (QGraphicsLineItem, QGraphicsPolygonItem, CloudItem)):
+            item.setPos(0, 0)
+            item.setData(1, QPointF(0, 0))
+            for child in item.childItems():
+                if isinstance(child, CustomTextItem) and child.data(3) == "label":
+                    child.label_offset = offset
+            self._update_item_geometry(item, points)
+        elif isinstance(item, QGraphicsPathItem):
+            if item.data(4) == "arc":
+                if points:
+                    item.setPos(0, 0)
+                    item.setData(1, QPointF(0, 0))
+                    item.setData(5, points[0])
+                    for child in item.childItems():
+                        if isinstance(child, CustomTextItem) and child.data(3) == "label":
+                            child.label_offset = offset
+                    self.update_item_properties(ann.id, {"center_marker": getattr(ann, "center_marker", "") or ""})
+            else:
+                item.setPos(0, 0)
+                item.setData(1, QPointF(0, 0))
+                for child in item.childItems():
+                    if isinstance(child, CustomTextItem) and child.data(3) == "label":
+                        child.label_offset = offset
+                self._update_item_geometry(item, points)
+                self.update_item_properties(
+                    ann.id,
+                    {"start_marker": getattr(ann, "start_marker", ""), "end_marker": getattr(ann, "end_marker", "")},
+                )
+        elif isinstance(item, QGraphicsEllipseItem):
+            if points:
+                orig_center = item.rect().center()
+                new_pos = points[0] - orig_center
+                item.setPos(new_pos)
+                item.setData(1, new_pos)
+                r = item.rect()
+                ref_pos = QPointF(r.center().x(), r.top() - 10)
+                for child in item.childItems():
+                    if isinstance(child, CustomTextItem) and child.data(3) == "label":
+                        child.label_offset = offset
+                        child.setPos(ref_pos + offset)
+                        child.setData(1, child.pos())
+        elif isinstance(item, CustomTextItem):
+            if points:
+                item.setPos(points[0])
+                item.setData(1, points[0])
+            if getattr(ann, "has_leader", False) and len(points) >= 2:
+                item.set_leader(True, points[1])
+            else:
+                item.set_leader(False)
+        else:
+            if points:
+                item.setPos(points[0])
+                item.setData(1, points[0])
+
+        if not isinstance(item, (QGraphicsEllipseItem, CustomTextItem)):
+            for child in item.childItems():
+                if isinstance(child, CustomTextItem) and child.data(3) == "label":
+                    child.setData(1, child.pos())
+
+        if self.editing_node_item_id == ann.id:
+            self.start_node_editing(ann.id)
+
+        self.scene.update()
+        self.viewport().update()
 
     def reset_view(self):
         self._rerender_timer.stop()

@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog,
                              QInputDialog, QMessageBox, QPushButton, 
                              QFrame, QDialog)
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QShortcut, QKeySequence
+from PySide6.QtGui import QShortcut, QKeySequence, QUndoStack
 import qtawesome as qta
 
 from .services.pdf_handler import PDFHandler
@@ -39,6 +39,7 @@ class MainWindow(QMainWindow):
         self.document_manager = DocumentManager(self.pdf_handler, parent=self)
         self.document_manager.dirty_changed.connect(self._on_dirty_changed)
         self.measurement_service = MeasurementService()
+        self.undo_stack = QUndoStack(self)
         self.tool_controller = ToolController(
             on_marker_updated_cb=lambda: self.update_marker_summary()
         )
@@ -217,6 +218,14 @@ class MainWindow(QMainWindow):
         self.menubar.export_pdf_requested.connect(self.export_pdf)
         self.menubar.preferences_requested.connect(self._open_preferences_dialog)
 
+        # 編集メニューのシグナル接続
+        self.menubar.undo_requested.connect(self.undo)
+        self.menubar.redo_requested.connect(self.redo)
+        self.undo_stack.canUndoChanged.connect(self.menubar.set_undo_enabled)
+        self.undo_stack.canRedoChanged.connect(self.menubar.set_redo_enabled)
+        self.menubar.set_undo_enabled(self.undo_stack.canUndo())
+        self.menubar.set_redo_enabled(self.undo_stack.canRedo())
+
         # 表示メニューのシグナル接続
         self.menubar.zoom_in_requested.connect(self.zoom_in)
         self.menubar.zoom_out_requested.connect(self.zoom_out)
@@ -345,6 +354,8 @@ class MainWindow(QMainWindow):
             get_current_scale_factor_fn=self._get_current_scale_factor,
             is_current_page_calibrated_fn=self._is_current_page_calibrated,
             set_tool_fn=self.set_tool,
+            go_to_page_fn=self.go_to_page,
+            undo_stack=self.undo_stack,
             parent_widget=self,
         )
 
@@ -558,6 +569,37 @@ class MainWindow(QMainWindow):
         self.shortcut_page_down = QShortcut(QKeySequence("PageDown"), self)
         self.shortcut_page_down.activated.connect(self.go_to_next_page)
 
+        self.shortcut_redo_shift_z = QShortcut(QKeySequence("Ctrl+Shift+Z"), self)
+        self.shortcut_redo_shift_z.activated.connect(self.redo)
+
+    def undo(self):
+        """直前の操作を取り消す (Ctrl+Z)"""
+        from PySide6.QtWidgets import QLineEdit
+        focus = QApplication.focusWidget() or self.focusWidget()
+        if isinstance(focus, QLineEdit) and focus.isUndoAvailable():
+            focus.undo()
+            return
+        if getattr(self.canvas, "editing_text_item", None) is not None:
+            doc = self.canvas.editing_text_item.document()
+            if doc and doc.isUndoAvailable():
+                doc.undo()
+                return
+        self.canvas_controller.undo()
+
+    def redo(self):
+        """取り消した操作をやり直す (Ctrl+Y)"""
+        from PySide6.QtWidgets import QLineEdit
+        focus = QApplication.focusWidget() or self.focusWidget()
+        if isinstance(focus, QLineEdit) and focus.isRedoAvailable():
+            focus.redo()
+            return
+        if getattr(self.canvas, "editing_text_item", None) is not None:
+            doc = self.canvas.editing_text_item.document()
+            if doc and doc.isRedoAvailable():
+                doc.redo()
+                return
+        self.canvas_controller.redo()
+
     def zoom_in(self):
         """表示倍率を段階的に拡大する"""
         self.canvas.zoom_in()
@@ -587,11 +629,27 @@ class MainWindow(QMainWindow):
 
     def keyPressEvent(self, event):
         from PySide6.QtWidgets import QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox
-        focus = QApplication.focusWidget()
+        if event.key() == Qt.Key_Z and event.modifiers() == Qt.ControlModifier:
+            self.undo()
+            event.accept()
+            return
+        if (event.key() == Qt.Key_Y and event.modifiers() == Qt.ControlModifier) or (
+            event.key() == Qt.Key_Z and event.modifiers() == (Qt.ControlModifier | Qt.ShiftModifier)
+        ):
+            self.redo()
+            event.accept()
+            return
+        if event.key() == Qt.Key_O and event.modifiers() & Qt.ControlModifier:
+            self.open_pdf()
+            event.accept()
+            return
+
+        focus = QApplication.focusWidget() or self.focusWidget()
         if not isinstance(focus, (QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox)):
             if event.modifiers() == Qt.NoModifier:
                 key_map = {
                     Qt.Key_V: ToolMode.SELECT,
+                    Qt.Key_A: ToolMode.SELECT,
                     Qt.Key_H: ToolMode.NONE,
                     Qt.Key_L: ToolMode.DRAW_LINE,
                     Qt.Key_R: ToolMode.POLYGON_AREA,
@@ -1012,6 +1070,8 @@ class MainWindow(QMainWindow):
     def update_page_view(self):
         grayscale = getattr(self.model, "bg_grayscale", False)
         pixmap = self.pdf_handler.get_page_pixmap(self.current_page, grayscale=grayscale)
+        if pixmap is None and getattr(self.canvas, "background_item", None) is not None:
+            pixmap = self.canvas.background_item.pixmap()
         if pixmap:
             self.canvas.set_page_image(pixmap)
             self.canvas_controller.render_page_annotations(
@@ -1021,12 +1081,9 @@ class MainWindow(QMainWindow):
             self._update_pdf_size_label()
             self.update_object_panel()
             self.update_marker_summary()
-
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key_O and event.modifiers() & Qt.ControlModifier:
-            self.open_pdf()
-        elif event.key() == Qt.Key_A and not event.modifiers():
-            self.on_request_tool_change(ToolMode.SELECT)
+        else:
+            self.update_object_panel()
+            self.update_marker_summary()
 
     def update_object_panel(self):
         self.canvas_controller.update_object_panel()
