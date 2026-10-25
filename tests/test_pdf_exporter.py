@@ -276,3 +276,34 @@ class TestPdfAtomicExportAndLocking:
         export_pdf_document(model, out_path, after_replace=failing_after_replace)
         assert os.path.exists(out_path)
 
+    def test_export_pdf_sets_rgb_transparency_group_on_all_pages(self, tmp_path):
+        """エクスポートされたPDFの全ページ辞書に /Group (/CS /DeviceRGB) が設定されること（Issue #80）"""
+        src_path = str(tmp_path / "src_multipage.pdf")
+        src_doc = fitz.open()
+        src_doc.new_page(width=595, height=842)
+        src_doc.new_page(width=595, height=842)
+        # 1ページ目にあえて CMYK Transparency Group を設定しておく
+        src_doc.xref_set_key(
+            src_doc[0].xref, "Group", "<< /Type /Group /S /Transparency /CS /DeviceCMYK >>"
+        )
+        src_doc.save(src_path)
+        src_doc.close()
+
+        model = DrawingModel()
+        model.pdf_path = src_path
+        model.bg_opacity = 0.4
+
+        out_path = str(tmp_path / "out_rgb_group.pdf")
+        export_pdf_document(model, out_path)
+
+        out_doc = fitz.open(out_path)
+        assert len(out_doc) == 2
+        for page in out_doc:
+            key_type, key_val = out_doc.xref_get_key(page.xref, "Group")
+            assert key_type == "dict"
+            assert "/Type/Group" in key_val.replace(" ", "")
+            assert "/S/Transparency" in key_val.replace(" ", "")
+            assert "/CS/DeviceRGB" in key_val.replace(" ", "")
+        out_doc.close()
+        assert os.path.exists(out_path)
+

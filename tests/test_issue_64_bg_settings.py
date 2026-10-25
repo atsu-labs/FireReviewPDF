@@ -183,4 +183,8 @@ def test_pdf_export_with_bg_opacity(sample_pdf, tmp_path):
     # ページから描画リストやピクスマップが正常に取得できること
     pix = page.get_pixmap()
     assert pix.width > 0 and pix.height > 0
+    # ページ辞書に RGB 透過グループが明示設定されていること（Issue #80）
+    key_type, key_val = doc.xref_get_key(page.xref, "Group")
+    assert key_type == "dict"
+    assert "/CS/DeviceRGB" in key_val.replace(" ", "")
     doc.close()
