@@ -160,6 +160,15 @@ def export_pdf_document(
             else:
                 raise PdfExportError("指定された出力対象ページが存在しません。")
 
+        # 各ページ辞書に RGB 透過グループ（Transparency Group）を明示設定（Issue #80）
+        # Acrobat Reader のタイルキャッシュ生成時に CMYK ブレンドで注釈色がくすむ問題を防止
+        for page in export_doc:
+            export_doc.xref_set_key(
+                page.xref,
+                "Group",
+                "<< /Type /Group /S /Transparency /CS /DeviceRGB >>",
+            )
+
         # フォントをサブセット化
         try:
             export_doc.subset_fonts()
