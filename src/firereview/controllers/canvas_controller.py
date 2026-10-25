@@ -12,6 +12,8 @@ from firereview.controllers.undo_commands import (
     RemoveCommand,
     MoveCommand,
     PropertyChangeCommand,
+    BatchMoveCommand,
+    BatchRemoveCommand,
     _clone_points,
     _clone_value,
 )
@@ -331,6 +333,21 @@ class CanvasController:
         self.prop_panel.clear_panel()
         self.navigator.set_selected_object(None)
 
+    def on_selection_changed(self, item_ids: list):
+        if not item_ids:
+            self.on_selection_cleared()
+        elif len(item_ids) == 1:
+            self.on_item_selected(item_ids[0])
+        else:
+            if getattr(self.canvas, "editing_node_item_id", None):
+                self.canvas.end_node_editing()
+            if getattr(self.canvas, "editing_label_item_id", None):
+                self.canvas.end_label_editing()
+            if hasattr(self.prop_panel, "set_multi_selection"):
+                self.prop_panel.set_multi_selection(item_ids)
+            if hasattr(self.navigator, "set_selected_objects"):
+                self.navigator.set_selected_objects(item_ids)
+
     def on_property_changed(self, item_id: str, attrs: dict):
         ann = self._find_annotation(item_id)
         if not ann or not attrs:
@@ -491,6 +508,38 @@ class CanvasController:
             )
         )
 
+    def on_items_moved(self, item_ids: list, delta: QPointF):
+        if delta.isNull() or not item_ids:
+            return
+        if len(item_ids) == 1:
+            self.on_item_moved(item_ids[0], delta)
+            return
+
+        moves = []
+        for iid in item_ids:
+            ann = self._find_annotation(iid)
+            if not ann:
+                continue
+            old_points = _clone_points(ann.points)
+            if ann.type == "text":
+                new_points = _clone_points(ann.points)
+                if len(new_points) >= 1:
+                    new_points[0] = new_points[0] + delta
+            else:
+                new_points = [p + delta for p in ann.points]
+            moves.append(
+                {
+                    "item_id": iid,
+                    "old_points": old_points,
+                    "new_points": new_points,
+                }
+            )
+
+        if moves:
+            self.undo_stack.push(
+                BatchMoveCommand(self, moves, description="複数注釈の移動")
+            )
+
     def on_label_moved(self, item_id: str, delta: QPointF):
         if delta.isNull():
             return
@@ -590,6 +639,25 @@ class CanvasController:
             if ann.id == item_id:
                 self.undo_stack.push(RemoveCommand(self, ann, index=idx))
                 break
+
+    def on_delete_multiple_items(self, item_ids: list):
+        if not item_ids:
+            return
+        if len(item_ids) == 1:
+            self.on_delete_item(item_ids[0])
+            return
+
+        target_set = set(item_ids)
+        entries = [
+            (idx, ann)
+            for idx, ann in enumerate(self.model.annotations)
+            if ann.id in target_set
+        ]
+        if entries:
+            self.undo_stack.push(
+                BatchRemoveCommand(self, entries, description="複数注釈の削除")
+            )
+            self.on_selection_cleared()
 
     def on_calculate_requested(self, item_id: str):
         if not self.is_current_page_calibrated_fn():

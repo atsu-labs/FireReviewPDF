@@ -297,3 +297,91 @@ class PropertyChangeCommand(QUndoCommand):
             self.old_attrs,
             sync_page_and_panel=True,
         )
+
+
+class BatchMoveCommand(QUndoCommand):
+    """複数注釈の一括移動の履歴コマンド"""
+
+    def __init__(
+        self,
+        controller,
+        moves: List[Dict[str, Any]],
+        description: str = "複数注釈の移動",
+    ):
+        super().__init__(description)
+        self.controller = controller
+        self.commands = [
+            MoveCommand(
+                controller,
+                m["item_id"],
+                old_points=m.get("old_points"),
+                new_points=m.get("new_points"),
+                old_label_offset=m.get("old_label_offset"),
+                new_label_offset=m.get("new_label_offset"),
+                old_real_value=m.get("old_real_value"),
+                new_real_value=m.get("new_real_value"),
+                old_text=m.get("old_text"),
+                new_text=m.get("new_text"),
+            )
+            for m in moves
+        ]
+
+    def redo(self):
+        for cmd in self.commands:
+            cmd.redo()
+
+    def undo(self):
+        for cmd in reversed(self.commands):
+            cmd.undo()
+
+
+class BatchRemoveCommand(QUndoCommand):
+    """複数注釈の一括削除の履歴コマンド"""
+
+    def __init__(
+        self,
+        controller,
+        entries: List[tuple],
+        description: str = "複数注釈の削除",
+    ):
+        super().__init__(description)
+        self.controller = controller
+        # entries: List[(index, BaseAnnotation)]
+        self.entries = sorted(list(entries), key=lambda x: x[0])
+        self._first_redo = True
+
+    def redo(self):
+        first = self._first_redo
+        self._first_redo = False
+
+        if not first and self.entries:
+            self.controller._ensure_page(self.entries[0][1].page_num)
+
+        for _idx, ann in self.entries:
+            self.controller._remove_annotation_internal(ann.id)
+
+    def undo(self):
+        if not self.entries:
+            return
+        self.controller._ensure_page(self.entries[0][1].page_num)
+
+        has_marker_or_legend = False
+        for idx, ann in self.entries:
+            if ann not in self.controller.model.annotations:
+                if idx is not None and 0 <= idx <= len(self.controller.model.annotations):
+                    self.controller.model.annotations.insert(idx, ann)
+                else:
+                    self.controller.model.annotations.append(ann)
+
+            if self.controller.current_page == ann.page_num:
+                ann_items = getattr(self.controller.canvas, "annotation_items", None)
+                if not isinstance(ann_items, dict) or ann.id not in ann_items:
+                    self.controller.render_single_annotation(ann)
+
+            if ann.type in ("marker", "legend"):
+                has_marker_or_legend = True
+
+        if has_marker_or_legend:
+            self.controller.update_marker_summary()
+        self.controller.update_object_panel()
+        self.controller.document_manager.set_dirty(True)

@@ -310,12 +310,15 @@ class MainWindow(QMainWindow):
         self.canvas.marker_complete.connect(self.on_marker_complete)
         self.canvas.legend_complete.connect(self.on_legend_complete)
         self.canvas.item_selected.connect(self.on_item_selected)
+        self.canvas.selection_changed.connect(self.on_selection_changed)
         self.canvas.selection_cleared.connect(self.on_selection_cleared)
         self.canvas.item_moved.connect(self.on_item_moved)
+        self.canvas.items_moved.connect(self.on_items_moved)
         self.canvas.label_moved.connect(self.on_label_moved)
         self.canvas.text_editing_finished.connect(self.on_text_editing_finished)
         self.canvas.request_tool_change.connect(self.on_request_tool_change)
         self.canvas.request_delete.connect(self.on_delete_item)
+        self.canvas.request_delete_multiple.connect(self.on_delete_multiple_items)
         self.canvas.existing_text_edited.connect(self.on_existing_text_edited)
         self.canvas.zoom_changed.connect(self._update_zoom_label)
         self.canvas.set_high_res_provider(self._provide_high_res_clip)
@@ -326,6 +329,7 @@ class MainWindow(QMainWindow):
         self.prop_panel.setFixedWidth(280)
         self.prop_panel.attribute_changed.connect(self.on_property_changed)
         self.prop_panel.delete_requested.connect(self.on_delete_item)
+        self.prop_panel.delete_multiple_requested.connect(self.on_delete_multiple_items)
         self.prop_panel.calculate_requested.connect(self.on_calculate_requested)
         
         # Node editing connections
@@ -865,6 +869,15 @@ class MainWindow(QMainWindow):
 
     def on_delete_item(self, item_id):
         self.canvas_controller.on_delete_item(item_id)
+
+    def on_selection_changed(self, item_ids):
+        self.canvas_controller.on_selection_changed(item_ids)
+
+    def on_items_moved(self, item_ids, delta):
+        self.canvas_controller.on_items_moved(item_ids, delta)
+
+    def on_delete_multiple_items(self, item_ids):
+        self.canvas_controller.on_delete_multiple_items(item_ids)
 
     def open_pdf(self):
         if not self.maybe_save_changes():

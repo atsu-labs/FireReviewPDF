@@ -17,6 +17,7 @@ class NavigatorPanel(QWidget):
         super().__init__(parent)
         self.active_edit_id = None
         self.selected_id = None
+        self.selected_ids = set()
         self.selected_page_index = None
         self.page_thumbnails = []
         self.rows = {}
@@ -429,7 +430,7 @@ class NavigatorPanel(QWidget):
         # 4. Update existing or add new rows, ensuring correct order in the layout
         for index, ann in enumerate(annotations):
             is_editing = (self.active_edit_id == ann.id)
-            is_selected = (self.selected_id == ann.id)
+            is_selected = (ann.id in self.selected_ids) or (self.selected_id == ann.id)
             
             if ann.id in self.rows:
                 # Existing row
@@ -446,21 +447,26 @@ class NavigatorPanel(QWidget):
                 self.obj_layout.insertWidget(index, row)
                 self.rows[ann.id] = row
 
-    def set_selected_object(self, item_id):
-        # O(1) selection update: only repaint previously selected and newly selected rows
-        previous_selected_id = self.selected_id
-        self.selected_id = item_id
-        
-        affected_ids = set()
-        if previous_selected_id:
-            affected_ids.add(previous_selected_id)
-        if item_id:
-            affected_ids.add(item_id)
-            
+    def set_selected_objects(self, item_ids):
+        """複数オブジェクトの選択ハイライトを一括更新する"""
+        new_list = list(item_ids) if item_ids else []
+        new_set = set(new_list)
+        prev_set = set(self.selected_ids)
+        if self.selected_id:
+            prev_set.add(self.selected_id)
+
+        self.selected_ids = new_set
+        self.selected_id = new_list[0] if len(new_list) == 1 else (new_list[-1] if new_list else None)
+
+        affected_ids = prev_set.symmetric_difference(new_set) | new_set
         for rid in affected_ids:
             row = self.rows.get(rid)
             if row:
-                row.apply_styles(rid == item_id)
+                row.apply_styles(rid in new_set)
+
+    def set_selected_object(self, item_id):
+        self.set_selected_objects([item_id] if item_id else [])
+        self.selected_id = item_id
 
     def set_editing_object(self, item_id, is_editing):
         previous_edit_id = self.active_edit_id
@@ -482,7 +488,7 @@ class NavigatorPanel(QWidget):
             row = self.rows.get(rid)
             if row:
                 row_is_editing = (self.active_edit_id == rid)
-                row_is_selected = (rid == self.selected_id) or (rid == item_id and is_editing)
+                row_is_selected = (rid in self.selected_ids) or (rid == self.selected_id) or (rid == item_id and is_editing)
                 row.set_editing_state(row_is_editing, row_is_selected)
 
 class PageThumbnail(QFrame):

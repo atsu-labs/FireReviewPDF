@@ -23,6 +23,9 @@ class PDFCanvas(QGraphicsView):
     
     # Selection/Editing signals
     item_selected = Signal(str) # id
+    selection_changed = Signal(list) # list of ids
+    items_moved = Signal(list, QPointF) # list of ids, delta
+    request_delete_multiple = Signal(list) # list of ids
     selection_cleared = Signal()
     item_moved = Signal(str, QPointF) # id, delta
     label_moved = Signal(str, QPointF) # id, delta
@@ -152,6 +155,22 @@ class PDFCanvas(QGraphicsView):
     def _get_active_tool(self):
         return self.tools.get(self.tool_mode)
 
+    def get_selected_annotation_ids(self) -> list:
+        """現在選択されている注釈アイテムのIDリストを順序を維持して返す"""
+        selected_set = set()
+        extra_ids = []
+        for item in self.scene.selectedItems():
+            if self._is_background_layer_item(item) or isinstance(item, VertexHandleItem):
+                continue
+            iid = item.data(0)
+            if iid:
+                selected_set.add(iid)
+                if iid not in self.annotation_items and iid not in extra_ids:
+                    extra_ids.append(iid)
+        ordered = [iid for iid in self.annotation_items.keys() if iid in selected_set]
+        ordered.extend(extra_ids)
+        return ordered
+
     def set_text_defaults(self, font_family, font_size, color, continuous=False):
         self.current_text_font = font_family
         self.current_text_size = font_size
@@ -276,6 +295,9 @@ class PDFCanvas(QGraphicsView):
         self.temp_circle = _safe_remove(self.temp_circle)
         self.temp_arc = _safe_remove(self.temp_arc)
         self.temp_cloud = _safe_remove(self.temp_cloud)
+        select_tool = self.tools.get(ToolMode.SELECT) if hasattr(self, "tools") else None
+        if select_tool and hasattr(select_tool, "_reset_drag_state"):
+            select_tool._reset_drag_state(self.scene)
         self.drag_start = None
 
     def set_background_opacity(self, opacity: float):
@@ -428,6 +450,10 @@ class PDFCanvas(QGraphicsView):
         self.current_high_res_dpi = 0
         self.current_high_res_rect = QRectF()
         self.annotation_items.clear()
+        select_tool = self.tools.get(ToolMode.SELECT) if hasattr(self, "tools") else None
+        if select_tool and hasattr(select_tool, "_reset_drag_state"):
+            select_tool.rubberband_item = None
+            select_tool._reset_drag_state(None)
         self.scene.clear()
 
 
@@ -683,6 +709,7 @@ class PDFCanvas(QGraphicsView):
             if self.scene.selectedItems():
                 self.scene.clearSelection()
                 self.selection_cleared.emit()
+                self.selection_changed.emit([])
                 event.accept()
                 return
 
@@ -713,8 +740,10 @@ class PDFCanvas(QGraphicsView):
                     item_id = item.data(0)
                     if item_id and item_id not in ids_to_delete:
                         ids_to_delete.append(item_id)
-                for item_id in ids_to_delete:
-                    self.request_delete.emit(item_id)
+                if len(ids_to_delete) > 1:
+                    self.request_delete_multiple.emit(ids_to_delete)
+                elif len(ids_to_delete) == 1:
+                    self.request_delete.emit(ids_to_delete[0])
                 event.accept()
                 return
 
@@ -797,6 +826,9 @@ class PDFCanvas(QGraphicsView):
         if item_id: 
             line.setData(0, item_id)
             line.setData(1, QPointF(0,0))
+            interactive = (self.tool_mode == ToolMode.SELECT)
+            line.setFlag(QGraphicsItem.ItemIsSelectable, interactive)
+            line.setFlag(QGraphicsItem.ItemIsMovable, interactive)
         self.scene.addItem(line)
         
         offset = QPointF(label_offset[0], label_offset[1]) if label_offset else QPointF(0, 0)
@@ -833,6 +865,9 @@ class PDFCanvas(QGraphicsView):
         if item_id:
             item.setData(0, item_id)
             item.setData(1, QPointF(0, 0))
+            interactive = (self.tool_mode == ToolMode.SELECT)
+            item.setFlag(QGraphicsItem.ItemIsSelectable, interactive)
+            item.setFlag(QGraphicsItem.ItemIsMovable, interactive)
         self.scene.addItem(item)
 
         if len(points) >= 2:
@@ -877,6 +912,9 @@ class PDFCanvas(QGraphicsView):
         if item_id: 
             poly.setData(0, item_id)
             poly.setData(1, QPointF(0,0))
+            interactive = (self.tool_mode == ToolMode.SELECT)
+            poly.setFlag(QGraphicsItem.ItemIsSelectable, interactive)
+            poly.setFlag(QGraphicsItem.ItemIsMovable, interactive)
         self.scene.addItem(poly)
         
         offset = QPointF(label_offset[0], label_offset[1]) if label_offset else QPointF(0, 0)
@@ -940,6 +978,9 @@ class PDFCanvas(QGraphicsView):
         if item_id: 
             circle.setData(0, item_id)
             circle.setData(1, QPointF(0,0))
+            interactive = (self.tool_mode == ToolMode.SELECT)
+            circle.setFlag(QGraphicsItem.ItemIsSelectable, interactive)
+            circle.setFlag(QGraphicsItem.ItemIsMovable, interactive)
         self.scene.addItem(circle)
 
         if center_marker:
@@ -995,6 +1036,9 @@ class PDFCanvas(QGraphicsView):
             item.setData(8, arc_span)
             item.setData(9, show_radial_line)
             item.setData(10, center_marker)
+            interactive = (self.tool_mode == ToolMode.SELECT)
+            item.setFlag(QGraphicsItem.ItemIsSelectable, interactive)
+            item.setFlag(QGraphicsItem.ItemIsMovable, interactive)
             
         self.scene.addItem(item)
         
@@ -1103,7 +1147,10 @@ class PDFCanvas(QGraphicsView):
                 txt_item.set_leader(has_leader, pos + QPointF(50, 50))
             if item_id:
                 txt_item.setData(0, item_id)
-                txt_item.setData(1, QPointF(0,0))
+                txt_item.setData(1, txt_item.pos())
+                interactive = (self.tool_mode == ToolMode.SELECT)
+                txt_item.setFlag(QGraphicsItem.ItemIsSelectable, interactive)
+                txt_item.setFlag(QGraphicsItem.ItemIsMovable, interactive)
                 self.annotation_items[item_id] = txt_item
 
     def add_marker_annotation(self, pos, marker_style="square", color="#7c4dff", stroke_opacity=100, item_id=None):
@@ -1112,7 +1159,7 @@ class PDFCanvas(QGraphicsView):
         item.setPos(pos)
         if item_id:
             item.setData(0, item_id)
-            item.setData(1, QPointF(0, 0))
+            item.setData(1, item.pos())
             self.annotation_items[item_id] = item
         self.scene.addItem(item)
 
@@ -1125,7 +1172,7 @@ class PDFCanvas(QGraphicsView):
         item.setPos(pos)
         if item_id:
             item.setData(0, item_id)
-            item.setData(1, QPointF(0, 0))
+            item.setData(1, item.pos())
             self.annotation_items[item_id] = item
         self.scene.addItem(item)
 
@@ -1674,6 +1721,14 @@ class PDFCanvas(QGraphicsView):
         self._update_item_geometry(item, points)
         self.start_node_editing(item.data(0))
         self.item_points_updated.emit(item.data(0), points)
+
+    def _show_multi_object_context_menu(self, global_pos, item_ids):
+        menu = QMenu(self)
+        menu.setStyleSheet("QMenu { background-color: #1e1e2f; color: white; border: 1px solid #333344; } QMenu::item:selected { background-color: #7c4dff; }")
+        delete_action = QAction(f"❌ 選択した {len(item_ids)} 件を削除", self)
+        delete_action.triggered.connect(lambda: self.request_delete_multiple.emit(list(item_ids)))
+        menu.addAction(delete_action)
+        menu.exec(global_pos)
 
     def _show_object_context_menu(self, global_pos, item_id):
         menu = QMenu(self)
