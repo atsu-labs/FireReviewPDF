@@ -7,6 +7,8 @@ from .undo_commands import (
     RemoveCommand,
     MoveCommand,
     PropertyChangeCommand,
+    BatchMoveCommand,
+    BatchRemoveCommand,
 )
 
 __all__ = [
@@ -16,4 +18,6 @@ __all__ = [
     "RemoveCommand",
     "MoveCommand",
     "PropertyChangeCommand",
+    "BatchMoveCommand",
+    "BatchRemoveCommand",
 ]

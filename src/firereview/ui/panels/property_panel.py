@@ -9,12 +9,14 @@ from ..components.color_picker_popup import ColorPickerPopup
 class PropertyPanel(QWidget):
     attribute_changed = Signal(str, dict) # id, {attr: value}
     delete_requested = Signal(str) # id
+    delete_multiple_requested = Signal(list) # list of ids
     calculate_requested = Signal(str) # id — triggers distance/area calculation
     node_edit_toggled = Signal(str, bool) # id, active
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.current_item_id = None
+        self.selected_item_ids = []
         self.current_item_type = None
         self.current_color = "#7c4dff"
         self.current_fill_color = ""
@@ -422,10 +424,13 @@ class PropertyPanel(QWidget):
     def set_item_data(self, item_id, item_type, text, color_hex, font_family="Arial", font_size=12, line_width=2, stroke_opacity=100, fill_opacity=30, fill_color="", center_marker="", start_marker="", end_marker="", has_border=False, border_color="#ff0000", border_width=2, has_leader=False, marker_style="square", arc_span=30.0, show_radial_line=False):
         self._block_signals = True
         self.current_item_id = item_id
+        self.selected_item_ids = [item_id] if item_id else []
         self.current_item_type = item_type
         
         type_names = {"line": "直線（計測）", "polyline": "直線", "polygon": "矩形", "cloud": "雲マーク", "circle": "円", "text": "テキスト", "marker": "マーカー", "arc": "円弧"}
         self.type_title.setText(type_names.get(item_type, "要素"))
+        self.sub_title.setText("選択中の要素")
+        self.delete_btn.setText("この要素を削除")
         self.sub_title.setVisible(True)
         
         # Dynamic visibility
@@ -543,11 +548,44 @@ class PropertyPanel(QWidget):
         self.setEnabled(True)
         self._block_signals = False
 
-    def clear_panel(self):
+    def set_multi_selection(self, item_ids):
+        """複数オブジェクト選択時のパネル表示を設定する（タイトルと一括削除ボタンのみ表示）"""
         self._block_signals = True
         self.current_item_id = None
         self.current_item_type = None
+        self.selected_item_ids = list(item_ids)
+        count = len(self.selected_item_ids)
+        self.type_title.setText(f"複数選択中 ({count}件)")
+        self.sub_title.setText("一括移動・一括削除が可能です")
+        self.sub_title.setVisible(True)
+        self.appearance_container.setVisible(False)
+        self.fill_container.setVisible(False)
+        self.fill_color_widget.setVisible(False)
+        self.marker_container.setVisible(False)
+        self.line_container.setVisible(False)
+        self.arc_container.setVisible(False)
+        self.calc_container.setVisible(False)
+        self.node_edit_container.setVisible(False)
+        self.text_container.setVisible(False)
+        self.border_leader_container.setVisible(False)
+        self.marker_anno_container.setVisible(False)
+        self.node_edit_btn.blockSignals(True)
+        self.node_edit_btn.setChecked(False)
+        self.node_edit_btn.setText("📐 頂点を編集")
+        self.node_edit_btn.blockSignals(False)
+        self.delete_btn.setText(f"選択した {count} 件を削除")
+        self.delete_btn.setVisible(True)
+        self.setEnabled(True)
+        self._block_signals = False
+
+    def clear_panel(self):
+        self._block_signals = True
+        self.current_item_id = None
+        self.selected_item_ids = []
+        self.current_item_type = None
         self.type_title.setText("要素を選択してください")
+        self.sub_title.setText("選択中の要素")
+        self.delete_btn.setText("この要素を削除")
         self.sub_title.setVisible(False)
         self.text_edit.setPlainText("")
         self.color_preview.setStyleSheet("background-color: transparent; border: 1px solid #3d3d5c;")
@@ -708,6 +746,11 @@ class PropertyPanel(QWidget):
             self.calculate_requested.emit(self.current_item_id)
 
     def _on_delete_clicked(self):
+        if len(self.selected_item_ids) > 1:
+            ids = list(self.selected_item_ids)
+            self.delete_multiple_requested.emit(ids)
+            self.clear_panel()
+            return
         if self.current_item_id:
             self.delete_requested.emit(self.current_item_id)
             self.clear_panel()
